@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>로그인 · 자동차 수리 로봇</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="login-body">
+  <form class="login-card" method="post">
+    <div class="brand"><span class="dot"></span> 자동차 자동 수리 로봇</div>
+    <h1>작업자 로그인</h1>
+    {% if error %}<p class="err">{{ error }}</p>{% endif %}
+    <label>아이디<input name="username" autocomplete="username" required autofocus></label>
+    <label>비밀번호<input name="password" type="password" autocomplete="current-password" required></label>
+    <button class="btn primary big" type="submit">로그인</button>
+    <p class="hint">B그룹 3조 · 협동-1</p>
+  </form>
+</body>
+</html>

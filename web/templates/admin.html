@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>관리자 · 자동차 수리 로봇</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<script src="https://cdn.jsdelivr.net/npm/roslib@1.4.1/build/roslib.min.js"></script>
+<script type="importmap">
+{ "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="dot"></span> 자동차 자동 수리 로봇 <span class="role-tag">관리자</span></div>
+  <nav class="tabs">
+    <button class="tab active" data-tab="repair">수리</button>
+    <button class="tab" data-tab="stock">재고</button>
+    <button class="tab" data-tab="history">이력</button>
+    <button class="tab" data-tab="members">회원·차량</button>
+  </nav>
+  <div class="conn">
+    <span id="rosState" class="pill off">로봇 연결 안 됨</span>
+    <label class="demo"><input type="checkbox" id="demoMode"> 데모 모드</label>
+    <span class="user">{{ name }}</span>
+    <a href="{{ url_for('logout') }}" class="btn ghost small">로그아웃</a>
+  </div>
+</header>
+
+<main>
+  <!-- 수리 (SCR-101) -->
+  <section id="tab-repair" class="panel active">
+    <div class="grid-my grid-admin">
+      <div class="card viewer-card">
+        <div class="cardhead">
+          <h2 id="viewerTitle">차량</h2>
+          <div class="legend">
+            <span><i class="lg ok"></i>정상</span>
+            <span><i class="lg sus"></i>의심</span>
+            <span><i class="lg dent"></i>손상</span>
+            <span><i class="lg miss"></i>부품 없음</span>
+            <span><i class="lg req"></i>교체 지정</span>
+            <span><i class="lg done"></i>교체 완료</span>
+          </div>
+        </div>
+        <div id="viewer" class="viewer"><div id="viewerMsg" class="viewer-msg">3D 모델 불러오는 중…</div></div>
+        <div class="viewer-tools">
+          <button class="btn ghost-dark small" data-view="iso">기본 시점</button>
+          <button class="btn ghost-dark small" data-view="top">위에서</button>
+          <button class="btn ghost-dark small" data-view="front">앞에서</button>
+          <button class="btn ghost-dark small" data-view="side">옆에서</button>
+          <span class="note">드래그: 회전 · 휠/두 손가락: 확대/이동 · 수동 모드에서 부품 클릭: 선택</span>
+        </div>
+        <div class="stats">
+          <div><b id="statPts">0</b><span>측정 점</span></div>
+          <div><b id="statFz">–</b><span>현재 Fz [N]</span></div>
+          <div><b id="statDepth">–</b><span>최대 깊이 [mm]</span></div>
+          <div><b id="statFlush">–</b><span>재검사 단차 [mm]</span></div>
+        </div>
+      </div>
+
+      <div class="card side-card">
+        <h2>수리 시작</h2>
+        <label>차량 선택
+          <select id="vehicleSel"></select>
+        </label>
+
+        <div class="field-label">수리 모드</div>
+        <div class="seg" id="modeSeg">
+          <button class="seg-btn active" data-mode="auto">자동<small>스캔으로 손상 추적</small></button>
+          <button class="seg-btn" data-mode="manual">수동<small>지정 부품만 교체</small></button>
+        </div>
+
+        <div id="partPick" class="part-pick hidden">
+          <div class="field-label">교체할 부품 <small>(3D 화면에서 눌러도 선택돼요)</small></div>
+          <label class="chk"><input type="checkbox" value="bonnet"> 보닛</label>
+          <label class="chk"><input type="checkbox" value="mirror_l"> 사이드미러 (좌)</label>
+          <label class="chk"><input type="checkbox" value="mirror_r"> 사이드미러 (우)</label>
+        </div>
+
+        <div class="btnrow">
+          <button id="startBtn" class="btn primary big">▶ 수리 시작</button>
+          <button id="stopBtn" class="btn danger big" disabled>■ 정지</button>
+        </div>
+        <p class="note">정지 버튼은 소프트웨어 정지입니다. 비상 시에는 티치 펜던트의 비상정지 버튼을 누르세요.</p>
+
+        <hr class="sep">
+        <div class="status-head">
+          <span id="jobBadge" class="badge">수리 기록 없음</span>
+          <span id="jobMode" class="badge mode hidden"></span>
+        </div>
+        <p id="jobTime" class="note"></p>
+        <h3>진행 단계</h3>
+        <ol id="steps" class="steps">
+          <li data-stage="calibrate">차량 위치 확인 <small>좌표계</small></li>
+          <li data-stage="scan">표면 스캔 <small>자동만</small></li>
+          <li data-stage="detect">손상 판정 <small>자동만</small></li>
+          <li data-stage="stock">재고 확인</li>
+          <li data-stage="replace">부품 교체</li>
+          <li data-stage="inspect">재검사 <small>단차</small></li>
+          <li data-stage="done">완료</li>
+        </ol>
+        <div class="progress"><div id="progBar"></div></div>
+        <div id="resultBox" class="result hidden"></div>
+        <h3>교체 부품</h3>
+        <div id="partsList" class="parts-list"><p class="note">–</p></div>
+      </div>
+
+      <div class="card logcard-my">
+        <h2>진행 로그</h2>
+        <ul id="log" class="log"></ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 재고 (SCR-102) -->
+  <section id="tab-stock" class="panel">
+    <div class="card">
+      <h2>부품 재고</h2>
+      <table class="tbl">
+        <thead><tr><th>코드</th><th>부품</th><th>재고</th><th>최소</th><th>상태</th><th>수정</th></tr></thead>
+        <tbody id="partsBody"></tbody>
+      </table>
+      <p class="note">교체에 성공하면 재고가 자동으로 1개 줄어듭니다. 재고가 0이면 수리는 '보류'로 끝납니다.</p>
+    </div>
+  </section>
+
+  <!-- 이력 (SCR-103) -->
+  <section id="tab-history" class="panel">
+    <div class="card">
+      <h2>수리 이력</h2>
+      <div class="tbl-wrap">
+      <table class="tbl">
+        <thead><tr><th>#</th><th>차량</th><th>차주</th><th>모드</th><th>담당</th><th>시작</th><th>결과</th><th>교체 부품</th><th>요약</th></tr></thead>
+        <tbody id="jobsBody"></tbody>
+      </table>
+      </div>
+    </div>
+    <div class="card hidden" id="jobDetail"></div>
+  </section>
+
+  <!-- 회원·차량 (SCR-104) -->
+  <section id="tab-members" class="panel">
+    <div class="two">
+      <div class="card">
+        <h2>회원</h2>
+        <table class="tbl"><thead><tr><th>아이디</th><th>이름</th><th>권한</th></tr></thead><tbody id="usersBody"></tbody></table>
+        <h3>회원 등록</h3>
+        <form id="userForm" class="form-grid">
+          <input name="username" placeholder="아이디" required>
+          <input name="name" placeholder="이름 (예: 홍길동)">
+          <input name="password" type="password" placeholder="비밀번호 (4자 이상)" required>
+          <select name="role"><option value="user">사용자 (차주)</option><option value="admin">관리자</option></select>
+          <button class="btn primary" type="submit">등록</button>
+          <p class="form-msg" id="userMsg"></p>
+        </form>
+      </div>
+      <div class="card">
+        <h2>차량</h2>
+        <table class="tbl"><thead><tr><th>차량</th><th>모델</th><th>차주</th></tr></thead><tbody id="vehiclesBody"></tbody></table>
+        <h3>차량 등록</h3>
+        <form id="vehicleForm" class="form-grid">
+          <input name="name" placeholder="차량 이름 (예: 모형 A-03)" required>
+          <input name="model" placeholder="모델 (기본 sedan_1_18)">
+          <select name="owner_id" id="ownerSel"></select>
+          <button class="btn primary" type="submit">등록</button>
+          <p class="form-msg" id="vehicleMsg"></p>
+        </form>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>window.APP = { rosbridgeUrl: "{{ rosbridge_url }}" };</script>
+<script src="{{ url_for('static', filename='common.js') }}"></script>
+<script type="module" src="{{ url_for('static', filename='admin.js') }}"></script>
+</body>
+</html>

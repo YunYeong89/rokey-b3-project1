@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>내 차량 · 자동차 수리 로봇</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<script type="importmap">
+{ "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="dot"></span> 자동차 자동 수리 로봇 <span class="role-tag user">고객</span></div>
+  <nav class="tabs">
+    <button class="tab active" data-tab="status">수리 현황</button>
+    <button class="tab" data-tab="history">내 수리 이력</button>
+  </nav>
+  <div class="conn">
+    <select id="myVehicle" class="hdr-select"></select>
+    <span class="user">{{ name }} 님</span>
+    <a href="{{ url_for('logout') }}" class="btn ghost small">로그아웃</a>
+  </div>
+</header>
+
+<main>
+  <!-- SCR-201 내 차량 수리 현황 -->
+  <section id="tab-status" class="panel active">
+    <div class="grid-my">
+      <div class="card viewer-card">
+        <div class="cardhead">
+          <h2 id="viewerTitle">내 차량</h2>
+          <div class="legend">
+            <span><i class="lg dent"></i>손상</span>
+            <span><i class="lg miss"></i>부품 없음</span>
+            <span><i class="lg req"></i>교체 예정</span>
+            <span><i class="lg done"></i>교체 완료</span>
+          </div>
+        </div>
+        <div id="viewer" class="viewer"><div id="viewerMsg" class="viewer-msg">3D 모델 불러오는 중…</div></div>
+        <div class="viewer-tools">
+          <button class="btn ghost-dark small" data-view="iso">기본 시점</button>
+          <button class="btn ghost-dark small" data-view="top">위에서</button>
+          <button class="btn ghost-dark small" data-view="front">앞에서</button>
+          <button class="btn ghost-dark small" data-view="side">옆에서</button>
+          <span class="note">한 손가락: 회전 · 두 손가락: 확대/이동</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="status-head">
+          <span id="jobBadge" class="badge">수리 기록 없음</span>
+          <span id="jobMode" class="badge mode hidden"></span>
+        </div>
+        <p id="jobTime" class="note"></p>
+        <h3>진행 단계</h3>
+        <ol id="steps" class="steps">
+          <li data-stage="calibrate">차량 위치 확인</li>
+          <li data-stage="scan">표면 스캔</li>
+          <li data-stage="detect">손상 판정</li>
+          <li data-stage="stock">부품 준비</li>
+          <li data-stage="replace">부품 교체</li>
+          <li data-stage="inspect">품질 검사 <small>단차</small></li>
+          <li data-stage="done">완료</li>
+        </ol>
+        <div class="progress"><div id="progBar"></div></div>
+        <div id="resultBox" class="result hidden"></div>
+        <h3>교체 부품</h3>
+        <div id="partsList" class="parts-list"><p class="note">–</p></div>
+      </div>
+
+      <div class="card logcard-my">
+        <h2>진행 기록</h2>
+        <ul id="log" class="log"></ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- SCR-202 내 수리 이력 -->
+  <section id="tab-history" class="panel">
+    <div class="card">
+      <h2>내 수리 이력</h2>
+      <div class="tbl-wrap">
+      <table class="tbl">
+        <thead><tr><th>#</th><th>차량</th><th>모드</th><th>시작</th><th>종료</th><th>결과</th><th>교체 부품</th></tr></thead>
+        <tbody id="jobsBody"></tbody>
+      </table>
+      </div>
+    </div>
+    <div class="card hidden" id="jobDetail"></div>
+  </section>
+</main>
+
+<script src="{{ url_for('static', filename='common.js') }}"></script>
+<script type="module" src="{{ url_for('static', filename='my.js') }}"></script>
+</body>
+</html>

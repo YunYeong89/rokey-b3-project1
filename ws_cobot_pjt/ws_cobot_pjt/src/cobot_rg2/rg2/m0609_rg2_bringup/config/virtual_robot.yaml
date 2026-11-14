@@ -1,0 +1,17 @@
+# Virtual-only profiles, registered after dsr_controller2 becomes active.
+# TCP position and COG: mm; TCP orientation: degrees in the controller convention.
+# Tool weight: kg. null inertia means unspecified; the API receives six zeros.
+active:
+  tcp: GripperDA_v1
+  tool: Tool Weight_1
+
+tcps:
+  GripperDA_v1:
+    pos: [0.0, 0.0, 240.0, 0.0, 0.0, 0.0]
+
+tools:
+  Tool Weight: &gripper_tool
+    weight: 1.28
+    cog: [5.26, 30.180, 27.190]
+    inertia: null
+  Tool Weight_1: *gripper_tool

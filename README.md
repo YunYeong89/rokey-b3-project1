@@ -13,3 +13,20 @@ ROKEY 협동-1 · B그룹 3조
 | 최원준 | |
 | 송세진 | |
 | 지민관 | |
+
+## ROS 기본 제어 배포본
+
+M0609 `simple_move`와 OnRobot RG2 그리퍼 제어의 설치·실행 방법은
+[ws_cobot_pjt/README.md](ws_cobot_pjt/README.md)에 정리했습니다.
+macOS native(Docker ROS + Gazebo/RViz) 실행과 Ubuntu ROS 직접 실행을 구분합니다.
+Docker 이미지 파일은 별도 공유하지 않으며, 문서의 Docker 이미지·ROS 워크스페이스
+빌드 절차를 따라 각 PC에서 생성합니다.
+
+```text
+rokey-b3-project1/
+├── web/             # 기존 웹 프로젝트
+├── docs/            # 기존 프로젝트 문서
+└── ws_cobot_pjt/     # ROS 기본 제어 배포본
+    ├── native/      # macOS Gazebo/RViz 표시
+    └── ws_cobot_pjt/src/ # 공통 ROS 패키지
+```

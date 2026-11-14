@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="m0609">
+  <xacro:arg name="name" default="dsr01"/>
+  <xacro:arg name="color" default="white"/>
+  <xacro:arg name="mode" default="virtual"/>
+  <xacro:arg name="host" default="127.0.0.1"/>
+  <xacro:arg name="rt_host" default="127.0.0.1"/>
+  <xacro:arg name="port" default="12345"/>
+  <xacro:arg name="model" default="m0609"/>
+  <xacro:arg name="update_rate" default="100"/>
+  <xacro:include filename="$(find m0609_rg2_bringup)/xacro/my_macro.m0609.$(arg color).xacro"/>
+  <xacro:m0609 namespace="" simple="false"/>
+  <link name="world"/>
+  <joint name="world_fixed" type="fixed">
+    <parent link="world"/><child link="base_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+  <xacro:include filename="$(find m0609_rg2_bringup)/xacro/my_m0609.ros2_control.xacro"/>
+  <xacro:m0609_ros2_control name="$(arg name)" host="$(arg host)" rt_host="$(arg rt_host)"
+    port="$(arg port)" mode="$(arg mode)" model="$(arg model)" update_rate="$(arg update_rate)"/>
+</robot>

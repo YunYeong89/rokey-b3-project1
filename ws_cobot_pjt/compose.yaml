@@ -1,0 +1,38 @@
+name: rokey-ros
+services:
+  cobot:
+    build: .
+    image: rokey-ros:jazzy
+    init: true
+    stdin_open: true
+    tty: true
+    cap_add: [SYS_NICE]
+    ulimits:
+      rtprio: 99
+      memlock: -1
+    environment:
+      ROS_DOMAIN_ID: "29"
+    volumes:
+      - ./ws_cobot_pjt:/workspace
+      - ./native/ros_state_relay.py:/opt/rokey-native/ros_state_relay.py:ro
+      - ./build_workspace.sh:/opt/rokey-native/build_workspace.sh:ro
+    working_dir: /workspace
+  emulator:
+    profiles: [virtual]
+    image: doosanrobot/dsr_emulator:3.0.1@sha256:878b8557dfa2ffd843674e42576fd015b803cc805fe698156eb7b743e71547e9
+    platform: linux/amd64
+    init: true
+    environment:
+      ROBOT_MODEL: M0609
+    ports:
+      - "127.0.0.1:12349:12345"
+    volumes:
+      - ./emulator/start.sh:/start-emulator.sh:ro
+    entrypoint: [/bin/bash, /start-emulator.sh]
+    healthcheck:
+      test: [CMD, bash, -c, "echo > /dev/tcp/127.0.0.1/12345"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 30s
+    stop_grace_period: 10s

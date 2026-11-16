@@ -6,14 +6,34 @@
  *   - 단위 mm, 위쪽이 +Y (glTF 기본)
  *   - 원점 = 차량 좌표계 원점(뒤 왼쪽 모서리 바닥), +X = 차 앞쪽, +Z = 차 오른쪽
  *   - 교체 부품은 따로 분리된 메쉬로, 이름을 bonnet / mirror_l / mirror_r / door_fl / door_fr / door_rl / door_rr 로
+ *     (STL 은 tools/car_to_glb.py 로 변환 → README "실제 3D 모델 바꾸는 법")
  *  → 로봇이 찍은 손상 좌표 (x, y) 를 그대로 3D 위치 (X=x, Z=y) 에 올릴 수 있다.
- *    높이 z 가 있으면 (문처럼 옆면) 3D 높이 Y=z 에 그대로, 없으면 (보닛) 위에서 표면을 찾아 올린다.
+ *    높이 z 가 있으면 (문처럼 옆면) 그 높이에서 옆으로, 없으면 (보닛) 위에서 표면을 찾아 붙인다.
+ *
+ * 차 크기·배치 (layout)
+ *  L·W·H 는 GLB 의 bounding box 에서 읽는다 → 모델을 바꿔도 코드 수정 없음.
+ *  부품·문·미러 위치는 GLB scene extras 의 car_layout (car_to_glb.py 가 기록) → 없으면 이름 붙은 메쉬 범위 + 임시 모델 비율.
+ *  모델에 없는 교체 부품(문·미러 등)은 layout 위치에 반투명 상자로 대신 표시 (상태가 있을 때만 보임).
  */
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
-const CAR = { L: 260, W: 110 };
+/** 임시 모델(buildPlaceholderCar)의 배치. 차량 좌표계 mm: x 앞, y 오른쪽, z 높이 (three.js 로는 X=x, Y=z, Z=y) */
+const PLACEHOLDER_LAYOUT = {
+  L: 260, W: 110, H: 69, body_y: [0, 110],
+  parts: {
+    trunk: { x: [4, 66], y: [6, 104], z: [40, 40] },
+    roof: { x: [76, 160], y: [16, 94], z: [67, 70] },
+    bonnet: { x: [176, 252], y: [8, 102], z: [39, 44] },
+  },
+  doors: {
+    door_rl: { x: [72, 118], y: 0, z: [13, 38] }, door_fl: { x: [120, 165], y: 0, z: [13, 38] },
+    door_rr: { x: [72, 118], y: 110, z: [13, 38] }, door_fr: { x: [120, 165], y: 110, z: [13, 38] },
+  },
+  mirrors: { mirror_l: { x: 158, y: -7, z: 46, size: [16, 9, 14] }, mirror_r: { x: 158, y: 117, z: 46, size: [16, 9, 14] } },
+};
+const CAR = { L: 260, W: 110, H: 69 };          // load() 에서 모델 bounding box 로 바뀜
 const MODEL_URL = "/static/models/car.glb";
 const PART_CODES = ["bonnet", "mirror_l", "mirror_r", "door_fl", "door_fr", "door_rl", "door_rr"];
 export const COLORS = {
@@ -22,8 +42,10 @@ export const COLORS = {
 };
 const VIEWS = { iso: [260, 205, 300], top: [0, 535, 1], front: [480, 95, 0], side: [0, 115, 480] };   // 바라보는 점에서 카메라까지
 // 로봇팔을 켜면 (관리자 화면) 로봇까지 보이게 넓힘: 바라보는 점(월드), 거리 배율, 최대 줌아웃
-const EXTENT = { car: { target: [0, 25, 0], scale: 1, maxDist: 900, grid: 1 },
-                 robot: { target: [0, 230, -210], scale: 3.0, maxDist: 2400, grid: 2.5 } };
+// target(C) = 바라보는 점 (C = 차 크기 {L, W, H}, 화면 중앙 = 차 가운데 바닥), scale = VIEWS 거리 배율
+// robot: 차를 크게 보이게 차 위쪽(로봇 쪽으로 조금)을 가깝게 봄. 로봇 전체는 휠로 축소 (maxDist 까지)
+const EXTENT = { car: { target: (C) => [0, C.H * 0.36, 0], scale: 1, maxDist: 900, grid: 1 },
+                 robot: { target: (C) => [0, C.H * 1.3, -C.W * 0.9], scale: 2.0, maxDist: 2400, grid: 2.5 } };
 
 /**
  * @param {HTMLElement} host   뷰어를 넣을 요소
@@ -54,17 +76,21 @@ export function createCarViewer(host, { msgEl = null, onPartClick = null } = {})
   let extent = EXTENT.car;
 
   const carRoot = new THREE.Group();            // 차량 좌표계 → 화면 중앙으로
-  carRoot.position.set(-CAR.L / 2, 0, -CAR.W / 2);
   scene.add(carRoot);
+  const proxies = new THREE.Group();            // 모델에 없는 부품 대신 보여 줄 반투명 상자
+  carRoot.add(proxies);
   const markers = new THREE.Group();            // 손상 표시
   const pointsGroup = new THREE.Group();        // 실시간 측정 점
   carRoot.add(markers, pointsGroup);
   let model = null;
+  let layout = PLACEHOLDER_LAYOUT;
+  let sizeK = 1;                                // 임시 모델(260×110×69) 대비 크기 배율 (대각선 기준) → 카메라·그리드
   const parts = {};                             // PART_CODES → Mesh(또는 Group)
   const baseMaterial = new Map();
 
   function setView(name) {
-    const [x, y, z] = VIEWS[name], [tx, ty, tz] = extent.target, k = extent.scale;
+    const [x, y, z] = VIEWS[name], k = extent.scale * sizeK;
+    const [tx, ty, tz] = extent.target(CAR);
     controls.target.set(tx, ty, tz);
     camera.position.set(tx + x * k, ty + y * k, tz + z * k);
     controls.update();
@@ -72,9 +98,18 @@ export function createCarViewer(host, { msgEl = null, onPartClick = null } = {})
   /** 로봇팔 표시에 맞춰 시야 넓히기/되돌리기 */
   function setRobotExtent(on) {
     extent = on ? EXTENT.robot : EXTENT.car;
-    controls.maxDistance = extent.maxDist;
-    grid.scale.setScalar(extent.grid);
+    controls.minDistance = 150 * sizeK;
+    controls.maxDistance = extent.maxDist * sizeK;
+    grid.scale.setScalar(extent.grid * sizeK);
     setView("iso");
+  }
+  /** 차 크기가 정해지면 (load) 화면 배치 맞추기 */
+  function fitToCar() {
+    carRoot.position.set(-CAR.L / 2, 0, -CAR.W / 2);
+    sizeK = Math.hypot(CAR.L, CAR.W, CAR.H) / Math.hypot(260, 110, 69);
+    sun.position.set(200 * sizeK, 400 * sizeK, 250 * sizeK);
+    camera.far = 5000 * sizeK; camera.updateProjectionMatrix();
+    setRobotExtent(extent === EXTENT.robot);
   }
 
   function resize() {
@@ -114,9 +149,12 @@ export function createCarViewer(host, { msgEl = null, onPartClick = null } = {})
     } catch (e) { console.warn("car.glb 불러오기 실패, 임시 모델 사용", e); }
     model = glb || buildPlaceholderCar();
     carRoot.add(model);
+    readLayout(glb);
+    fitToCar();
+    const absent = [];
     for (const code of PART_CODES) {
-      const obj = model.getObjectByName(code);
-      if (!obj) { console.warn(`모델에 ${code} 메쉬가 없음`); continue; }
+      let obj = model.getObjectByName(code);
+      if (!obj) { absent.push(code); obj = buildProxy(code); if (!obj) continue; }
       eachMesh(obj, (m) => {
         m.material = m.material.clone();          // 부품마다 색을 따로 바꾸려고 복제
         baseMaterial.set(m, { color: m.material.color.clone(), opacity: m.material.opacity, transparent: m.material.transparent });
@@ -125,6 +163,7 @@ export function createCarViewer(host, { msgEl = null, onPartClick = null } = {})
       obj.userData.partCode = code;
       parts[code] = obj;
     }
+    if (absent.length) console.warn(`[viewer3d] 모델에 없는 부품: ${absent.join(", ")} → 손상·교체는 반투명 상자로 대신 표시`);
     if (msgEl) {
       msgEl.textContent = glb ? "" : "임시 모델 (static/models/car.glb 를 넣으면 실제 모델로 바뀜)";
       msgEl.classList.toggle("small-msg", !glb);
@@ -133,13 +172,67 @@ export function createCarViewer(host, { msgEl = null, onPartClick = null } = {})
     setView("iso");
   }
 
+  /** 차 크기 (bounding box) + 배치 (GLB extras.car_layout → 없으면 메쉬 이름·임시 모델 비율) */
+  function readLayout(glb) {
+    model.updateMatrixWorld(true);
+    const bb = new THREE.Box3().setFromObject(model);
+    if (glb) {
+      Object.assign(CAR, { L: bb.max.x, W: bb.max.z, H: bb.max.y });
+      if (Math.max(...[bb.min.x, bb.min.y, bb.min.z].map(Math.abs)) > 0.02 * CAR.L)
+        console.warn("[viewer3d] car.glb 원점이 뒤·왼쪽·바닥 모서리가 아님", bb.min);
+    }
+    const ex = glb && glb.userData.car_layout;
+    if (ex) { layout = { ...ex, L: CAR.L, W: CAR.W, H: CAR.H }; return; }
+    if (!glb) { layout = PLACEHOLDER_LAYOUT; return; }
+    // extras 없는 GLB: 임시 모델 배치를 크기 비율로 늘리고, 이름 붙은 메쉬가 있으면 그 범위
+    const P = PLACEHOLDER_LAYOUT, sx = CAR.L / P.L, sy = CAR.W / P.W, sz = CAR.H / P.H;
+    const sc = (b) => ({ x: b.x.map((v) => v * sx), y: typeof b.y === "number" ? b.y * sy : b.y.map((v) => v * sy), z: Array.isArray(b.z) ? b.z.map((v) => v * sz) : b.z * sz });
+    layout = {
+      L: CAR.L, W: CAR.W, H: CAR.H, body_y: [0, CAR.W],
+      parts: Object.fromEntries(Object.entries(P.parts).map(([k, b]) => [k, sc(b)])),
+      doors: Object.fromEntries(Object.entries(P.doors).map(([k, b]) => [k, sc(b)])),
+      mirrors: Object.fromEntries(Object.entries(P.mirrors).map(([k, m]) => [k, { ...m, x: m.x * sx, y: m.y * sy, z: m.z * sz }])),
+    };
+    for (const name of ["bonnet", "roof", "trunk"]) {
+      const o = model.getObjectByName(name);
+      if (!o) continue;
+      const b = new THREE.Box3().setFromObject(o);
+      layout.parts[name] = { x: [b.min.x, b.max.x], y: [b.min.z, b.max.z], z: [b.min.y, b.max.y] };
+    }
+  }
+
+  /** 모델에 없는 부품 자리에 반투명 상자 (평소엔 숨김, paint 에서 상태가 있으면 보임) */
+  function buildProxy(code) {
+    let g;
+    const T = 4;                                // 문 상자 두께 [mm] (옆면 바깥쪽으로)
+    const d = layout.doors?.[code], mi = layout.mirrors?.[code];
+    if (d) {
+      const out = d.y < CAR.W / 2 ? -1 : 1;
+      g = new THREE.BoxGeometry(d.x[1] - d.x[0], d.z[1] - d.z[0], T);
+      g.translate((d.x[0] + d.x[1]) / 2, (d.z[0] + d.z[1]) / 2, d.y + out * T / 2);
+    } else if (mi) {
+      const [sx, sz, sy] = mi.size || [16, 9, 14];
+      g = new THREE.BoxGeometry(sx, sz, sy);
+      g.translate(mi.x, mi.z, mi.y);
+    } else return null;
+    const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: COLORS.part, transparent: true, opacity: 0.45, depthWrite: false, roughness: 0.6 }));
+    const edge = new THREE.LineSegments(new THREE.EdgesGeometry(g), new THREE.LineBasicMaterial({ color: COLORS.part }));
+    const obj = new THREE.Group();
+    obj.add(m, edge);
+    obj.name = code; obj.visible = false;
+    obj.userData.proxy = true;
+    proxies.add(obj);
+    return obj;
+  }
+
   // ---------------------------------------------------------------- 표면 높이
   const ray = new THREE.Raycaster();
-  function surfaceY(x, z) {                     // 차량 좌표 (x, z) 위에서 아래로 쏴서 표면 높이 찾기
-    if (!model) return 45;
-    ray.set(new THREE.Vector3(x - CAR.L / 2, 1000, z - CAR.W / 2), new THREE.Vector3(0, -1, 0));
-    const hit = ray.intersectObject(model, true)[0];
-    return hit ? hit.point.y : 45;
+  /** 측정 점·손상 위치 → 표면 위 점과 바깥 법선. 높이 z 가 있으면 옆면(y 로 왼쪽/오른쪽), 없으면 윗면 */
+  function onSurface(p) {
+    if (p.z == null) return surfaceAt("top", p.x, p.y);
+    const s = surfaceAt(p.y < CAR.W / 2 ? "left" : "right", p.x, p.z);
+    if (!s.hit) s.pos.set(p.x, p.z, p.y);          // 표면을 못 찾으면 보낸 좌표 그대로
+    return s;
   }
 
   // ---------------------------------------------------------------- 상태 칠하기
@@ -148,6 +241,13 @@ export function createCarViewer(host, { msgEl = null, onPartClick = null } = {})
     for (const [code, obj] of Object.entries(parts)) {
       const s = partStates[code];
       const has = s && COLORS[s] !== undefined;
+      if (obj.userData.proxy) {                   // 모델에 없는 부품: 상태가 있을 때만 반투명 상자
+        obj.visible = has;
+        if (has) obj.traverse((o) => { if (o.material) o.material.color.set(COLORS[s]); });
+        if (has) eachMesh(obj, (m) => m.material.emissive.set(COLORS[s]));
+        obj.userData.pulse = running && has && s !== "replaced";
+        continue;
+      }
       eachMesh(obj, (m) => {
         const base = baseMaterial.get(m);
         m.material.color.copy(has ? new THREE.Color(COLORS[s]) : base.color);
@@ -163,15 +263,10 @@ export function createCarViewer(host, { msgEl = null, onPartClick = null } = {})
       if (f.decision !== "dent" || f.x == null) continue;
       const dot = new THREE.Mesh(new THREE.SphereGeometry(4.5, 20, 14), new THREE.MeshBasicMaterial({ color: COLORS.dent }));
       const ring = new THREE.Mesh(new THREE.RingGeometry(9, 11, 40), new THREE.MeshBasicMaterial({ color: COLORS.dent, side: THREE.DoubleSide }));
-      if (f.z != null) {                          // 옆면(문): 링을 세워서 바깥쪽에
-        const out = f.y < CAR.W / 2 ? -1 : 1;
-        dot.position.set(f.x, f.z, f.y + out * 3);
-        ring.position.set(f.x, f.z, f.y + out * 2.5);
-      } else {                                    // 윗면(보닛): 표면 위에 눕혀서
-        const y = surfaceY(f.x, f.y);
-        dot.position.set(f.x, y + 2, f.y);
-        ring.rotation.x = -Math.PI / 2; ring.position.set(f.x, y + 1.5, f.y);
-      }
+      const s = onSurface(f);                     // 표면 위, 링은 표면 방향으로 눕힘
+      dot.position.copy(s.pos).addScaledVector(s.normal, 2);
+      ring.position.copy(s.pos).addScaledVector(s.normal, 1.5);
+      ring.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), s.normal);
       markers.add(dot, ring);
     }
   }
@@ -181,8 +276,8 @@ export function createCarViewer(host, { msgEl = null, onPartClick = null } = {})
   const pointMat = Object.fromEntries(["ok", "suspect", "dent"].map((k) => [k, new THREE.MeshBasicMaterial({ color: COLORS[k] })]));
   function addPoint(p) {
     const m = new THREE.Mesh(p.fine ? pointGeo.fine : pointGeo.coarse, pointMat[p.state] || pointMat.ok);
-    if (p.z != null) m.position.set(p.x, p.z, p.y + (p.y < CAR.W / 2 ? -2.5 : 2.5));   // 옆면 점
-    else m.position.set(p.x, surfaceY(p.x, p.y) + 1.5, p.y);
+    const s = onSurface(p);
+    m.position.copy(s.pos).addScaledVector(s.normal, p.fine ? 1.2 : 1.8);
     pointsGroup.add(m);
   }
   function clearPoints() { pointsGroup.clear(); }
@@ -194,7 +289,7 @@ export function createCarViewer(host, { msgEl = null, onPartClick = null } = {})
   function surfaceAt(face, u, v) {
     const d = new THREE.Vector3(...FACE_RAY[face]);
     const local = face === "top" ? new THREE.Vector3(u, 1000, v) : new THREE.Vector3(u, v, face === "left" ? -1000 : CAR.W + 1000);
-    const fallback = face === "top" ? new THREE.Vector3(u, 45, v) : new THREE.Vector3(u, v, face === "left" ? 0 : CAR.W);
+    const fallback = face === "top" ? new THREE.Vector3(u, CAR.H * 0.65, v) : new THREE.Vector3(u, v, face === "left" ? 0 : CAR.W);
     if (model) {
       carRoot.updateMatrixWorld();
       ray.set(carRoot.localToWorld(local.clone()), d);
@@ -228,6 +323,10 @@ export function createCarViewer(host, { msgEl = null, onPartClick = null } = {})
   return {
     load, paint, addPoint, clearPoints, setView, resize,
     scene, carRoot, surfaceAt, setRobotExtent, onFrame: (fn) => frameHooks.push(fn),
+    /** 차 크기 {L, W, H} [mm] (load 후 모델 기준) */
+    dims: () => ({ ...CAR }),
+    /** 차량 좌표계 배치 (PLACEHOLDER_LAYOUT 과 같은 모양) */
+    layout: () => layout,
   };
 }
 

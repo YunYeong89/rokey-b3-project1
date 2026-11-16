@@ -1,6 +1,7 @@
 /* 관리자 3D 뷰어용 두산 M0609 로봇팔 (고객 화면에서는 쓰지 않음)
  *
  * 모델: static/models/m0609/ (white 메쉬 + m0609.json, 출처는 json 의 _source)
+ *       static/models/rg2/ (OnRobot RG2 그리퍼, 출처는 SOURCE.md) — 손가락이 탐침 막대를 물고 있음
  * 좌표: 이 파일에서 위치는 "차량 로컬" = viewer3d 의 carRoot 좌표 (three.js, Y 위쪽)
  *        차량 좌표계 (x 앞, y 오른쪽, z 높이) 와는 (x, z, y) 로 바뀜 → carToLocal()
  * 실제 모드: rosbridge 로 /dsr01/joint_states 를 구독해서 관절 각도를 그대로 그린다.
@@ -8,14 +9,22 @@
  */
 import * as THREE from "three";
 import { ColladaLoader } from "three/addons/loaders/ColladaLoader.js";
+import { STLLoader } from "three/addons/loaders/STLLoader.js";
 import { createKinematics } from "./robot_ik.js";
 
 // ================================================================ 설정 상수
 /** 로봇 베이스의 위치 (차량 좌표계 mm). yawDeg = 로봇 정면(+X)이 향하는 방향: 0 = 차 앞(+x), 90 = 차 오른쪽(+y)
- *  기본값: 차 왼쪽 옆 440 mm, 차 길이 가운데. 보닛·지붕·양쪽 문 모두 IK 로 닿는 거리 (가까우면 왼쪽 문이 안 닿음) */
-export const ROBOT_BASE_IN_CAR = { x: 130, y: -440, z: 0, yawDeg: 90 };
-/** 탐침: 플랜지에서 막대 + 끝 볼. length = 플랜지 면 ~ 볼 중심 [mm] */
-export const PROBE = { length: 120, rodRadius: 2.5, ballRadius: 4 };
+ *  x, y 가 null 이면 차 크기에서 계산: x = 차 길이 가운데, y = -(차 폭 가운데에서 centerDist 만큼 왼쪽)
+ *  centerDist 495 = 임시 모델(폭 110)에서 왼쪽 옆 440 mm. 보닛·지붕·양쪽 문 모두 IK 로 닿는 거리 (가까우면 왼쪽 문이 안 닿음)
+ *  실제 설치 위치를 재면 x, y 에 숫자로 넣기 */
+export const ROBOT_BASE_IN_CAR = { x: null, y: null, z: 0, yawDeg: 90, centerDist: 495 };
+/** 툴: 플랜지에 OnRobot RG2 그리퍼 (models/rg2/, 출처는 SOURCE.md), 손가락이 탐침 막대를 물고 있음.
+ *  fingerRad = finger_joint 각도 (지름 5 mm 막대를 물었을 때, 0.78 = 완전히 닫힘),
+ *  tipZ = 그 각도에서 플랜지 면 ~ 손가락 끝 [mm] (URDF 관절식으로 계산) */
+export const GRIPPER = { fingerRad: 0.73, tipZ: 233 };
+/** 탐침: 손가락 끝에서 stickOut 만큼 튀어나온 막대 + 끝 볼. gripDepth = 손가락 안에 물린 길이 [mm]
+ *  → 플랜지 면 ~ 볼 중심 = GRIPPER.tipZ + stickOut (IK 기준점) */
+export const PROBE = { stickOut: 50, gripDepth: 22, rodRadius: 2.5, ballRadius: 4 };
 /** 실제 로봇 관절 토픽 */
 export const ROS_JOINTS = { topic: "/dsr01/joint_states", type: "sensor_msgs/JointState", rateHz: 25, staleMs: 1500 };
 /** 홈 자세 [deg] (탐침이 아래를 봄) */
@@ -27,33 +36,68 @@ export const MOTION = {
   turnSec: 0.25,        // 탐침 방향 1 rad 바꾸는 데 [s]
   minMove: 0.15,        // 이동 한 번 최소 시간 [s]
   lift: 22,             // 표면에서 들어 올리는 높이 [mm]
-  safeY: 135,           // 다른 면으로 옮길 때 지나가는 높이 (지붕 69 mm 위) [mm]
+  safeAbove: 66,        // 다른 면으로 옮길 때 지나가는 높이 = 차 높이 + 이 값 [mm]
 };
 /** 옆면(문)에서 탐침을 수평에서 아래로 기울이는 각도 [deg]. near = 로봇 쪽 면, far = 차 건너편 면.
- *  수평(0°)은 가까운 쪽은 3번 관절 한계, 먼 쪽은 팔이 다 펴진 특이점이라 IK 가 흔들림 → 시뮬레이션으로 고른 값 */
-export const SIDE_TILT_DEG = { near: 45, far: 60 };
+ *  수평(0°)은 가까운 쪽은 3번 관절 한계, 먼 쪽은 팔이 다 펴진 특이점이라 IK 가 흔들림 → 시뮬레이션으로 고른 값
+ *  (RG2 + 탐침, 툴 길이 약 283 mm, 베이스 거리 495 mm 기준: 문·미러·지붕·보닛 대표 점 모두 IK 오차 < 1 mm.
+ *   베이스 ±25 mm, 각도 ±5° 에서도 닿음. 건너편 75° 이하는 베이스가 멀면 안 닿음) */
+export const SIDE_TILT_DEG = { near: 60, far: 80 };
 
 const MODEL_DIR = "/static/models/m0609/";
+const RG2_DIR = "/static/models/rg2/";
 const DEG = Math.PI / 180;
 const HOME = HOME_DEG.map((d) => d * DEG);
 const DOWN = new THREE.Vector3(0, -1, 0);
 export const carToLocal = (x, y, z) => new THREE.Vector3(x, z, y);
 
-/** 탐침 모양. 플랜지(link_6) 좌표계 (Z = 플랜지 바깥 방향) 에서 만든다.
- *  반환: object(그릴 것), tip(볼 중심), dir(누르는 방향). ㄱ자 탐침으로 바꿀 때는 이 함수만 바꾸면 된다. */
-export function buildProbe(cfg = PROBE) {
+/** 툴 모양 (RG2 + 물린 탐침). 플랜지(link_6) 좌표계 (Z = 플랜지 바깥 방향) 에서 만든다.
+ *  반환: object(그릴 것), tip(볼 중심), dir(누르는 방향), materials(반투명 전환용), ready(그리퍼 메쉬 로딩 Promise).
+ *  ㄱ자 탐침 등으로 바꿀 때는 이 함수만 바꾸면 된다. */
+export function buildProbe(cfg = PROBE, grip = GRIPPER) {
   const g = new THREE.Group();
   const rodMat = new THREE.MeshStandardMaterial({ color: 0x4a5560, roughness: 0.4, metalness: 0.5 });
   const ballMat = new THREE.MeshStandardMaterial({ color: 0xf08c2e, roughness: 0.35 });
-  const adapter = new THREE.Mesh(new THREE.CylinderGeometry(22, 22, 10, 24), rodMat);
-  adapter.rotation.x = Math.PI / 2; adapter.position.z = 5;
-  const rodLen = cfg.length - cfg.ballRadius - 10;
+  const length = grip.tipZ + cfg.stickOut;
+  const z0 = grip.tipZ - cfg.gripDepth, rodLen = length - cfg.ballRadius - z0;
   const rod = new THREE.Mesh(new THREE.CylinderGeometry(cfg.rodRadius, cfg.rodRadius, rodLen, 12), rodMat);
-  rod.rotation.x = Math.PI / 2; rod.position.z = 10 + rodLen / 2;
+  rod.rotation.x = Math.PI / 2; rod.position.z = z0 + rodLen / 2;
   const ball = new THREE.Mesh(new THREE.SphereGeometry(cfg.ballRadius, 16, 12), ballMat);
-  ball.position.z = cfg.length;
-  g.add(adapter, rod, ball);
-  return { object: g, tip: [0, 0, cfg.length], dir: [0, 0, 1], materials: [rodMat, ballMat] };
+  ball.position.z = length;
+  const rg2 = buildRG2(grip);
+  g.add(rg2.object, rod, ball);
+  return { object: g, tip: [0, 0, length], dir: [0, 0, 1], materials: [rodMat, ballMat, ...rg2.materials], ready: rg2.ready };
+}
+
+/** OnRobot RG2 (URDF 관절 그대로, 손가락은 grip.fingerRad 로 고정). 메쉬 단위 m → ×1000 */
+function buildRG2(grip) {
+  const M = 1000;
+  const frame = (xyz, rpy = [0, 0, 0]) => {
+    const f = new THREE.Group();
+    f.position.set(xyz[0] * M, xyz[1] * M, xyz[2] * M);
+    f.rotation.set(rpy[0], rpy[1], rpy[2], "ZYX");                   // URDF rpy = Rz·Ry·Rx
+    return f;
+  };
+  const turnX = (parent, a) => { const r = new THREE.Group(); r.rotation.x = a; parent.add(r); return r; };
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0xd4d8dc, roughness: 0.5, metalness: 0.1 });
+  const fingerMat = new THREE.MeshStandardMaterial({ color: 0x2b2f33, roughness: 0.6 });
+  const tool0 = frame([0, 0, 0], [Math.PI, -Math.PI / 2, 0]);        // link_6 → tool0
+  const base = frame([0, 0, 0], [Math.PI / 2, 0, Math.PI / 2]);      // tool0 → rg2_base_link
+  tool0.add(base);
+  const th = grip.fingerRad, slots = [[base, "base_link", bodyMat]];
+  for (const [s, rz] of [[-1, 0], [1, Math.PI]]) {                 // 왼쪽 / 오른쪽 손가락 (mimic 관절)
+    const outer = frame([0, s * 0.017178, 0.125797], [0, 0, rz]); base.add(outer);
+    const inner = frame([0, s * 0.007678, 0.142297], [0, 0, rz ? -Math.PI : 0]); base.add(inner);
+    const outerR = turnX(outer, -th), innerR = turnX(inner, -th);
+    const tip = frame([0, -0.039592, 0.038177]); outerR.add(tip);
+    slots.push([outerR, "outer_knuckle", bodyMat], [innerR, "inner_knuckle", bodyMat], [turnX(tip, th), "inner_finger", fingerMat]);
+  }
+  const loader = new STLLoader(), geo = {};
+  const ready = Promise.all([...new Set(slots.map((x) => x[1]))].map(async (n) => {
+    geo[n] = await loader.loadAsync(`${RG2_DIR}${n}.stl`);
+    geo[n].scale(M, M, M); geo[n].computeVertexNormals();
+  })).then(() => { for (const [parent, n, mat] of slots) parent.add(new THREE.Mesh(geo[n], mat)); });
+  return { object: tool0, materials: [bodyMat, fingerMat], ready };
 }
 
 /**
@@ -66,12 +110,22 @@ export function createRobotArm(viewer, { msgEl = null } = {}) {
   zup.rotation.x = -Math.PI / 2;
   root.add(zup);
   root.visible = false;
-  root.position.copy(carToLocal(ROBOT_BASE_IN_CAR.x, ROBOT_BASE_IN_CAR.y, ROBOT_BASE_IN_CAR.z));
-  root.rotation.y = -ROBOT_BASE_IN_CAR.yawDeg * DEG;
   viewer.carRoot.add(root);
-  root.updateMatrix(); zup.updateMatrix();
-  const baseToLocal = root.matrix.clone().multiply(zup.matrix);       // 베이스 좌표 → 차량 로컬
-  const localToBase = baseToLocal.clone().invert();
+  let baseToLocal, localToBase, safeY;          // placeBase() 에서 차 크기로 정함
+  const basePos = new THREE.Vector3();
+  /** 차 크기(viewer.dims)에 맞춰 베이스 위치·지나가는 높이 정하기 (차 모델을 불러온 뒤) */
+  function placeBase() {
+    const { L, W, H } = viewer.dims(), B = ROBOT_BASE_IN_CAR;
+    const bx = B.x ?? L / 2, by = B.y ?? W / 2 - B.centerDist;
+    root.position.copy(carToLocal(bx, by, B.z));
+    root.rotation.y = -B.yawDeg * DEG;
+    root.updateMatrix(); zup.updateMatrix();
+    baseToLocal = root.matrix.clone().multiply(zup.matrix);           // 베이스 좌표 → 차량 로컬
+    localToBase = baseToLocal.clone().invert();
+    basePos.copy(root.position);
+    safeY = H + MOTION.safeAbove;
+  }
+  placeBase();
   const toBase = (v) => v.clone().applyMatrix4(localToBase).toArray();
   const dirToBase = (v) => v.clone().transformDirection(localToBase).toArray();
   const fromBase = (a) => new THREE.Vector3(...a).applyMatrix4(baseToLocal);
@@ -94,6 +148,7 @@ export function createRobotArm(viewer, { msgEl = null } = {}) {
       const spec = await (await fetch(MODEL_DIR + "m0609.json")).json();
       const probe = buildProbe(PROBE);
       probeMats = probe.materials;
+      placeBase();
       kin = createKinematics(spec, probe);
       const links = { base_link: zup };
       for (const j of spec.joints) {
@@ -108,6 +163,7 @@ export function createRobotArm(viewer, { msgEl = null } = {}) {
       }
       links[spec.flange.link].add(probe.object);
       const loader = new ColladaLoader();
+      const gripperReady = probe.ready;
       await Promise.all(Object.entries(spec.links).flatMap(([link, files]) => files.map(async (f) => {
         const s = (await loader.loadAsync(MODEL_DIR + f)).scene;
         s.quaternion.identity();                  // ColladaLoader 의 Z_UP 자동 회전 취소 (zup 그룹에서 한 번에 돌림)
@@ -122,6 +178,7 @@ export function createRobotArm(viewer, { msgEl = null } = {}) {
         extra.forEach((o) => o.parent.remove(o));
         links[link].add(s);
       })));
+      await gripperReady;
       applyQ();
     })();
     return loading;
@@ -163,7 +220,6 @@ export function createRobotArm(viewer, { msgEl = null } = {}) {
 
   /** 표면 접촉 자세: 표면 점 + 바깥 법선 → 볼 중심은 법선 쪽으로 볼 반지름만큼, 탐침은 표면을 누르는 방향.
    *  옆면은 SIDE_TILT_DEG 만큼 아래로 기울임. 처음 쓰는 면에서 IK 가 안 닿으면 경고 (표면 근처까지만 감) */
-  const basePos = root.position.clone();
   function contactPose(surfacePos, normal) {
     const n = normal.clone().normalize();
     const pos = surfacePos.clone().addScaledVector(n, PROBE.ballRadius);
@@ -233,7 +289,7 @@ export function createRobotArm(viewer, { msgEl = null } = {}) {
     const approach = to.pos.clone().addScaledVector(normal, MOTION.lift);
     const sameFace = lastNormal && lastNormal.dot(normal) > 0.95 && p.distanceTo(approach) < 70;
     if (!sameFace) {
-      const up = Math.max(MOTION.safeY, p.y, approach.y);
+      const up = Math.max(safeY, p.y, approach.y);
       legs.push({ pos: new THREE.Vector3(p.x, up, p.z), dir: DOWN.clone() });
       legs.push({ pos: new THREE.Vector3(approach.x, up, approach.z), dir: DOWN.clone() });
     }
@@ -264,7 +320,7 @@ export function createRobotArm(viewer, { msgEl = null } = {}) {
       const cur = tipPose();
       const up = cur.pos.clone().addScaledVector(lastNormal, MOTION.lift);
       if (!(await moveTo({ pos: up, dir: cur.dir }))) return false;
-      if (!(await moveTo({ pos: new THREE.Vector3(up.x, Math.max(MOTION.safeY, up.y), up.z), dir: DOWN.clone() }))) return false;
+      if (!(await moveTo({ pos: new THREE.Vector3(up.x, Math.max(safeY, up.y), up.z), dir: DOWN.clone() }))) return false;
     }
     lastNormal = null;
     return moveJoints(HOME, 1.0);

@@ -2,7 +2,8 @@
 자동차 자동 수리 로봇 - 웹 서버 (Flask + SQLite)
 
 실행:  python3 app.py            → http://<PC IP>:5000  (태블릿에서 접속)
-처음 실행 시 repair.db 를 만들고 기본 계정·부품·차량을 넣는다.
+처음 실행 시 repair.db 를 만들고 기본 계정·부품·차량 + 샘플 데이터(회원·차량·이력)를 넣는다.
+  샘플 없이: REPAIR_SAMPLE=0 python3 app.py      처음 상태로: rm repair.db 후 다시 실행
   관리자 admin / admin1234,  사용자(차주) user1 / user1234, user2 / user1234   ← 꼭 바꾸기
 
 권한
@@ -199,7 +200,9 @@ def set_vehicle_owner(vid):
 @app.get("/api/parts")
 @require("admin", "robot")
 def list_parts():
-    return jsonify(db.rows(db.get_db().execute("SELECT * FROM parts ORDER BY code")))
+    return jsonify(db.rows(db.get_db().execute(
+        "SELECT * FROM parts ORDER BY CASE category WHEN '외판' THEN 0 WHEN '미러' THEN 1 WHEN '램프' THEN 2 ELSE 3 END, "
+        "location, code")))
 
 
 @app.get("/api/parts/<code>/check")
@@ -208,7 +211,7 @@ def check_part(code):
     p = db.get_db().execute("SELECT * FROM parts WHERE code = ?", (code,)).fetchone()
     if not p:
         abort(404)
-    return jsonify(code=code, name=p["name"], stock=p["stock"], available=p["stock"] > 0)
+    return jsonify(code=code, name=p["name"], stock=p["stock"], available=p["stock"] > 0, robot_ok=bool(p["robot_ok"]))
 
 
 @app.post("/api/parts/<code>/consume")
@@ -226,11 +229,21 @@ def consume_part(code):
 @app.patch("/api/parts/<code>")
 @require("admin")
 def set_part(code):
-    stock = request.get_json(force=True).get("stock")
-    if not isinstance(stock, int) or stock < 0:
-        return jsonify(error="재고는 0 이상의 정수"), 400
+    """{stock: 0 이상 정수} 와/또는 {robot_ok: 0/1/true/false}"""
+    d = request.get_json(force=True)
+    sets = {}
+    if "stock" in d:
+        if not isinstance(d["stock"], int) or isinstance(d["stock"], bool) or d["stock"] < 0:
+            return jsonify(error="재고는 0 이상의 정수"), 400
+        sets["stock"] = d["stock"]
+    if "robot_ok" in d:
+        if d["robot_ok"] not in (0, 1):            # True/False 도 0/1 과 같음
+            return jsonify(error="robot_ok 는 0 또는 1"), 400
+        sets["robot_ok"] = int(d["robot_ok"])
+    if not sets:
+        return jsonify(error="stock 또는 robot_ok 를 보내세요"), 400
     con = db.get_db()
-    cur = con.execute("UPDATE parts SET stock = ? WHERE code = ?", (stock, code))
+    cur = con.execute(f"UPDATE parts SET {', '.join(k + ' = ?' for k in sets)} WHERE code = ?", (*sets.values(), code))
     con.commit()
     if cur.rowcount == 0:
         abort(404)
@@ -271,10 +284,13 @@ def create_job():
         return jsonify(error="없는 차량입니다"), 400
     parts = []
     if mode == "manual":
-        valid = {r["code"] for r in con.execute("SELECT code FROM parts")}
+        valid = {r["code"]: r for r in con.execute("SELECT code, name, robot_ok FROM parts")}
         parts = [p for p in dict.fromkeys(d.get("parts") or []) if p in valid]
         if not parts:
             return jsonify(error="수동 모드는 교체할 부품을 1개 이상 고르세요"), 400
+        no_robot = [valid[p]["name"] for p in parts if not valid[p]["robot_ok"]]
+        if no_robot:
+            return jsonify(error=f"로봇 교체 불가 부품: {', '.join(no_robot)}"), 400
     if con.execute("SELECT 1 FROM jobs WHERE status = 'running'").fetchone():
         return jsonify(error="이미 진행 중인 수리가 있습니다"), 409
     if role() == "robot":
@@ -344,8 +360,8 @@ def add_findings(job_id):
     items = items if isinstance(items, list) else [items]
     con = db.get_db()
     try:
-        con.executemany("INSERT INTO findings (job_id, part_code, x, y, depth, decision) VALUES (?, ?, ?, ?, ?, ?)",
-                        [(job_id, f["part_code"], f.get("x"), f.get("y"), f.get("depth"), f.get("decision", "dent"))
+        con.executemany("INSERT INTO findings (job_id, part_code, x, y, z, depth, decision) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        [(job_id, f["part_code"], f.get("x"), f.get("y"), f.get("z"), f.get("depth"), f.get("decision", "dent"))
                          for f in items])
         con.commit()
     except (sqlite3.IntegrityError, KeyError) as e:

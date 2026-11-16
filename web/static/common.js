@@ -2,7 +2,14 @@
 "use strict";
 
 const STAGES = ["calibrate", "scan", "detect", "stock", "replace", "inspect", "done"];
-const PART_NAMES = { bonnet: "보닛", mirror_l: "사이드미러(좌)", mirror_r: "사이드미러(우)" };
+// 부품 이름 (db.py PARTS 와 같게). 고객 화면은 /api/parts 권한이 없어서 여기 둔다
+const PART_NAMES = {
+  bonnet: "보닛", door_fl: "앞문(좌)", door_fr: "앞문(우)", door_rl: "뒷문(좌)", door_rr: "뒷문(우)",
+  bumper_f: "앞범퍼", bumper_r: "뒷범퍼", trunk: "트렁크 리드", fender_l: "펜더(좌)", fender_r: "펜더(우)",
+  mirror_l: "사이드미러(좌)", mirror_r: "사이드미러(우)",
+  headlamp_l: "헤드램프(좌)", headlamp_r: "헤드램프(우)", taillamp_l: "테일램프(좌)", taillamp_r: "테일램프(우)",
+  wiper: "와이퍼 블레이드",
+};
 const STATUS_TEXT = { running: "진행 중", done: "수리 완료", no_damage: "손상 없음", on_hold: "수리 보류", failed: "실패", stopped: "정지됨" };
 const MODE_TEXT = { auto: "자동", manual: "수동" };
 const DECISION_TEXT = { dent: "손상(찌그러짐)", missing: "부품 없음", suspect: "의심", requested: "교체 지정(수동)" };
@@ -73,8 +80,8 @@ function jobDetailHtml(j) {
   return `<h2>수리 #${j.id} · ${esc(j.vehicle_name)} <span class="badge ${j.status}">${STATUS_TEXT[j.status]}</span>
       <span class="badge mode">${MODE_TEXT[j.mode]} 모드</span></h2>
     <p class="note">시작 ${esc(j.started_at)} · 종료 ${esc(j.finished_at || "–")} · 담당 ${esc(j.operator_name)}</p>
-    <h3>손상 판정 / 교체 지정</h3>${table(["부품", "x [mm]", "y [mm]", "깊이 [mm]", "판정"], j.findings.map((f) =>
-      [partName(f.part_code), num(f.x), num(f.y), num(f.depth, 2), DECISION_TEXT[f.decision] || f.decision]))}
+    <h3>손상 판정 / 교체 지정</h3>${table(["부품", "x [mm]", "y [mm]", "z [mm]", "깊이 [mm]", "판정"], j.findings.map((f) =>
+      [partName(f.part_code), num(f.x), num(f.y), num(f.z), num(f.depth, 2), DECISION_TEXT[f.decision] || f.decision]))}
     <h3>부품 교체</h3>${table(["부품", "결과", "재시도", "최대 힘 [N]", "단차 [mm]", "시각"], j.replacements.map((r) =>
       [partName(r.part_code), r.success ? "성공" : "실패", r.retries, num(r.peak_force, 1), num(r.flush_mm, 2), r.ts]))}
     <h3>로그</h3>${table(["시각", "단계", "수준", "내용"], j.events.map((e) => [e.ts, e.stage, e.level, e.message]))}`;

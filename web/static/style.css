@@ -209,3 +209,16 @@ hr.sep { border: 0; border-top: 1px solid var(--line); margin: 16px 0 14px; }
 .fz-head .note { margin: 0; }
 #fzCanvas { display: block; width: 100%; height: 140px; }
 @media (max-width: 600px) { .estop { width: 100%; } }
+
+/* 재고 탭: 분류 묶음, 로봇 교체 스위치 */
+.tbl tr.group td { background: #f4f6f8; font-weight: 700; color: var(--muted); font-size: 13px; padding: 6px 8px; }
+.badge.robot { background: #e6f0f7; color: var(--brand); }
+.switch { position: relative; display: inline-block; width: 40px; height: 22px; vertical-align: middle; margin-right: 6px; cursor: pointer; }
+.tbl .switch input, .switch input { position: absolute; opacity: 0; width: 0; height: 0; margin: 0; }
+.switch span { position: absolute; inset: 0; background: #c9d1da; border-radius: 99px; transition: background .15s; }
+.switch span::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .15s; }
+.switch input:checked + span { background: var(--brand); }
+.switch input:checked + span::after { transform: translateX(18px); }
+.switch input:focus-visible + span { outline: 2px solid var(--brand); outline-offset: 2px; }
+.switch input:disabled + span { opacity: .5; }
+#partPickList { display: grid; grid-template-columns: 1fr 1fr; column-gap: 8px; }

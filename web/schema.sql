@@ -20,8 +20,12 @@ CREATE TABLE IF NOT EXISTS vehicles (
 
 -- 교체 부품 재고
 CREATE TABLE IF NOT EXISTS parts (
-    code        TEXT PRIMARY KEY,                     -- bonnet, mirror_l, mirror_r
+    code        TEXT PRIMARY KEY,                     -- bonnet, mirror_l, door_fl ... (docs/INTERFACE.md 부품 코드)
     name        TEXT NOT NULL,
+    category    TEXT,                                 -- 외판 / 램프 / 미러 / 기타
+    robot_ok    INTEGER NOT NULL DEFAULT 0            -- 1 이면 로봇 교체 대상 (관리자가 재고 탭에서 켜고 끔)
+                CHECK (robot_ok IN (0, 1)),
+    location    TEXT,                                 -- 창고 위치 (예: A-01)
     stock       INTEGER NOT NULL DEFAULT 0 CHECK (stock >= 0),
     min_stock   INTEGER NOT NULL DEFAULT 1            -- 이 이하이면 '부족' 표시
 );
@@ -46,6 +50,7 @@ CREATE TABLE IF NOT EXISTS findings (
     part_code   TEXT NOT NULL REFERENCES parts(code),
     x           REAL,                                 -- 차량 좌표계 [mm]
     y           REAL,
+    z           REAL,                                 -- 높이 [mm]. 문처럼 옆면 부품은 필수, 위에서 찍는 보닛은 NULL 가능
     depth       REAL,                                 -- 기준 대비 깊이 [mm], 부품 없음이면 NULL
     decision    TEXT NOT NULL                         -- dent / missing / suspect / requested(수동 모드에서 관리자가 지정)
 );

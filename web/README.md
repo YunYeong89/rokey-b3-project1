@@ -5,7 +5,7 @@ Flask + SQLite3 + HTML/JS(roslibjs, three.js). 로봇 없이도 **데모 모드*
 ```
 repair_web/
 ├── app.py              웹 서버 + REST API + 권한 검사
-├── db.py               SQLite 연결, 초기 데이터
+├── db.py               SQLite 연결, 초기 데이터 (부품 목록 PARTS, 샘플 데이터 insert_sample)
 ├── schema.sql          테이블 7개 (ERD 참고)
 ├── templates/
 │   ├── login.html      SCR-001 로그인
@@ -27,9 +27,13 @@ repair_web/
 ```bash
 pip install flask requests          # Ubuntu 24.04 는 --break-system-packages 또는 venv
 cd repair_web
-rm -f repair.db                     # 예전 버전 DB 가 있으면 지우기 (스키마 바뀜)
+rm -f repair.db                     # 예전 버전 DB 가 있으면 지우기 (스키마 바뀜, 자동 변환 없음)
 python3 app.py
 ```
+
+- **처음 실행하면 샘플 데이터가 자동으로 들어감**: 회원 36명 · 차량 40대 · 지난 30일 수리 이력 100건 · 부품 17종 재고 (발표·테스트용, seed 고정)
+- **처음 상태로 되돌리기**: `rm repair.db` 후 다시 `python3 app.py`
+- **샘플 없이 실행** (실제 로봇 시연용, 기본 계정·부품·차량 2대만): `rm repair.db` 후 `REPAIR_SAMPLE=0 python3 app.py`
 
 - http://localhost:5000 → 로그인하면 권한에 따라 관리자 / 고객 화면으로 이동
 - 태블릿: 같은 와이파이에서 http://<PC IP>:5000 (`hostname -I`)
@@ -40,6 +44,8 @@ python3 app.py
 | admin | admin1234 | 관리자 | 전체 |
 | user1 | user1234 | 사용자(차주) | 모형 A-01 |
 | user2 | user1234 | 사용자(차주) | 모형 A-02 |
+| admin2 | admin1234 | 관리자 | 전체 (샘플) |
+| user3 ~ user34 | user1234 | 사용자(차주) | 샘플 차량 A-03 ~ A-40 (user3 은 2대) |
 
 → 발표 전에 비밀번호 바꾸기 (회원·차량 탭에서 새 계정 만들기 가능)
 
@@ -48,9 +54,10 @@ python3 app.py
 1. 브라우저 두 개: 하나는 **admin**, 하나는 **user1** (시크릿 창)
 2. admin: 상단 **데모 모드** 체크 → 차량 `모형 A-01` 선택
 3. **자동 모드** → 수리 시작: 격자 스캔 → 의심 구역 상세 → 판정 → 재고 → 교체 → 재검사
-4. **수동 모드** → 교체할 부품 체크(또는 지도에서 부품 클릭) → 수리 시작: 스캔·판정 건너뜀
+4. **수동 모드** → 교체할 부품 체크(또는 3D 화면에서 부품 클릭) → 수리 시작: 스캔·판정 건너뜀
+   (목록에는 재고 탭에서 **로봇 교체**를 켠 부품만 나옴. 기본: 보닛 · 미러 2 · 문 4)
 5. user1 화면: 3D 모델에서 교체 예정(노랑) → 교체 완료(초록)로 바뀌는 모습, 진행 단계, 단차 결과
-6. 재고 탭에서 보닛을 0 으로 → 수리하면 **수리 보류**
+6. 재고 탭에서 보닛을 0 으로 → 수리하면 **수리 보류** (샘플 데이터는 사이드미러(우)가 처음부터 0)
 
 ## 로봇과 연결
 
@@ -81,15 +88,15 @@ python3 ros/process_manager_stub.py                            # 터미널 3 (�
 | POST | `/api/vehicles` | 관리자 | 차량 등록 `{name, model, owner_id}` |
 | PATCH | `/api/vehicles/<id>` | 관리자 | 차주 변경 `{owner_id}` |
 | GET | `/api/parts` | 관리자·로봇 | 재고 목록 |
-| GET | `/api/parts/<code>/check` | 관리자·로봇 | `{stock, available}` |
+| GET | `/api/parts/<code>/check` | 관리자·로봇 | `{stock, available, robot_ok}` |
 | POST | `/api/parts/<code>/consume` | 관리자·로봇 | 1개 차감, 재고 0이면 409 |
-| PATCH | `/api/parts/<code>` | 관리자 | `{stock}` |
-| POST | `/api/jobs` | 관리자·로봇 | 수리 시작 `{vehicle_id, mode, parts}` (진행 중이면 409) |
+| PATCH | `/api/parts/<code>` | 관리자 | `{stock}` 와/또는 `{robot_ok: 0/1}` (로봇 교체 가능 여부) |
+| POST | `/api/jobs` | 관리자·로봇 | 수리 시작 `{vehicle_id, mode, parts}` (진행 중이면 409, 수동 모드에 robot_ok=0 부품이면 400) |
 | GET | `/api/jobs` `?vehicle_id=` | 로그인 | 목록 (사용자는 본인 차량만) |
 | GET | `/api/jobs/current` `?vehicle_id=` | 로그인 | 진행 중 작업 |
 | GET | `/api/jobs/<id>` | 로그인 | 상세 (판정·교체·로그·requested). 남의 차는 404 |
 | POST | `/api/jobs/<id>/events` | 관리자·로봇 | `{stage, level, message}` |
-| POST | `/api/jobs/<id>/findings` | 관리자·로봇 | `[{part_code, x, y, depth, decision}]` |
+| POST | `/api/jobs/<id>/findings` | 관리자·로봇 | `[{part_code, x, y, z, depth, decision}]` (z 는 문처럼 옆면 부품만) |
 | POST | `/api/jobs/<id>/replacements` | 관리자·로봇 | `{part_code, success, retries, peak_force, flush_mm}` |
 | GET | `/api/alarms` `?limit=100` | 관리자 | warn/error 이벤트 최신순 (job_id, vehicle_name 포함) |
 | POST | `/api/jobs/<id>/finish` | 관리자·로봇 | `{status: done/no_damage/on_hold/failed/stopped, summary}` |
@@ -99,10 +106,10 @@ python3 ros/process_manager_stub.py                            # 터미널 3 (�
 `static/models/car.glb` 를 넣으면 고객 화면이 자동으로 그 모델을 쓴다. 모델링 규칙:
 - 단위 **mm**, 위쪽 **+Y** (glTF 기본)
 - 원점 = 차량 좌표계 원점 (차 뒤쪽 왼쪽 모서리 바닥), **+X = 앞쪽, +Z = 오른쪽**
-- 교체 부품은 따로 분리된 메쉬, 이름 **bonnet / mirror_l / mirror_r**
+- 교체 부품은 따로 분리된 메쉬, 이름 **bonnet / mirror_l / mirror_r / door_fl / door_fr / door_rl / door_rr**
 
-이렇게 하면 로봇이 찍은 손상 좌표 (x, y) 가 3D 모델의 (X, Z) 위치에 그대로 표시된다.
-모형 크기가 다르면 `admin.js` 의 `CAR`, `PART_REGIONS` 와 `my.js` 의 `CAR` 도 같이 수정.
+이렇게 하면 로봇이 찍은 손상 좌표 (x, y) 가 3D 모델의 (X, Z) 위치에 그대로 표시된다. 높이 z 가 있으면 (문) 3D 높이 Y=z 에 표시.
+모형 크기가 다르면 `viewer3d.js` 의 `CAR`·임시 모델, `admin.js` 의 `DOOR_AREA`(데모), `db.py` 의 `BONNET_*`·`DOOR_*`(샘플) 도 같이 수정.
 
 ## 주의
 

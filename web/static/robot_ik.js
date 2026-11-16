@@ -52,11 +52,13 @@ function solve6(A, b) {
 /**
  * @param spec  m0609.json 내용
  * @param tool  { tip: [x,y,z], dir: [x,y,z] } — 플랜지(link_6) 좌표계에서 탐침 끝 위치와 누르는 방향
+ * @param opt.limits  [[하한, 상한] | null] × 6 [rad] — IK 가 쓸 관절 범위 (URDF 한계보다 좁게: 자세 고르기용). null 이면 URDF 그대로
  */
-export function createKinematics(spec, tool) {
+export function createKinematics(spec, tool, { limits = null } = {}) {
   const joints = spec.joints;
   const origins = joints.map((j) => fromXyzRpy(j.xyz, j.rpy));
-  const lower = joints.map((j) => j.lower), upper = joints.map((j) => j.upper);
+  const lower = joints.map((j, i) => Math.max(j.lower, limits?.[i]?.[0] ?? -Infinity));
+  const upper = joints.map((j, i) => Math.min(j.upper, limits?.[i]?.[1] ?? Infinity));
   let tip = tool.tip, tdir = tool.dir;
 
   /** q → { p: 탐침 끝, d: 누르는 방향, axes: [{o, z}] (관절마다 원점·회전축) } */

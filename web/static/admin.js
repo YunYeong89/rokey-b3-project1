@@ -490,26 +490,28 @@ const SCAN = {
   hiddenMs: 12,           // 로봇팔이 꺼져 있을 때 점당 대기 [ms]
   hiddenFineMs: 8,
 };
-// 윗면 구역 (차량 좌표계 mm, viewer3d.js 임시 모델 기준). 구역 사이는 들어 올려서 넘는다
-const TOP_AREAS = [
-  { name: "트렁크", x: [8, 62], y: [10, 100] },
-  { name: "지붕", x: [80, 156], y: [20, 90] },
-  { name: "보닛", x: [180, 248], y: [12, 98] },
-];
-// 문 영역 (차량 좌표계 mm, viewer3d.js 임시 모델·db.py 샘플과 같은 값). 옆면이라 y 는 0(왼쪽)/110(오른쪽), 높이 z
-const DOOR_AREA = {
-  door_rl: { x: [77, 113], y: 0 }, door_fl: { x: [125, 160], y: 0 },
-  door_rr: { x: [77, 113], y: 110 }, door_fr: { x: [125, 160], y: 110 },
-};
-const DOOR_Z = [16, 35];
 const DOOR_ORDER = ["door_rl", "door_fl", "door_fr", "door_rr"];   // 로봇 쪽(왼쪽) 먼저, 차 위로 넘어가서 오른쪽
-const CALIB_POINTS = [[20, 20], [240, 20], [240, 90]];             // 기준점 터치 (윗면 x, y)
-// 교체 단계에서 로봇이 가 볼 부품 위치: [면, u, v] (top: x, y / left·right: x, 높이 z)
-const PART_SPOT = {
-  bonnet: ["top", 214, 55],
-  door_rl: ["left", 95, 26], door_fl: ["left", 142, 26], door_rr: ["right", 95, 26], door_fr: ["right", 142, 26],
-  mirror_l: ["left", 158, 46], mirror_r: ["right", 158, 46],
-};
+const TOP_NAMES = { trunk: "트렁크", roof: "지붕", bonnet: "보닛" };   // 윗면 스캔 구역 (뒤 → 앞 순서, 배치에 있는 것만)
+const INSET = { top: 4, doorX: 5, doorZ: 3 };                      // 부품 가장자리에서 안쪽으로 [mm]
+/** 스캔 구역·부품 위치 (차량 좌표계 mm) — viewer.load() 후 차 배치(viewer.layout())로 계산 → 모델을 바꿔도 그대로.
+ *  TOP_AREAS: 윗면 구역 (구역 사이는 들어 올려서 넘음) / DOOR_AREA: 문 (옆면 y, 높이 z) / CALIB_POINTS: 기준점 터치 (윗면 x, y)
+ *  PART_SPOT: 교체 단계에서 로봇이 가 볼 부품 위치 [면, u, v] (top: x, y / left·right: x, 높이 z) */
+let TOP_AREAS = [], DOOR_AREA = {}, CALIB_POINTS = [], PART_SPOT = {};
+function computeScanGeometry(lay) {
+  const inset = ([a, b], m) => [a + m, b - m];
+  const mid = ([a, b]) => (a + b) / 2;
+  TOP_AREAS = Object.entries(TOP_NAMES).filter(([k]) => lay.parts?.[k])
+    .map(([k, name]) => ({ code: k, name, x: inset(lay.parts[k].x, INSET.top), y: inset(lay.parts[k].y, INSET.top) }));
+  DOOR_AREA = Object.fromEntries(Object.entries(lay.doors || {}).map(([k, d]) =>
+    [k, { x: inset(d.x, INSET.doorX), y: d.y, z: inset(d.z, INSET.doorZ), face: d.y < lay.W / 2 ? "left" : "right" }]));
+  const first = TOP_AREAS[0], last = TOP_AREAS[TOP_AREAS.length - 1];
+  CALIB_POINTS = first ? [[first.x[0] + 12, first.y[0] + 10], [last.x[1] - 8, last.y[0] + 8], [last.x[1] - 8, last.y[1] - 8]] : [];
+  PART_SPOT = {};
+  const b = lay.parts?.bonnet;
+  if (b) PART_SPOT.bonnet = ["top", mid(b.x), mid(b.y)];
+  for (const [k, d] of Object.entries(DOOR_AREA)) PART_SPOT[k] = [d.face, mid(d.x), mid(d.z)];
+  for (const [k, m] of Object.entries(lay.mirrors || {})) PART_SPOT[k] = [m.y < lay.W / 2 ? "left" : "right", m.x, m.z];
+}
 
 /** 지그재그 경로. alongU = 라인이 u 방향 (문), 아니면 v 방향 (윗면: 차 폭 방향) */
 function raster([u0, u1], [v0, v1], gap, alongU) {
@@ -583,13 +585,15 @@ async function contactScan(face, pts, { step, speed, fine = false, check, onSamp
 
 async function demoScan(jobId, ev, check, robotOk) {
   const r = Math.random();
-  const dents = r < 0.55 ? [{ x: 200 + Math.random() * 30, y: 30 + Math.random() * 50, depth: 0.8 + Math.random() * 1.6 }] : [];
+  const bon = TOP_AREAS.find((a) => a.code === "bonnet");           // 데모 손상은 보닛 가운데 쪽에
+  const lerp = ([a, b], t) => a + (b - a) * t;
+  const dents = bon && r < 0.55 ? [{ x: lerp(bon.x, 0.3 + Math.random() * 0.45), y: lerp(bon.y, 0.2 + Math.random() * 0.6), depth: 0.8 + Math.random() * 1.6 }] : [];
   const missing = r > 0.35 && r < 0.85 ? [Math.random() < 0.5 ? "mirror_l" : "mirror_r"] : [];
   // 가끔(30%) 문 찌그러짐 — 로봇 교체 가능으로 켜진 문 중에서
   const doors = Object.keys(DOOR_AREA).filter((d) => robotOk.has(d));
   const doorDent = doors.length && Math.random() < 0.3 ? (() => {
     const code = doors[Math.floor(Math.random() * doors.length)], a = DOOR_AREA[code];
-    return { code, x: a.x[0] + Math.random() * (a.x[1] - a.x[0]), y: a.y, z: DOOR_Z[0] + Math.random() * (DOOR_Z[1] - DOOR_Z[0]), depth: 0.9 + Math.random() * 1.6 };
+    return { code, x: a.x[0] + Math.random() * (a.x[1] - a.x[0]), y: a.y, z: a.z[0] + Math.random() * (a.z[1] - a.z[0]), depth: 0.9 + Math.random() * 1.6 };
   })() : null;
   const SIGMA = 0.08, SUS = 1.5 * SIGMA * 3, DMG = 3 * SIGMA * 3;   // 데모용 임계값 [mm]
   const heightAt = (x, y) => {
@@ -634,9 +638,9 @@ async function demoScan(jobId, ev, check, robotOk) {
   // ---- 옆면(문): 탐침이 옆을 보고 문 표면을 따라감. 점에 z 가 있으면 화면이 옆면에 표시
   await ev("scan", "표면 스캔(연속 접촉) — 옆면 문 4곳");
   const doorSus = {};
-  for (const code of DOOR_ORDER) {
+  for (const code of DOOR_ORDER.filter((c) => DOOR_AREA[c])) {
     const a = DOOR_AREA[code];
-    await contactScan(a.y === 0 ? "left" : "right", raster(a.x, [DOOR_Z[0] + 2, DOOR_Z[1]], SCAN.doorLineGap, true), {
+    await contactScan(a.face, raster(a.x, [a.z[0] + 2, a.z[1]], SCAN.doorLineGap, true), {
       step: SCAN.sampleStep, speed: SCAN.doorSpeed, check,
       onSample: (x, z) => {
         const dz = sideDz(code, x, z), st = classify(dz);
@@ -649,8 +653,8 @@ async function demoScan(jobId, ev, check, robotOk) {
   for (const [code, pts] of Object.entries(doorSus)) {
     const a = DOOR_AREA[code];
     await ev("scan", `${partName(code)} 의심 구역 상세 스캔(연속 접촉)`, "warn");
-    for (const z of zonesOf(pts, { u: a.x, v: DOOR_Z })) {
-      await contactScan(a.y === 0 ? "left" : "right", raster(z.u, z.v, SCAN.detailGap, true), {
+    for (const z of zonesOf(pts, { u: a.x, v: a.z })) {
+      await contactScan(a.face, raster(z.u, z.v, SCAN.detailGap, true), {
         step: SCAN.fineStep, speed: SCAN.detailSpeed, fine: true, check,
         onSample: (x, zz) => { const dz = sideDz(code, x, zz); onStatus({ type: "point", x: r1(x), y: a.y, z: r1(zz), dz, state: classify(dz), fine: true }); contactFz(); },
       });
@@ -711,6 +715,7 @@ $("#alarmRefresh").addEventListener("click", openAlarms);
 // ------------------------------------------------------------ 시작
 (async function init() {
   await viewer.load();
+  computeScanGeometry(viewer.layout());
   try { if (localStorage.getItem(ROBOT_KEY) === "1") setRobotShown(true); } catch (e) { }
   repaint();
   await loadVehicles();

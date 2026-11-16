@@ -3,3 +3,7 @@ __pycache__/
 *.pyc
 .DS_Store
 .venv/
+web/car.stl
+web/car_test/
+# 원본 STL (팀원이 보관, 변환 결과 car.glb 만 올림)
+web/static/models/assembly.stl

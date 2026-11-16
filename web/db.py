@@ -6,9 +6,11 @@ repair.db 가 새로 만들어질 때(users 가 비어 있을 때) 데이터를 
   - 환경변수 REPAIR_SAMPLE=0 이면 샘플 없이 기본 데이터만 (실제 로봇 시연용)
 처음 상태로 되돌리려면 repair.db 를 지우고 다시 실행.
 """
+import json
 import os
 import random
 import sqlite3
+import struct
 from datetime import datetime, timedelta
 
 from flask import g
@@ -108,11 +110,48 @@ GIVEN = ["민준", "서연", "도윤", "지우", "하준", "서윤", "시우", "
 N_JOBS, DAYS, N_MANUAL = 100, 30, 30
 STATUS_COUNT = {"done": 62, "no_damage": 12, "on_hold": 10, "failed": 9, "stopped": 7}
 
-# 손상 좌표 범위 [mm] (차량 좌표계, viewer3d.js 임시 모델과 같은 치수)
+# 손상 좌표 범위 [mm] (차량 좌표계: x 앞, y 오른쪽, z 높이)
+# 기본값 = viewer3d.js 임시 모델 치수. static/models/car.glb 에 배치(car_to_glb.py 가 쓴 extras.car_layout)가 있으면 그 값으로 바뀜
 BONNET_X, BONNET_Y = (180.0, 245.0), (20.0, 90.0)          # 보닛: 위에서 찍음, z 없음
 DOOR_X = {"door_rl": (77.0, 113.0), "door_fl": (125.0, 160.0), "door_rr": (77.0, 113.0), "door_fr": (125.0, 160.0)}
 DOOR_Y = {"door_rl": 0.0, "door_fl": 0.0, "door_rr": 110.0, "door_fr": 110.0}   # 왼쪽 옆면 y=0, 오른쪽 y=110
 DOOR_Z = (16.0, 35.0)
+N_TOP_AREAS = 3                                             # 윗면 스캔 구역 수 (이벤트 문구용)
+CAR_GLB = os.path.join(BASE, "static", "models", "car.glb")
+
+
+def read_car_layout(path=CAR_GLB):
+    """car.glb 의 scene extras.car_layout (표준 라이브러리만, three.js 없이). 없거나 읽기 실패면 None"""
+    try:
+        with open(path, "rb") as f:
+            magic, _, _, jlen, jtype = struct.unpack("<IIIII", f.read(20))
+            if magic != 0x46546C67 or jtype != 0x4E4F534A:
+                return None
+            j = json.loads(f.read(jlen))
+        return j["scenes"][j.get("scene", 0)].get("extras", {}).get("car_layout")
+    except (OSError, ValueError, KeyError, IndexError, struct.error):
+        return None
+
+
+def _apply_layout(lay):
+    """실제 모델 배치로 손상 좌표 범위 바꾸기 (화면 admin.js computeScanGeometry 와 같은 안쪽 여유)"""
+    global BONNET_X, BONNET_Y, DOOR_X, DOOR_Y, DOOR_Z, N_TOP_AREAS
+    ins = lambda r, m: (round(r[0] + m, 1), round(r[1] - m, 1))
+    b = lay.get("parts", {}).get("bonnet")
+    if b:   # 보닛 가운데 60% (가장자리 곡면 피함)
+        BONNET_X = ins(b["x"], (b["x"][1] - b["x"][0]) * 0.2)
+        BONNET_Y = ins(b["y"], (b["y"][1] - b["y"][0]) * 0.2)
+    doors = lay.get("doors") or {}
+    if all(d in doors for d in DOOR_X):
+        DOOR_X = {k: ins(doors[k]["x"], 5) for k in DOOR_X}
+        DOOR_Y = {k: float(doors[k]["y"]) for k in DOOR_X}
+        DOOR_Z = ins(doors["door_fl"]["z"], 3)
+    N_TOP_AREAS = sum(1 for k in ("trunk", "roof", "bonnet") if k in lay.get("parts", {})) or N_TOP_AREAS
+
+
+CAR_LAYOUT = read_car_layout()
+if CAR_LAYOUT:
+    _apply_layout(CAR_LAYOUT)
 DOORS = list(DOOR_X)
 MIRRORS = ["mirror_l", "mirror_r"]
 
@@ -257,7 +296,7 @@ def _build_job(rng, mode, status):
                       for _ in range(rng.choice([1, 1, 1, 2]))]
         for d in (c for c in targets if c in DOOR_X):
             dents.append((d, round(rng.uniform(*DOOR_X[d]), 1), DOOR_Y[d], round(rng.uniform(*DOOR_Z), 1)))
-        j.ev("scan", "표면 스캔(연속 접촉) 시작 — 윗면 3구역, 라인 간격 15 mm, 점 간격 5 mm", weight=1 if dents else 4)
+        j.ev("scan", f"표면 스캔(연속 접촉) 시작 — 윗면 {N_TOP_AREAS}구역, 라인 간격 15 mm, 점 간격 5 mm", weight=1 if dents else 4)
         if any(d[0] == "bonnet" for d in dents):
             j.ev("scan", f"의심 구역 {rng.randint(2, 5)}곳 상세 스캔(연속 접촉, 라인 간격 4 mm)", weight=3)
         j.ev("scan", "표면 스캔(연속 접촉) — 옆면 문 4곳", weight=2)

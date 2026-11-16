@@ -19,8 +19,11 @@ repair_web/
 │   ├── robot3d.js      3D 로봇팔 M0609 (관리자만, 설정 상수는 파일 맨 위)
 │   ├── robot_ik.js     로봇팔 FK + 수치 IK (DLS)
 │   ├── style.css
-│   ├── models/car.glb  (선택) 실제 3D 모델. 없으면 임시 상자 모델
-│   └── models/m0609/   두산 M0609 white 메쉬 + m0609.json (ros 브랜치에서 복사)
+│   ├── models/car.glb  실제 차 3D 모델 (tools/car_to_glb.py 로 변환). 없으면 임시 상자 모델
+│   ├── models/m0609/   두산 M0609 white 메쉬 + m0609.json (ros 브랜치에서 복사)
+│   └── models/rg2/     OnRobot RG2 그리퍼 메쉬 (MIT, 출처 SOURCE.md). 탐침을 물고 있는 모습으로 표시
+├── tools/
+│   └── car_to_glb.py   차 조립 STL → car.glb 변환 (아래 "실제 3D 모델 바꾸는 법")
 └── ros/
     ├── repair_db_client.py     ROS 노드에서 DB 쓰는 클라이언트
     └── process_manager_stub.py 웹↔ROS 연결 확인용 뼈대 노드 (자동/수동)
@@ -105,15 +108,48 @@ python3 ros/process_manager_stub.py                            # 터미널 3 (�
 | GET | `/api/alarms` `?limit=100` | 관리자 | warn/error 이벤트 최신순 (job_id, vehicle_name 포함) |
 | POST | `/api/jobs/<id>/finish` | 관리자·로봇 | `{status: done/no_damage/on_hold/failed/stopped, summary}` |
 
-## 실제 3D 모델 넣기
+## 실제 3D 모델 바꾸는 법
 
-`static/models/car.glb` 를 넣으면 고객 화면이 자동으로 그 모델을 쓴다. 모델링 규칙:
-- 단위 **mm**, 위쪽 **+Y** (glTF 기본)
-- 원점 = 차량 좌표계 원점 (차 뒤쪽 왼쪽 모서리 바닥), **+X = 앞쪽, +Z = 오른쪽**
-- 교체 부품은 따로 분리된 메쉬, 이름 **bonnet / mirror_l / mirror_r / door_fl / door_fr / door_rl / door_rr**
+화면은 `static/models/car.glb` 를 읽는다. **차 크기(L·W·H)는 GLB 의 bounding box 에서, 스캔 구역·문·미러 위치는 GLB 안의 배치 정보(extras)에서 읽으므로 모델을 바꿔도 코드 수정은 필요 없다.**
+(카메라·그리드·측정 점·데모 스캔 경로·로봇팔 베이스 위치·샘플 이력 손상 좌표가 모두 따라 바뀜)
 
-이렇게 하면 로봇이 찍은 손상 좌표 (x, y) 가 3D 모델의 (X, Z) 위치에 그대로 표시된다. 높이 z 가 있으면 (문) 3D 높이 Y=z 에 표시.
-모형 크기가 다르면 `viewer3d.js` 의 `CAR`·임시 모델, `admin.js` 의 `DOOR_AREA`(데모), `db.py` 의 `BONNET_*`·`DOOR_*`(샘플) 도 같이 수정.
+1. **STL 받기**: 모델링 담당에게 조립 STL 하나를 받아 `static/models/assembly.stl` 에 둔다 (깃에는 안 올라감, 원본은 담당이 보관)
+2. **변환 도구 준비** (처음 한 번. ROS 가 시스템 파이썬을 쓰므로 시스템 pip 설치 금지 → venv)
+   ```bash
+   cd web
+   python3 -m venv tools/.venv
+   tools/.venv/bin/pip install trimesh numpy scipy networkx fast_simplification
+   ```
+3. **부품 번호 확인**: 덩어리(부품)를 삼각형 수 순서로 번호·크기·중심 표로 출력
+   ```bash
+   tools/.venv/bin/python tools/car_to_glb.py static/models/assembly.stl --list
+   ```
+   좌표는 변환 후 기준 (x 0=뒤→앞, y 0=바닥→위, z 0=왼쪽→오른쪽, mm). 바퀴 4개는 자동으로 찾아 `wheels` 로 표시된다.
+4. **변환**: 실제 모형 전체 길이(앞뒤, mm)와 부품 이름을 넣는다
+   ```bash
+   tools/.venv/bin/python tools/car_to_glb.py static/models/assembly.stl -o static/models/car.glb \
+       --length-mm 260 --name 8=bonnet --name 9=roof
+   ```
+   - `--length-mm`: 자로 잰 모형 길이. 지금 값 260 은 임시값이라 **실제 길이를 재면 이 숫자만 바꿔 다시 변환** (로봇 좌표와 화면 좌표가 맞으려면 중요)
+   - `--target-faces` (기본 150000): 웹이 가볍도록 줄일 삼각형 수
+   - 앞뒤가 거꾸로 나오면 `--flip-front` (앞쪽은 bonnet 이 있는 쪽으로 자동 판정)
+5. `rm repair.db && python3 app.py` (샘플 이력의 손상 좌표도 새 모델 크기로 다시 생성) → 화면에서 확인 → `car.glb` 커밋
+
+**부품 이름 규칙** (`--name 번호=이름`, 같은 이름을 여러 번 주면 한 메쉬로 합쳐짐)
+
+| 이름 | 쓰임 |
+|---|---|
+| `bonnet` / `mirror_l` / `mirror_r` / `door_fl` / `door_fr` / `door_rl` / `door_rr` | 교체 부품 (상태 색 표시, 수동 모드 클릭 선택). 코드와 약속된 값 |
+| `roof`, `trunk` | 윗면 스캔 구역 계산용 |
+| (자동) `wheels` | 바퀴 4개 + 바퀴 안에 들어가는 덩어리 |
+| (자동) `body` | 이름 없는 나머지 전부 |
+
+- 지금 모델(오프로더 모형, 덩어리 69개): 8 = 보닛, 9 = 지붕. **문 4개는 옆 차체와 한 덩어리, 사이드미러는 모델에 없음** → 변환기가 바퀴·보닛 위치로 문·미러 자리를 추정해 배치 정보에 넣고, 화면은 그 자리에 반투명 상자로 손상·교체를 대신 표시한다 (콘솔에 경고 한 번).
+  문을 분리한 STL 을 받으면 `--name 번호=door_fl` 처럼 이름만 주면 실제 메쉬가 칠해진다.
+- 추정 위치를 고치려면 `tools/car_to_glb.py` 의 `make_layout()` 만 수정.
+- 좌표계 (로봇과 약속): 단위 mm, 원점 = 차 뒤·왼쪽·바닥 모서리, **+X 앞, +Y 위, +Z 오른쪽** (차량 좌표 (x, y, z높이) = 3D (X, Z, Y)).
+  로봇이 찍은 손상 좌표는 화면에서 레이캐스트로 차 표면에 붙여 표시한다.
+- 로봇팔 베이스 위치는 `robot3d.js` 의 `ROBOT_BASE_IN_CAR` (기본: 차 길이 가운데, 차 폭 가운데에서 왼쪽 495 mm). 실제 설치 위치를 재면 `x`, `y` 에 숫자로.
 
 ## 주의
 

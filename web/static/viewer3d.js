@@ -20,7 +20,10 @@ export const COLORS = {
   body: 0x9fb3c8, part: 0xc3d0dd, glass: 0x3a4a5c, tire: 0x2a2f36,
   ok: 0x2e9d6a, dent: 0xd64545, failed: 0xd64545, missing: 0x7c4dbd, requested: 0xe0a526, suspect: 0xe0a526, replaced: 0x2e9d6a,
 };
-const VIEWS = { iso: [260, 230, 300], top: [0, 560, 1], front: [480, 120, 0], side: [0, 140, 480] };
+const VIEWS = { iso: [260, 205, 300], top: [0, 535, 1], front: [480, 95, 0], side: [0, 115, 480] };   // 바라보는 점에서 카메라까지
+// 로봇팔을 켜면 (관리자 화면) 로봇까지 보이게 넓힘: 바라보는 점(월드), 거리 배율, 최대 줌아웃
+const EXTENT = { car: { target: [0, 25, 0], scale: 1, maxDist: 900, grid: 1 },
+                 robot: { target: [0, 230, -210], scale: 3.0, maxDist: 2400, grid: 2.5 } };
 
 /**
  * @param {HTMLElement} host   뷰어를 넣을 요소
@@ -46,7 +49,9 @@ export function createCarViewer(host, { msgEl = null, onPartClick = null } = {})
   const sun = new THREE.DirectionalLight(0xffffff, 1.6);
   sun.position.set(200, 400, 250);
   scene.add(sun);
-  scene.add(new THREE.GridHelper(600, 30, 0xc9d3dd, 0xdde4ea));
+  const grid = new THREE.GridHelper(600, 30, 0xc9d3dd, 0xdde4ea);
+  scene.add(grid);
+  let extent = EXTENT.car;
 
   const carRoot = new THREE.Group();            // 차량 좌표계 → 화면 중앙으로
   carRoot.position.set(-CAR.L / 2, 0, -CAR.W / 2);
@@ -59,10 +64,17 @@ export function createCarViewer(host, { msgEl = null, onPartClick = null } = {})
   const baseMaterial = new Map();
 
   function setView(name) {
-    const [x, y, z] = VIEWS[name];
-    camera.position.set(x, y, z);
-    controls.target.set(0, 25, 0);
+    const [x, y, z] = VIEWS[name], [tx, ty, tz] = extent.target, k = extent.scale;
+    controls.target.set(tx, ty, tz);
+    camera.position.set(tx + x * k, ty + y * k, tz + z * k);
     controls.update();
+  }
+  /** 로봇팔 표시에 맞춰 시야 넓히기/되돌리기 */
+  function setRobotExtent(on) {
+    extent = on ? EXTENT.robot : EXTENT.car;
+    controls.maxDistance = extent.maxDist;
+    grid.scale.setScalar(extent.grid);
+    setView("iso");
   }
 
   function resize() {
@@ -75,8 +87,15 @@ export function createCarViewer(host, { msgEl = null, onPartClick = null } = {})
   new ResizeObserver(resize).observe(host);
 
   const t0 = performance.now();
+  const frameHooks = [];                        // 매 프레임 호출 (dt [s]) — 로봇팔 등
+  let tPrev = t0;
   renderer.setAnimationLoop(() => {
-    const t = (performance.now() - t0) / 1000;
+    const now = performance.now();
+    const t = (now - t0) / 1000, dt = (now - tPrev) / 1000;
+    tPrev = now;
+    for (const fn of frameHooks) {
+      try { fn(dt); } catch (e) { console.error(e); }
+    }
     // 진행 중이면 교체 대상 부품을 은은하게 깜빡임
     for (const obj of Object.values(parts)) {
       const pulse = obj.userData.pulse ? 0.35 + 0.35 * Math.sin(t * 4) : 0;
@@ -168,6 +187,27 @@ export function createCarViewer(host, { msgEl = null, onPartClick = null } = {})
   }
   function clearPoints() { pointsGroup.clear(); }
 
+  // ---------------------------------------------------------------- 표면 찾기 (연속 스캔용)
+  /** 차량 표면 점과 바깥 법선 (차량 로컬 = carRoot 좌표, Y 위쪽)
+   *  face "top": (u, v) = 차량 (x, y), 위에서 아래로 / "left"·"right": (u, v) = 차량 (x, z), 옆에서 차 쪽으로 */
+  const FACE_RAY = { top: [0, -1, 0], left: [0, 0, 1], right: [0, 0, -1] };
+  function surfaceAt(face, u, v) {
+    const d = new THREE.Vector3(...FACE_RAY[face]);
+    const local = face === "top" ? new THREE.Vector3(u, 1000, v) : new THREE.Vector3(u, v, face === "left" ? -1000 : CAR.W + 1000);
+    const fallback = face === "top" ? new THREE.Vector3(u, 45, v) : new THREE.Vector3(u, v, face === "left" ? 0 : CAR.W);
+    if (model) {
+      carRoot.updateMatrixWorld();
+      ray.set(carRoot.localToWorld(local.clone()), d);
+      const hit = ray.intersectObject(model, true)[0];
+      if (hit) {
+        const n = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
+        if (n.dot(d) > 0) n.negate();
+        return { pos: carRoot.worldToLocal(hit.point.clone()), normal: n, hit: true };
+      }
+    }
+    return { pos: fallback, normal: d.clone().negate(), hit: false };
+  }
+
   // ---------------------------------------------------------------- 부품 클릭
   if (onPartClick) {
     let down = null;
@@ -185,7 +225,10 @@ export function createCarViewer(host, { msgEl = null, onPartClick = null } = {})
     });
   }
 
-  return { load, paint, addPoint, clearPoints, setView, resize };
+  return {
+    load, paint, addPoint, clearPoints, setView, resize,
+    scene, carRoot, surfaceAt, setRobotExtent, onFrame: (fn) => frameHooks.push(fn),
+  };
 }
 
 // ================================================================ 유틸

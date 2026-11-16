@@ -9,8 +9,11 @@
  *
  * /repair/status (std_msgs/String, JSON)
  *  {"type":"point","x":120,"y":40,"dz":-0.8,"state":"dent"}  {"type":"wrench","fz":-4.2}  {"type":"flush","mm":0.18}
+ *  point 는 연속 접촉 스캔 중 일정 간격(기본 5 mm)마다 온다.
+ * 로봇팔 3D (robot3d.js): 실제 모드는 /dsr01/joint_states 구독, 데모 모드는 시뮬레이터가 탐침 경로를 준다.
  */
 import { createCarViewer } from "./viewer3d.js";
+import { createRobotArm } from "./robot3d.js";
 
 const state = {
   job: null, pollTimer: null, points: [], ros: null, cmdTopic: null, rosOk: false,
@@ -142,6 +145,23 @@ const viewer = createCarViewer($("#viewer"), {
   },
 });
 $$("[data-view]").forEach((b) => b.addEventListener("click", () => viewer.setView(b.dataset.view)));
+
+// ------------------------------------------------------------ 로봇팔 (관리자 화면만)
+const robot = createRobotArm(viewer, { msgEl: $("#viewerMsg") });
+const ROBOT_KEY = "repair.robotArm";
+async function setRobotShown(on) {
+  const b = $("#robotToggle");
+  b.disabled = true;
+  try {
+    await robot.setVisible(on);
+    viewer.setRobotExtent(on);
+    b.setAttribute("aria-pressed", String(on));
+    try { localStorage.setItem(ROBOT_KEY, on ? "1" : "0"); } catch (e) { }
+  } catch (e) {
+    console.error(e); alert("로봇팔 모델을 불러오지 못했습니다: " + e.message);
+  } finally { b.disabled = false; }
+}
+$("#robotToggle").addEventListener("click", () => setRobotShown(!robot.visible));
 
 function repaint() {
   const job = state.job;
@@ -323,7 +343,7 @@ $("#startBtn").addEventListener("click", async () => {
 // 상단 바 정지 버튼(모든 탭)과 수리 탭 정지 버튼이 같은 동작
 async function stopJob() {
   if (!state.job || state.job.status !== "running") return;
-  if (state.demo) state.demoCancel = true;
+  if (state.demo) { state.demoCancel = true; robot.cancel(); }
   else if (state.rosOk) state.cmdTopic.publish(new ROSLIB.Message({ data: JSON.stringify({ cmd: "stop", job_id: state.job.id }) }));
   try { await api("POST", `/api/jobs/${state.job.id}/finish`, { status: "stopped", summary: "관리자가 정지 버튼을 누름" }); } catch (e) { }
 }
@@ -340,12 +360,14 @@ function connectRos() {
     updateRobotState();
     state.cmdTopic = new ROSLIB.Topic({ ros, name: "/repair/command", messageType: "std_msgs/String" });
     state.cmdTopic.advertise();   // 미리 광고해 두지 않으면 첫 명령이 유실될 수 있음
+    robot.attachRos(ros);         // /dsr01/joint_states → 로봇팔 3D
     new ROSLIB.Topic({ ros, name: "/repair/status", messageType: "std_msgs/String", throttle_rate: 50 })
       .subscribe((m) => { if (!state.demo) { try { onStatus(JSON.parse(m.data)); } catch (e) { } } });
   });
   ros.on("error", () => { });
   ros.on("close", () => {
     state.rosOk = false; state.robotMsg = null; updateRobotState();
+    robot.onRosClose();           // 마지막 자세 유지 + 반투명
     if (!state.demo) setRosPill("off", "로봇 연결 안 됨");
     setTimeout(connectRos, 3000);
   });
@@ -353,6 +375,7 @@ function connectRos() {
 function setRosPill(cls, text) { const p = $("#rosState"); p.className = "pill " + cls; p.textContent = text; }
 $("#demoMode").addEventListener("change", (e) => {
   state.demo = e.target.checked;
+  robot.setSource(state.demo ? "demo" : "ros");
   if (state.demo) setRosPill("demo", "데모 모드 (로봇 없음)");
   else setRosPill(state.rosOk ? "on" : "off", state.rosOk ? "로봇 연결됨" : "로봇 연결 안 됨");
   state.robotMsg = null; updateRobotState();
@@ -370,7 +393,10 @@ async function runDemo(job) {
   let errored = false;
   onStatus({ type: "robot", state: "moving", message: "데모 수리 중" });
   try {
-    await ev("calibrate", "차량 기준점 3곳 터치"); await sleep(600); check();
+    await ev("calibrate", "차량 기준점 3곳 터치");
+    if (robot.visible) { for (const [x, y] of CALIB_POINTS) { await touch("top", x, y); check(); } }
+    else await sleep(600);
+    check();
     onStatus({ type: "wrench", fz: -5.1 });
     await ev("calibrate", "차량 좌표계 설정 완료"); await sleep(300); check();
 
@@ -411,7 +437,9 @@ async function runDemo(job) {
     const results = [];
     for (const c of toReplace) {
       check();
-      await ev("replace", `${partName(c)} 분리`); await sleep(700); check();
+      await ev("replace", `${partName(c)} 분리`);
+      if (robot.visible) await moveToPart(c); else await sleep(700);   // 떼고 붙이는 동작은 다음 단계
+      check();
       await ev("replace", `${partName(c)} 새 부품 장착 (힘 제어)`);
       let peak = 0;
       for (let i = 0; i < 12; i++) { const fz = -(4 + i * 1.1 + randn() * 0.5); peak = Math.max(peak, -fz); onStatus({ type: "wrench", fz }); await sleep(60); }
@@ -425,6 +453,7 @@ async function runDemo(job) {
       await ev("inspect", `${partName(c)} 단차 ${flush.toFixed(2)} mm → ${ok ? "합격" : "불합격"}`, ok ? "info" : "error");
       results.push(ok);
     }
+    if (robot.visible) { await robot.home(); check(); }
     await ev("done", "작업 종료, 홈 위치 복귀");
     const allOk = results.every(Boolean);
     await api("POST", `/api/jobs/${jobId}/finish`, {
@@ -440,15 +469,117 @@ async function runDemo(job) {
     }
   } finally {
     if (!errored) onStatus({ type: "robot", state: "idle", message: "" });   // 완료·보류·정지 모두 대기로
+    if (!state.demoCancel && robot.visible) robot.home();   // 손상 없음·보류로 끝나도 홈으로 (정지면 그 자리에)
   }
 }
 
+// ------------------------------------------------------------ 연속 접촉 스캔 (데모)
+// 탐침을 표면에 붙인 채 지그재그(래스터) 라인을 따라가며 일정 간격마다 측정 점을 만든다.
+// 부품 경계(트렁크 → 지붕 → 보닛, 문 → 문)를 넘거나 옆면으로 바꿀 때만 들어 올렸다 다시 붙인다.
+// 로봇팔이 켜져 있으면 로봇 동작이 끝나기를 기다리고(실제 속도), 꺼져 있으면 점당 짧게만 쉰다(예전 속도).
+const SCAN = {
+  sampleStep: 5,          // 측정 점 간격 (이동 거리 기준) [mm]
+  fineStep: 3,            // 상세 스캔 점 간격 [mm]
+  lineGap: 15,            // 윗면 라인 간격 [mm]
+  doorLineGap: 8,         // 문 라인 간격 [mm]
+  detailGap: 4,           // 상세 스캔 라인 간격 [mm]
+  detailMargin: 5,        // 의심 점 묶음 바깥으로 더 볼 폭 [mm]
+  speed: 80,              // 윗면 접촉 이동 속도 [mm/s] → 라인(약 90 mm) 하나 1.1 s
+  doorSpeed: 36,          // 문 접촉 이동 속도 [mm/s] → 라인(약 36 mm) 하나 1 s
+  detailSpeed: 50,        // 상세 스캔 속도 [mm/s]
+  hiddenMs: 12,           // 로봇팔이 꺼져 있을 때 점당 대기 [ms]
+  hiddenFineMs: 8,
+};
+// 윗면 구역 (차량 좌표계 mm, viewer3d.js 임시 모델 기준). 구역 사이는 들어 올려서 넘는다
+const TOP_AREAS = [
+  { name: "트렁크", x: [8, 62], y: [10, 100] },
+  { name: "지붕", x: [80, 156], y: [20, 90] },
+  { name: "보닛", x: [180, 248], y: [12, 98] },
+];
 // 문 영역 (차량 좌표계 mm, viewer3d.js 임시 모델·db.py 샘플과 같은 값). 옆면이라 y 는 0(왼쪽)/110(오른쪽), 높이 z
 const DOOR_AREA = {
   door_rl: { x: [77, 113], y: 0 }, door_fl: { x: [125, 160], y: 0 },
   door_rr: { x: [77, 113], y: 110 }, door_fr: { x: [125, 160], y: 110 },
 };
 const DOOR_Z = [16, 35];
+const DOOR_ORDER = ["door_rl", "door_fl", "door_fr", "door_rr"];   // 로봇 쪽(왼쪽) 먼저, 차 위로 넘어가서 오른쪽
+const CALIB_POINTS = [[20, 20], [240, 20], [240, 90]];             // 기준점 터치 (윗면 x, y)
+// 교체 단계에서 로봇이 가 볼 부품 위치: [면, u, v] (top: x, y / left·right: x, 높이 z)
+const PART_SPOT = {
+  bonnet: ["top", 214, 55],
+  door_rl: ["left", 95, 26], door_fl: ["left", 142, 26], door_rr: ["right", 95, 26], door_fr: ["right", 142, 26],
+  mirror_l: ["left", 158, 46], mirror_r: ["right", 158, 46],
+};
+
+/** 지그재그 경로. alongU = 라인이 u 방향 (문), 아니면 v 방향 (윗면: 차 폭 방향) */
+function raster([u0, u1], [v0, v1], gap, alongU) {
+  const pts = [];
+  if (alongU) {
+    const n = Math.max(1, Math.round((v1 - v0) / gap));
+    for (let i = 0; i <= n; i++) { const v = v0 + ((v1 - v0) * i) / n; pts.push(...(i % 2 ? [[u1, v], [u0, v]] : [[u0, v], [u1, v]])); }
+  } else {
+    const n = Math.max(1, Math.round((u1 - u0) / gap));
+    for (let i = 0; i <= n; i++) { const u = u0 + ((u1 - u0) * i) / n; pts.push(...(i % 2 ? [[u, v1], [u, v0]] : [[u, v0], [u, v1]])); }
+  }
+  return pts;
+}
+
+/** 의심 점들을 가까운 것끼리 묶어 상세 스캔 구역(사각형)으로. bounds 안으로 자름 */
+function zonesOf(pts, bounds, join = 12) {
+  const zones = [];
+  for (const p of pts) {
+    const z = zones.find((z) => p.u >= z.u[0] - join && p.u <= z.u[1] + join && p.v >= z.v[0] - join && p.v <= z.v[1] + join);
+    if (z) { z.u = [Math.min(z.u[0], p.u), Math.max(z.u[1], p.u)]; z.v = [Math.min(z.v[0], p.v), Math.max(z.v[1], p.v)]; }
+    else zones.push({ u: [p.u, p.u], v: [p.v, p.v] });
+  }
+  const m = SCAN.detailMargin, clip = (r, b) => [Math.max(b[0], r[0] - m), Math.min(b[1], r[1] + m)];
+  return zones.map((z) => ({ u: clip(z.u, bounds.u), v: clip(z.v, bounds.v) }));
+}
+
+/** 표면 위 (u, v) 에 탐침을 대는 자세 */
+function contactAt(face, u, v) {
+  const h = viewer.surfaceAt(face, u, v);
+  return { pose: robot.contactPose(h.pos, h.normal), normal: h.normal };
+}
+/** 들어 올려 옮긴 뒤 표면에 대기 (로봇팔이 꺼져 있으면 아무것도 안 함) */
+async function touch(face, u, v) {
+  if (!robot.visible) return;
+  const c = contactAt(face, u, v);
+  await robot.transit(c.pose, c.normal);
+}
+async function moveToPart(code) {
+  const spot = PART_SPOT[code];
+  if (spot) await touch(...spot);
+}
+
+/** 연속 접촉 스캔 한 번: 경로 시작점에 붙이고 → 떼지 않고 polyline 을 따라감.
+ *  onSample(u, v) 를 이동 거리 step 마다 호출 (→ /repair/status point 와 같은 처리) */
+async function contactScan(face, pts, { step, speed, fine = false, check, onSample }) {
+  const segs = [];
+  let L = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const [a, b] = [pts[i - 1], pts[i]], len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (len > 0) { segs.push({ a, b, len, s0: L }); L += len; }
+  }
+  const at = (s) => {
+    const g = segs.find((g) => s <= g.s0 + g.len) || segs[segs.length - 1];
+    const k = Math.min(1, Math.max(0, (s - g.s0) / g.len));
+    return [g.a[0] + (g.b[0] - g.a[0]) * k, g.a[1] + (g.b[1] - g.a[1]) * k];
+  };
+  const n = Math.floor(L / step + 1e-6) + 1;
+  let next = 0;
+  const emitUpTo = (s) => { while (next < n && next * step <= s + 1e-6) onSample(...at(next++ * step)); };
+
+  if (robot.visible) {
+    const [u0, v0] = pts[0];
+    const c = contactAt(face, u0, v0);
+    await robot.transit(c.pose, c.normal); check();
+    await robot.followPath((s) => contactAt(face, ...at(s)).pose, L, { speed, onProgress: emitUpTo }); check();
+    emitUpTo(L);                                // 도중에 로봇팔을 끈 경우 남은 점
+  } else {
+    while (next < n) { check(); emitUpTo(next * step); await sleep(fine ? SCAN.hiddenFineMs : SCAN.hiddenMs); }
+  }
+}
 
 async function demoScan(jobId, ev, check, robotOk) {
   const r = Math.random();
@@ -466,53 +597,69 @@ async function demoScan(jobId, ev, check, robotOk) {
     for (const d of dents) { const dist = Math.hypot(x - d.x, y - d.y); if (dist < 14) dz -= d.depth * (1 - (dist / 14) ** 2); }
     return dz;
   };
-  const classify = (dz) => (dz < -DMG ? "dent" : dz < -SUS ? "suspect" : "ok");
-
-  await ev("scan", "격자 스캔 시작 (20 mm 간격)");
-  const suspicious = [];
-  for (let x = 10; x <= 250; x += 20) for (let y = 10; y <= 100; y += 15) {
-    check();
-    const dz = heightAt(x, y), st = classify(dz);
-    onStatus({ type: "point", x, y, dz, state: st });
-    onStatus({ type: "wrench", fz: -5 + randn() * 0.3 });
-    if (st !== "ok") suspicious.push({ x, y });
-    await sleep(25);
-  }
-  if (suspicious.length) {
-    await ev("scan", `의심 구역 ${suspicious.length}곳 상세 스캔 (5 mm 간격)`);
-    for (const s of suspicious) for (let dx = -10; dx <= 10; dx += 5) for (let dy = -10; dy <= 10; dy += 5) {
-      check();
-      const x = s.x + dx, y = s.y + dy, dz = heightAt(x, y);
-      onStatus({ type: "point", x, y, dz, state: classify(dz), fine: true });
-      await sleep(12);
-    }
-  }
-  // 측면(문) 스캔: 점에 z 가 있으면 화면이 옆면에 표시
-  await ev("scan", "측면 스캔 (문 4곳)");
   const sideDz = (code, x, z) => {
     let dz = SIGMA * randn();
     if (doorDent && doorDent.code === code) { const dist = Math.hypot(x - doorDent.x, z - doorDent.z); if (dist < 10) dz -= doorDent.depth * (1 - (dist / 10) ** 2); }
     return dz;
   };
-  for (const [code, a] of Object.entries(DOOR_AREA)) {
-    for (let x = a.x[0]; x <= a.x[1]; x += 12) for (let z = DOOR_Z[0] + 2; z <= DOOR_Z[1]; z += 8) {
-      check();
-      const dz = sideDz(code, x, z);
-      onStatus({ type: "point", x, y: a.y, z, dz, state: classify(dz) });
-      await sleep(20);
+  const classify = (dz) => (dz < -DMG ? "dent" : dz < -SUS ? "suspect" : "ok");
+  const r1 = (v) => Math.round(v * 10) / 10;
+  const contactFz = () => onStatus({ type: "wrench", fz: -5 + randn() * 0.3 });   // 접촉 유지 힘
+
+  // ---- 윗면: 구역마다 지그재그, 구역 사이만 들어 올림
+  await ev("scan", `표면 스캔(연속 접촉) 시작 — 윗면 ${TOP_AREAS.length}구역, 라인 간격 ${SCAN.lineGap} mm, 점 간격 ${SCAN.sampleStep} mm`);
+  const suspicious = TOP_AREAS.map(() => []);
+  for (const [k, a] of TOP_AREAS.entries()) {
+    await contactScan("top", raster(a.x, a.y, SCAN.lineGap, false), {
+      step: SCAN.sampleStep, speed: SCAN.speed, check,
+      onSample: (x, y) => {
+        const dz = heightAt(x, y), st = classify(dz);
+        onStatus({ type: "point", x: r1(x), y: r1(y), dz, state: st });
+        contactFz();
+        if (st !== "ok") suspicious[k].push({ u: x, v: y });
+      },
+    });
+  }
+  const topZones = TOP_AREAS.flatMap((a, k) => zonesOf(suspicious[k], { u: a.x, v: a.y }));
+  if (topZones.length) {
+    await ev("scan", `의심 구역 ${topZones.length}곳 상세 스캔(연속 접촉, 라인 간격 ${SCAN.detailGap} mm)`);
+    for (const z of topZones) {
+      await contactScan("top", raster(z.u, z.v, SCAN.detailGap, false), {
+        step: SCAN.fineStep, speed: SCAN.detailSpeed, fine: true, check,
+        onSample: (x, y) => { const dz = heightAt(x, y); onStatus({ type: "point", x: r1(x), y: r1(y), dz, state: classify(dz), fine: true }); contactFz(); },
+      });
     }
   }
-  if (doorDent) {
-    await ev("scan", `${partName(doorDent.code)} 의심 구역 상세 스캔`, "warn");
-    for (let dx = -8; dx <= 8; dx += 4) for (let dzz = -8; dzz <= 8; dzz += 4) {
-      check();
-      const x = doorDent.x + dx, z = doorDent.z + dzz, dz = sideDz(doorDent.code, x, z);
-      onStatus({ type: "point", x, y: doorDent.y, z, dz, state: classify(dz), fine: true });
-      await sleep(12);
+
+  // ---- 옆면(문): 탐침이 옆을 보고 문 표면을 따라감. 점에 z 가 있으면 화면이 옆면에 표시
+  await ev("scan", "표면 스캔(연속 접촉) — 옆면 문 4곳");
+  const doorSus = {};
+  for (const code of DOOR_ORDER) {
+    const a = DOOR_AREA[code];
+    await contactScan(a.y === 0 ? "left" : "right", raster(a.x, [DOOR_Z[0] + 2, DOOR_Z[1]], SCAN.doorLineGap, true), {
+      step: SCAN.sampleStep, speed: SCAN.doorSpeed, check,
+      onSample: (x, z) => {
+        const dz = sideDz(code, x, z), st = classify(dz);
+        onStatus({ type: "point", x: r1(x), y: a.y, z: r1(z), dz, state: st });
+        contactFz();
+        if (st !== "ok") (doorSus[code] ||= []).push({ u: x, v: z });
+      },
+    });
+  }
+  for (const [code, pts] of Object.entries(doorSus)) {
+    const a = DOOR_AREA[code];
+    await ev("scan", `${partName(code)} 의심 구역 상세 스캔(연속 접촉)`, "warn");
+    for (const z of zonesOf(pts, { u: a.x, v: DOOR_Z })) {
+      await contactScan(a.y === 0 ? "left" : "right", raster(z.u, z.v, SCAN.detailGap, true), {
+        step: SCAN.fineStep, speed: SCAN.detailSpeed, fine: true, check,
+        onSample: (x, zz) => { const dz = sideDz(code, x, zz); onStatus({ type: "point", x: r1(x), y: a.y, z: r1(zz), dz, state: classify(dz), fine: true }); contactFz(); },
+      });
     }
   }
+
   for (const m of ["mirror_l", "mirror_r"]) {
     check();
+    if (robot.visible) { await moveToPart(m); check(); }
     await ev("scan", `${partName(m)} 접촉 확인: ${missing.includes(m) ? "접촉 없음" : "접촉 있음"}`, missing.includes(m) ? "warn" : "info");
     await sleep(250);
   }
@@ -564,6 +711,7 @@ $("#alarmRefresh").addEventListener("click", openAlarms);
 // ------------------------------------------------------------ 시작
 (async function init() {
   await viewer.load();
+  try { if (localStorage.getItem(ROBOT_KEY) === "1") setRobotShown(true); } catch (e) { }
   repaint();
   await loadVehicles();
   loadParts();

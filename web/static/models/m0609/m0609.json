@@ -1,0 +1,29 @@
+{
+  "_source": [
+    "두산 M0609 (white) — origin/ros 브랜치(eac0660)에서 가져옴",
+    "관절: ws_cobot_pjt/ws_cobot_pjt/src/cobot_rg2/rg2/m0609_rg2_bringup/xacro/my_macro.m0609.white.xacro",
+    "메쉬: ws_cobot_pjt/ws_cobot_pjt/src/cobot_rg2/doosan-robot2/dsr_description2/meshes/m0609_white/*.dae",
+    "단위 변환: xacro 의 xyz [m] → 여기서는 [mm] (×1000). rpy·limit 은 [rad] 그대로.",
+    "메쉬 꼭짓점은 원래 mm 값이라 (xacro 가 scale 0.001 을 곱함) mm 뷰어에서는 배율 1 로 쓴다.",
+    "좌표계는 ROS(URDF) 그대로 Z 위쪽. 회전 = Rz(yaw)·Ry(pitch)·Rx(roll), 관절 회전축은 모두 자기 z."
+  ],
+  "units": { "length": "mm", "angle": "rad" },
+  "flange": { "link": "link_6", "note": "툴 플랜지 면 = link_6 원점, 바깥 방향 = link_6 +z (MF0609_6_0 메쉬 z 범위 -58~0)" },
+  "links": {
+    "base_link": ["MF0609_0_0.dae"],
+    "link_1": ["MF0609_1_0.dae"],
+    "link_2": ["MF0609_2_0.dae", "MF0609_2_1.dae", "MF0609_2_2.dae"],
+    "link_3": ["MF0609_3_0.dae"],
+    "link_4": ["MF0609_4_0.dae", "MF0609_4_1.dae"],
+    "link_5": ["MF0609_5_0.dae"],
+    "link_6": ["MF0609_6_0.dae"]
+  },
+  "joints": [
+    { "name": "joint_1", "parent": "base_link", "child": "link_1", "xyz": [0, 0, 134.5],  "rpy": [0, 0, 0],           "axis": [0, 0, 1], "lower": -6.2832, "upper": 6.2832 },
+    { "name": "joint_2", "parent": "link_1",    "child": "link_2", "xyz": [0, 6.2, 0],    "rpy": [0, -1.571, -1.571], "axis": [0, 0, 1], "lower": -6.2832, "upper": 6.2832 },
+    { "name": "joint_3", "parent": "link_2",    "child": "link_3", "xyz": [411, 0, 0],    "rpy": [0, 0, 1.571],       "axis": [0, 0, 1], "lower": -2.618,  "upper": 2.618 },
+    { "name": "joint_4", "parent": "link_3",    "child": "link_4", "xyz": [0, -368, 0],   "rpy": [1.571, 0, 0],       "axis": [0, 0, 1], "lower": -6.2832, "upper": 6.2832 },
+    { "name": "joint_5", "parent": "link_4",    "child": "link_5", "xyz": [0, 0, 0],      "rpy": [-1.571, 0, 0],      "axis": [0, 0, 1], "lower": -6.2832, "upper": 6.2832 },
+    { "name": "joint_6", "parent": "link_5",    "child": "link_6", "xyz": [0, -121, 0],   "rpy": [1.571, 0, 0],       "axis": [0, 0, 1], "lower": -6.2832, "upper": 6.2832 }
+  ]
+}

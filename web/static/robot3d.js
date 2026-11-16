@@ -15,9 +15,10 @@ import { createKinematics } from "./robot_ik.js";
 // ================================================================ 설정 상수
 /** 로봇 베이스의 위치 (차량 좌표계 mm). yawDeg = 로봇 정면(+X)이 향하는 방향: 0 = 차 앞(+x), 90 = 차 오른쪽(+y)
  *  x, y 가 null 이면 차 크기에서 계산: x = 차 길이 가운데, y = -(차 폭 가운데에서 centerDist 만큼 왼쪽)
- *  centerDist 495 = 임시 모델(폭 110)에서 왼쪽 옆 440 mm. 보닛·지붕·양쪽 문 모두 IK 로 닿는 거리 (가까우면 왼쪽 문이 안 닿음)
+ *  centerDist 400 = RG2 + 탐침(툴 약 283 mm), 팔꿈치 위 자세(DEMO_JOINT_LIMITS_DEG)로 보닛·지붕·양쪽 문·미러 모두 닿고
+ *  팔·그리퍼가 차에 안 부딪히는 거리 (375~425 에서 확인. 멀면 건너편 문이 안 닿거나 그리퍼가 지붕 모서리에 걸림)
  *  실제 설치 위치를 재면 x, y 에 숫자로 넣기 */
-export const ROBOT_BASE_IN_CAR = { x: null, y: null, z: 0, yawDeg: 90, centerDist: 495 };
+export const ROBOT_BASE_IN_CAR = { x: null, y: null, z: 0, yawDeg: 90, centerDist: 400 };
 /** 툴: 플랜지에 OnRobot RG2 그리퍼 (models/rg2/, 출처는 SOURCE.md), 손가락이 탐침 막대를 물고 있음.
  *  fingerRad = finger_joint 각도 (지름 5 mm 막대를 물었을 때, 0.78 = 완전히 닫힘),
  *  tipZ = 그 각도에서 플랜지 면 ~ 손가락 끝 [mm] (URDF 관절식으로 계산) */
@@ -29,6 +30,9 @@ export const PROBE = { stickOut: 50, gripDepth: 22, rodRadius: 2.5, ballRadius: 
 export const ROS_JOINTS = { topic: "/dsr01/joint_states", type: "sensor_msgs/JointState", rateHz: 25, staleMs: 1500 };
 /** 홈 자세 [deg] (탐침이 아래를 봄) */
 export const HOME_DEG = [0, 0, 90, 0, 90, 0];
+/** 데모 IK 가 쓰는 관절 범위 [deg] (J1~J6). URDF 는 J3 말고 ±360° 라 IK 가 팔꿈치 아래·손목 뒤집힌 해로 튀어
+ *  불가능해 보이는 자세가 나옴 → 팔꿈치 위(J3 > 0), 어깨 앞쪽, 손목 안 뒤집힘으로 좁힘. 실제 모드(ROS 관절값)에는 안 씀 */
+export const DEMO_JOINT_LIMITS_DEG = [[-120, 120], [-60, 75], [10, 150], [-150, 150], [0, 180], [-180, 180]];
 /** 데모 동작 속도 등 */
 export const MOTION = {
   airSpeed: 520,        // 공중 이동 [mm/s]
@@ -39,10 +43,10 @@ export const MOTION = {
   safeAbove: 66,        // 다른 면으로 옮길 때 지나가는 높이 = 차 높이 + 이 값 [mm]
 };
 /** 옆면(문)에서 탐침을 수평에서 아래로 기울이는 각도 [deg]. near = 로봇 쪽 면, far = 차 건너편 면.
- *  수평(0°)은 가까운 쪽은 3번 관절 한계, 먼 쪽은 팔이 다 펴진 특이점이라 IK 가 흔들림 → 시뮬레이션으로 고른 값
- *  (RG2 + 탐침, 툴 길이 약 283 mm, 베이스 거리 495 mm 기준: 문·미러·지붕·보닛 대표 점 모두 IK 오차 < 1 mm.
- *   베이스 ±25 mm, 각도 ±5° 에서도 닿음. 건너편 75° 이하는 베이스가 멀면 안 닿음) */
-export const SIDE_TILT_DEG = { near: 60, far: 80 };
+ *  시뮬레이션으로 고른 값 (툴 약 283 mm, 베이스 centerDist 400, DEMO_JOINT_LIMITS_DEG 기준):
+ *  문·미러·지붕·보닛 대표 점 모두 IK 오차 < 1 mm, 팔·그리퍼가 차에 안 부딪힘. near 55~60 / far 61~64 (베이스 ±25 mm) 에서 확인.
+ *  near 65 이상은 그리퍼가 차에 걸리고, far 를 크게(수직에 가깝게) 하면 그리퍼가 지붕 모서리에 걸림 */
+export const SIDE_TILT_DEG = { near: 57, far: 62 };
 
 const MODEL_DIR = "/static/models/m0609/";
 const RG2_DIR = "/static/models/rg2/";
@@ -149,7 +153,7 @@ export function createRobotArm(viewer, { msgEl = null } = {}) {
       const probe = buildProbe(PROBE);
       probeMats = probe.materials;
       placeBase();
-      kin = createKinematics(spec, probe);
+      kin = createKinematics(spec, probe, { limits: DEMO_JOINT_LIMITS_DEG.map(([a, b]) => [a * DEG, b * DEG]) });
       const links = { base_link: zup };
       for (const j of spec.joints) {
         const origin = new THREE.Group();

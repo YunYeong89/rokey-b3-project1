@@ -538,10 +538,14 @@ function zonesOf(pts, bounds, join = 12) {
   return zones.map((z) => ({ u: clip(z.u, bounds.u), v: clip(z.v, bounds.v) }));
 }
 
-/** 표면 위 (u, v) 에 탐침을 대는 자세 */
+/** 표면 위 (u, v) 에 탐침을 대는 자세.
+ *  탐침 방향은 메쉬의 국소 법선이 아니라 스캔하는 면으로 정함 (윗면 = 수직 아래, 옆면 = 정해진 기울기).
+ *  실제 모델은 지붕 가장자리 곡면·문 손잡이 등에서 법선이 갑자기 바뀌어, 법선을 따르면 IK 가 팔을 다른 자세로 휙 돌림 */
+const FACE_NORMAL = { top: [0, 1, 0], left: [0, 0, -1], right: [0, 0, 1] };   // carRoot 로컬 (Y 위, Z 오른쪽)
 function contactAt(face, u, v) {
   const h = viewer.surfaceAt(face, u, v);
-  return { pose: robot.contactPose(h.pos, h.normal), normal: h.normal };
+  const n = h.normal.clone().set(...FACE_NORMAL[face]);
+  return { pose: robot.contactPose(h.pos, n), normal: n };
 }
 /** 들어 올려 옮긴 뒤 표면에 대기 (로봇팔이 꺼져 있으면 아무것도 안 함) */
 async function touch(face, u, v) {

@@ -15,14 +15,16 @@ import { createCarViewer } from "./viewer3d.js";
 const state = {
   job: null, pollTimer: null, points: [], ros: null, cmdTopic: null, rosOk: false,
   demo: false, demoCancel: false, mode: "auto",
+  running: false, fz: [], robotMsg: null, alarms: [], alarmSeen: 0,
 };
+const FZ_MAX = 200;
 
 // ------------------------------------------------------------ 탭
 $$(".tab").forEach((b) => b.addEventListener("click", () => {
   $$(".tab").forEach((x) => x.classList.toggle("active", x === b));
   $$(".panel").forEach((p) => p.classList.toggle("active", p.id === "tab-" + b.dataset.tab));
-  ({ stock: loadParts, history: loadJobs, members: loadMembers }[b.dataset.tab] || (() => {}))();
-  if (b.dataset.tab === "repair") requestAnimationFrame(viewer.resize);
+  ({ stock: loadParts, history: loadJobs, members: loadMembers, alarms: openAlarms }[b.dataset.tab] || (() => {}))();
+  if (b.dataset.tab === "repair") requestAnimationFrame(() => { viewer.resize(); drawFz(); });
 }));
 
 // ------------------------------------------------------------ 모드 / 부품 선택
@@ -139,10 +141,92 @@ function onStatus(msg) {
     const d = Math.min(...state.points.map((p) => p.dz));
     $("#statDepth").textContent = d < -0.05 ? Math.abs(d).toFixed(2) : "–";
   } else if (msg.type === "wrench") {
-    $("#statFz").textContent = Number(msg.fz).toFixed(1);
+    const fz = Number(msg.fz);
+    if (!Number.isFinite(fz)) return;
+    $("#statFz").textContent = fz.toFixed(1);
+    state.fz.push(fz);
+    if (state.fz.length > FZ_MAX) state.fz.splice(0, state.fz.length - FZ_MAX);
+    scheduleFz();
   } else if (msg.type === "flush") {
     $("#statFlush").textContent = Number(msg.mm).toFixed(2);
+  } else if (msg.type === "robot") {
+    if (["idle", "moving", "error"].includes(msg.state)) { state.robotMsg = msg; updateRobotState(); }
   }
+}
+
+// 측정 점·힘 그래프·통계 초기화 (새 수리 시작 / 차량 변경 시)
+function resetLive() {
+  state.points = []; viewer.clearPoints();
+  state.fz = []; drawFz();
+  ["#statPts", "#statFz", "#statDepth", "#statFlush"].forEach((s) => ($(s).textContent = s === "#statPts" ? "0" : "–"));
+}
+
+// ------------------------------------------------------------ 힘(Fz) 실시간 선 그래프 (canvas, 라이브러리 없음)
+let fzQueued = false;
+function scheduleFz() {                        // 메시지가 몰려도 화면 갱신은 프레임당 1번
+  if (fzQueued) return;
+  fzQueued = true;
+  requestAnimationFrame(() => { fzQueued = false; drawFz(); });
+}
+function niceStep(range) {
+  const raw = range / 4, p = 10 ** Math.floor(Math.log10(raw)), m = raw / p;
+  return (m < 1.5 ? 1 : m < 3 ? 2 : m < 7 ? 5 : 10) * p;
+}
+function drawFz() {
+  const cv = $("#fzCanvas"), w = cv.clientWidth, h = cv.clientHeight;
+  if (!w || !h) return;                        // 다른 탭에 있으면 그리지 않음 (돌아올 때 다시 그림)
+  const dpr = window.devicePixelRatio || 1;
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
+    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  }
+  const g = cv.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+  const data = state.fz;
+  const L = 40, R = 8, T = 6, B = 6, pw = w - L - R, ph = h - T - B;
+  let lo = Math.min(0, ...data), hi = Math.max(0, ...data);
+  if (hi - lo < 2) { const c = (hi + lo) / 2; lo = c - 1; hi = c + 1; }
+  const step = niceStep(hi - lo);
+  lo = Math.floor(lo / step) * step; hi = Math.ceil(hi / step) * step;
+  const X = (i) => L + (i / (FZ_MAX - 1)) * pw;
+  const Y = (v) => T + (1 - (v - lo) / (hi - lo)) * ph;
+
+  g.font = "11px system-ui, sans-serif"; g.textAlign = "right"; g.textBaseline = "middle";
+  for (let v = lo; v <= hi + step / 2; v += step) {
+    const y = Math.round(Y(v)) + 0.5;
+    g.strokeStyle = Math.abs(v) < step / 2 ? "#9aa4b0" : "#dde2e8"; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(L, y); g.lineTo(w - R, y); g.stroke();
+    g.fillStyle = "#6b7684"; g.fillText((Math.abs(v) < 1e-9 ? 0 : v).toFixed(step < 1 ? 1 : 0), L - 6, y);
+  }
+  if (!data.length) {
+    g.textAlign = "center"; g.fillStyle = "#9aa4b0"; g.fillText("힘 데이터 없음", L + pw / 2, T + ph / 2);
+    $("#fzRange").textContent = "";
+    return;
+  }
+  const off = FZ_MAX - data.length;            // 최신 값이 항상 오른쪽 끝
+  g.strokeStyle = "#0f5c8c"; g.lineWidth = 2; g.lineJoin = "round";
+  g.beginPath();
+  data.forEach((v, i) => (i ? g.lineTo(X(off + i), Y(v)) : g.moveTo(X(off + i), Y(v))));
+  g.stroke();
+  const last = data[data.length - 1];
+  g.fillStyle = "#0f5c8c"; g.beginPath(); g.arc(X(FZ_MAX - 1), Y(last), 3.5, 0, Math.PI * 2); g.fill();
+  $("#fzRange").textContent = `최소 ${Math.min(...data).toFixed(1)} · 최대 ${Math.max(...data).toFixed(1)} · ${data.length}개`;
+}
+window.addEventListener("resize", () => drawFz());
+
+// ------------------------------------------------------------ 로봇 상태 (상단 바)
+// /repair/status 의 {"type":"robot","state":...} 가 오면 그것을 우선, 없으면 연결 여부 + 진행 중 작업으로 판단
+const ROBOT_TEXT = { off: "연결 끊김", idle: "대기", moving: "동작 중", error: "에러" };
+function updateRobotState() {
+  const connected = state.demo || state.rosOk;
+  let st, title = "";
+  if (!connected) st = "off";
+  else if (state.robotMsg) { st = state.robotMsg.state; title = state.robotMsg.message || ""; }
+  else st = state.running ? "moving" : "idle";
+  const el = $("#robotState");
+  el.className = "robot-state " + st;
+  el.querySelector("span").textContent = ROBOT_TEXT[st] + (st === "error" && title ? ` · ${title}` : "");
+  el.title = title || "로봇 상태";
 }
 
 // ------------------------------------------------------------ 작업 진행 표시 (DB 주기 조회)
@@ -170,8 +254,7 @@ async function showVehicle() {
       const last = await api("GET", `/api/jobs?vehicle_id=${sel.value}&limit=1`);
       job = last.length ? await api("GET", `/api/jobs/${last[0].id}`) : null;
     }
-    state.points = []; viewer.clearPoints();
-    ["#statPts", "#statFz", "#statDepth", "#statFlush"].forEach((s) => ($(s).textContent = s === "#statPts" ? "0" : "–"));
+    resetLive();
     showJob(job);
   } catch (e) { console.warn(e); }
 }
@@ -183,9 +266,11 @@ function startPolling(id) {
 }
 function stopPolling() { if (state.pollTimer) clearInterval(state.pollTimer); state.pollTimer = null; }
 function setRunning(on) {
-  $("#startBtn").disabled = on; $("#stopBtn").disabled = !on;
+  state.running = on;
+  $("#startBtn").disabled = on; $("#stopBtn").disabled = !on; $("#estopBtn").disabled = !on;
   $("#vehicleSel").disabled = on; $("#demoMode").disabled = on;
   $$("#modeSeg .seg-btn, #partPick input").forEach((x) => (x.disabled = on));
+  updateRobotState();
 }
 
 // ------------------------------------------------------------ 시작 / 정지
@@ -195,8 +280,7 @@ $("#startBtn").addEventListener("click", async () => {
   }
   const parts = state.mode === "manual" ? pickedParts() : [];
   if (state.mode === "manual" && !parts.length) { alert("교체할 부품을 1개 이상 고르세요."); return; }
-  state.points = []; viewer.clearPoints();
-  ["#statPts", "#statFz", "#statDepth", "#statFlush"].forEach((s) => ($(s).textContent = s === "#statPts" ? "0" : "–"));
+  resetLive();
   $("#resultBox").className = "result hidden";
   let job;
   try { job = await api("POST", "/api/jobs", { vehicle_id: Number($("#vehicleSel").value), mode: state.mode, parts }); }
@@ -215,12 +299,15 @@ $("#startBtn").addEventListener("click", async () => {
     { cmd: "start", job_id: job.id, vehicle_id: job.vehicle_id, mode: job.mode, parts: job.requested }) }));
 });
 
-$("#stopBtn").addEventListener("click", async () => {
-  if (!state.job) return;
+// 상단 바 정지 버튼(모든 탭)과 수리 탭 정지 버튼이 같은 동작
+async function stopJob() {
+  if (!state.job || state.job.status !== "running") return;
   if (state.demo) state.demoCancel = true;
   else if (state.rosOk) state.cmdTopic.publish(new ROSLIB.Message({ data: JSON.stringify({ cmd: "stop", job_id: state.job.id }) }));
   try { await api("POST", `/api/jobs/${state.job.id}/finish`, { status: "stopped", summary: "관리자가 정지 버튼을 누름" }); } catch (e) { }
-});
+}
+$("#stopBtn").addEventListener("click", stopJob);
+$("#estopBtn").addEventListener("click", stopJob);
 
 // ------------------------------------------------------------ rosbridge
 function connectRos() {
@@ -228,20 +315,26 @@ function connectRos() {
   const ros = new ROSLIB.Ros({ url: APP.rosbridgeUrl || `ws://${location.hostname}:9090` });
   state.ros = ros;
   ros.on("connection", () => {
-    state.rosOk = true; if (!state.demo) setRosPill("on", "로봇 연결됨");
+    state.rosOk = true; state.robotMsg = null; if (!state.demo) setRosPill("on", "로봇 연결됨");
+    updateRobotState();
     state.cmdTopic = new ROSLIB.Topic({ ros, name: "/repair/command", messageType: "std_msgs/String" });
     state.cmdTopic.advertise();   // 미리 광고해 두지 않으면 첫 명령이 유실될 수 있음
     new ROSLIB.Topic({ ros, name: "/repair/status", messageType: "std_msgs/String", throttle_rate: 50 })
       .subscribe((m) => { if (!state.demo) { try { onStatus(JSON.parse(m.data)); } catch (e) { } } });
   });
   ros.on("error", () => { });
-  ros.on("close", () => { state.rosOk = false; if (!state.demo) setRosPill("off", "로봇 연결 안 됨"); setTimeout(connectRos, 3000); });
+  ros.on("close", () => {
+    state.rosOk = false; state.robotMsg = null; updateRobotState();
+    if (!state.demo) setRosPill("off", "로봇 연결 안 됨");
+    setTimeout(connectRos, 3000);
+  });
 }
 function setRosPill(cls, text) { const p = $("#rosState"); p.className = "pill " + cls; p.textContent = text; }
 $("#demoMode").addEventListener("change", (e) => {
   state.demo = e.target.checked;
   if (state.demo) setRosPill("demo", "데모 모드 (로봇 없음)");
   else setRosPill(state.rosOk ? "on" : "off", state.rosOk ? "로봇 연결됨" : "로봇 연결 안 됨");
+  state.robotMsg = null; updateRobotState();
 });
 
 // ------------------------------------------------------------ 데모 시뮬레이터 (로봇 대신 같은 API 호출)
@@ -253,6 +346,8 @@ async function runDemo(job) {
   state.demoCancel = false;
   const ev = (stage, message, level = "info") => api("POST", `/api/jobs/${jobId}/events`, { stage, message, level });
   const check = () => { if (state.demoCancel) throw new Error("stopped"); };
+  let errored = false;
+  onStatus({ type: "robot", state: "moving", message: "데모 수리 중" });
   try {
     await ev("calibrate", "차량 기준점 3곳 터치"); await sleep(600); check();
     onStatus({ type: "wrench", fz: -5.1 });
@@ -310,8 +405,12 @@ async function runDemo(job) {
   } catch (e) {
     if (e.message !== "stopped") {
       console.error(e);
+      errored = true;
+      onStatus({ type: "robot", state: "error", message: e.message });
       try { await ev("done", "데모 오류: " + e.message, "error"); await api("POST", `/api/jobs/${jobId}/finish`, { status: "failed", summary: e.message }); } catch (_) { }
     }
+  } finally {
+    if (!errored) onStatus({ type: "robot", state: "idle", message: "" });   // 완료·보류·정지 모두 대기로
   }
 }
 
@@ -362,13 +461,48 @@ async function demoScan(jobId, ev, check) {
   return parts;
 }
 
+// ------------------------------------------------------------ 알람 (warn/error 이벤트)
+const ALARM_KEY = "repair.alarmSeen";
+try { state.alarmSeen = Number(localStorage.getItem(ALARM_KEY)) || 0; } catch (e) { }
+const alarmTabOpen = () => $("#tab-alarms").classList.contains("active");
+
+async function pollAlarms() {
+  try { state.alarms = await api("GET", "/api/alarms?limit=100"); } catch (e) { console.warn(e); return; }
+  if (alarmTabOpen()) { renderAlarms(); markAlarmsSeen(); }
+  const n = state.alarms.filter((a) => a.id > state.alarmSeen).length;
+  const c = $("#alarmCount");
+  c.textContent = n >= 100 ? "99+" : n;
+  c.classList.toggle("hidden", n === 0);
+}
+function renderAlarms() {
+  $("#alarmsBody").innerHTML = state.alarms.map((a) => `<tr class="${a.id > state.alarmSeen ? "new" : ""}">
+    <td>${esc(a.ts)}</td><td><span class="lvl ${esc(a.level)}">${a.level === "error" ? "오류" : "경고"}</span></td>
+    <td>#${a.job_id}</td><td>${esc(a.vehicle_name)}</td><td>${esc(a.stage)}</td><td>${esc(a.message)}</td></tr>`).join("")
+    || `<tr><td colspan="6" class="note">알람이 없습니다.</td></tr>`;
+}
+function markAlarmsSeen() {
+  const max = state.alarms.reduce((m, a) => Math.max(m, a.id), state.alarmSeen);
+  if (max === state.alarmSeen) return;
+  state.alarmSeen = max;
+  try { localStorage.setItem(ALARM_KEY, String(max)); } catch (e) { }
+}
+async function openAlarms() {
+  renderAlarms();                              // 새 알람 강조를 먼저 보여 준 뒤 확인 처리
+  await pollAlarms();
+  markAlarmsSeen();
+  $("#alarmCount").classList.add("hidden");
+}
+$("#alarmRefresh").addEventListener("click", openAlarms);
+
 // ------------------------------------------------------------ 시작
 (async function init() {
   await viewer.load();
   repaint();
   await loadVehicles();
   loadParts();
+  updateRobotState(); drawFz();
   connectRos();
+  pollAlarms(); setInterval(pollAlarms, 3000);
   const cur = await api("GET", "/api/jobs/current");   // 새로고침해도 진행 중인 작업 이어서 표시
   if (cur) {
     $("#vehicleSel").value = cur.vehicle_id;

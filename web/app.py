@@ -389,6 +389,21 @@ def finish_job(job_id):
     return jsonify(job_detail(job_id))
 
 
+# ================================================================ 알람 (관리자)
+@app.get("/api/alarms")
+@require("admin")
+def list_alarms():
+    """events 중 warn/error 만 최신순. 작업 번호·차량 이름 포함"""
+    try:
+        limit = max(1, min(int(request.args.get("limit", 100)), 500))
+    except ValueError:
+        return jsonify(error="limit 은 정수"), 400
+    return jsonify(db.rows(db.get_db().execute(
+        """SELECT e.id, e.job_id, e.ts, e.stage, e.level, e.message, j.vehicle_id, v.name AS vehicle_name
+           FROM events e JOIN jobs j ON j.id = e.job_id JOIN vehicles v ON v.id = j.vehicle_id
+           WHERE e.level IN ('warn', 'error') ORDER BY e.id DESC LIMIT ?""", (limit,))))
+
+
 if __name__ == "__main__":
     db.init_db()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=False)

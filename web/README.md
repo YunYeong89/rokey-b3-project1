@@ -64,7 +64,7 @@ python3 ros/process_manager_stub.py                            # 터미널 3 (�
 | 토픽 | 방향 | 내용 (std_msgs/String, JSON) |
 |---|---|---|
 | `/repair/command` | 웹 → 로봇 | `{"cmd":"start","job_id":3,"vehicle_id":1,"mode":"manual","parts":["bonnet"]}` / `{"cmd":"stop","job_id":3}` |
-| `/repair/status` | 로봇 → 웹 | `{"type":"point","x":120,"y":40,"dz":-0.8,"state":"dent"}` · `{"type":"wrench","fz":-4.2}` · `{"type":"flush","mm":0.18}` |
+| `/repair/status` | 로봇 → 웹 | `{"type":"point","x":120,"y":40,"dz":-0.8,"state":"dent"}` · `{"type":"wrench","fz":-4.2}` · `{"type":"flush","mm":0.18}` · `{"type":"robot","state":"idle\|moving\|error","message":"..."}` (선택, 오면 상단 로봇 상태에 우선 표시) |
 
 단계·판정·결과는 토픽이 아니라 **DB(API)** 로 기록한다 (`RepairDB`). 화면이 0.7~1.5초마다 읽어 표시.
 수동 모드에서 지정한 부품은 `findings` 에 `decision='requested'` 로 들어가므로 로봇은 `db.requested_parts(job_id)` 로 읽으면 된다.
@@ -91,6 +91,7 @@ python3 ros/process_manager_stub.py                            # 터미널 3 (�
 | POST | `/api/jobs/<id>/events` | 관리자·로봇 | `{stage, level, message}` |
 | POST | `/api/jobs/<id>/findings` | 관리자·로봇 | `[{part_code, x, y, depth, decision}]` |
 | POST | `/api/jobs/<id>/replacements` | 관리자·로봇 | `{part_code, success, retries, peak_force, flush_mm}` |
+| GET | `/api/alarms` `?limit=100` | 관리자 | warn/error 이벤트 최신순 (job_id, vehicle_name 포함) |
 | POST | `/api/jobs/<id>/finish` | 관리자·로봇 | `{status: done/no_damage/on_hold/failed/stopped, summary}` |
 
 ## 실제 3D 모델 넣기

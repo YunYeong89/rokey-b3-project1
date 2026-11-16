@@ -257,12 +257,12 @@ def _build_job(rng, mode, status):
                       for _ in range(rng.choice([1, 1, 1, 2]))]
         for d in (c for c in targets if c in DOOR_X):
             dents.append((d, round(rng.uniform(*DOOR_X[d]), 1), DOOR_Y[d], round(rng.uniform(*DOOR_Z), 1)))
-        j.ev("scan", "격자 스캔 시작 (20 mm 간격)", weight=1 if dents else 4)
+        j.ev("scan", "표면 스캔(연속 접촉) 시작 — 윗면 3구역, 라인 간격 15 mm, 점 간격 5 mm", weight=1 if dents else 4)
         if any(d[0] == "bonnet" for d in dents):
-            j.ev("scan", f"의심 구역 {rng.randint(2, 5)}곳 상세 스캔 (5 mm 간격)", weight=3)
-        j.ev("scan", "측면 스캔 (문 4곳)", weight=2)
+            j.ev("scan", f"의심 구역 {rng.randint(2, 5)}곳 상세 스캔(연속 접촉, 라인 간격 4 mm)", weight=3)
+        j.ev("scan", "표면 스캔(연속 접촉) — 옆면 문 4곳", weight=2)
         for d in dict.fromkeys(c for c in targets if c in DOOR_X):
-            j.ev("scan", f"{name[d]} 의심 구역 상세 스캔", "warn", 1)
+            j.ev("scan", f"{name[d]} 의심 구역 상세 스캔(연속 접촉)", "warn", 1)
         if stop_at == "scan":
             return stopped()
         for m in MIRRORS:

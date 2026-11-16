@@ -55,6 +55,7 @@
           <button class="btn ghost-dark small" data-view="top">위에서</button>
           <button class="btn ghost-dark small" data-view="front">앞에서</button>
           <button class="btn ghost-dark small" data-view="side">옆에서</button>
+          <button class="btn ghost-dark small" id="robotToggle" aria-pressed="false">로봇팔 표시</button>
           <span class="note">드래그: 회전 · 휠/두 손가락: 확대/이동 · 수동 모드에서 부품 클릭: 선택</span>
         </div>
         <div class="stats">
@@ -101,7 +102,7 @@
         <h3>진행 단계</h3>
         <ol id="steps" class="steps">
           <li data-stage="calibrate">차량 위치 확인 <small>좌표계</small></li>
-          <li data-stage="scan">표면 스캔 <small>자동만</small></li>
+          <li data-stage="scan">표면 스캔(연속 접촉) <small>자동만</small></li>
           <li data-stage="detect">손상 판정 <small>자동만</small></li>
           <li data-stage="stock">재고 확인</li>
           <li data-stage="replace">부품 교체</li>

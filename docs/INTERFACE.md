@@ -1,6 +1,6 @@
 # 인터페이스 약속서 (웹 ↔ 로봇)
 
-> 버전 v0.2 · 2026-11-16 · 작성: 웹·DB 담당
+> 버전 v0.3 · 2026-11-16 · 작성: 웹·DB 담당
 > 이 문서를 바꾸면 **팀 전체에 알리고** 맨 아래 변경 이력에 적기. `(협의)` 표시는 아직 확정 전.
 
 ## 1. 전체 구조
@@ -15,6 +15,7 @@
 |---|---|---|
 | 웹 → 로봇 | 시작·정지 명령 | ROS 토픽 `/repair/command` |
 | 로봇 → 웹 | 실시간 값 (측정 점, 힘, 단차) | ROS 토픽 `/repair/status` |
+| 로봇 → 웹 | 로봇팔 관절 각도 (3D 표시) | ROS 토픽 `/dsr01/joint_states` |
 | 로봇 → DB | 단계, 판정, 교체 결과, 종료 | REST API (`RepairDB` 클라이언트) |
 
 **주소** (실습 때 채우기)
@@ -80,13 +81,18 @@
 
 | type | 필드 | 보내는 때 | 예 |
 |---|---|---|---|
-| `point` | `x, y` [mm], `z`(선택, 옆면), `dz` [mm], `state`, `fine`(선택) | 측정 점 1개 찍을 때마다 | `{"type":"point","x":120,"y":40,"dz":-0.8,"state":"dent"}` |
+| `point` | `x, y` [mm], `z`(선택, 옆면), `dz` [mm], `state`, `fine`(선택) 연속 스캔 중 일정 간격으로 보냄 (기본 5 mm, 상세 스캔은 더 촘촘히) | `{"type":"point","x":120,"y":40,"dz":-0.8,"state":"dent"}` |
 | `wrench` | `fz` [N] | 10 Hz 이하 | `{"type":"wrench","fz":-4.2}` |
 | `flush` | `mm` | 단차 측정 직후 | `{"type":"flush","mm":0.18}` |
 
 - `dz` = 측정 높이 − 정상 높이. **들어가면 음수**. 옆면(문)은 바깥 기준으로 들어가면 음수 (findings `depth` 도 같은 기준).
 - `state` = `ok` / `suspect` / `dent` (임계값 기준, 아래 6장).
 - `fine: true` = 의심 구역 상세 스캔 점 (화면에 작게 표시).
+
+### `/dsr01/joint_states` (로봇 → 웹, `sensor_msgs/JointState`)
+
+- 웹은 /dsr01/joint_states 를 구독해서 로봇팔을 표시 (관리자 화면 3D, "로봇팔 표시" 버튼). 두산 드라이버가 내는 토픽 그대로, 따로 보낼 것 없음.
+- `name` 배열로 `joint_1`~`joint_6` 을 찾고 `position` [rad] 을 씀. 화면 반영은 초당 25회 정도. 끊기면 마지막 자세를 반투명으로 표시.
 
 ## 4. REST API (로봇이 쓰는 것)
 
@@ -110,7 +116,8 @@
 **자동 모드**
 ```
 event(calibrate) → [3점 터치]
-event(scan)      → [격자 스캔, 점마다 /repair/status point]
+event(scan)      → [표면 스캔(연속 접촉): 탐침을 붙인 채 지그재그 라인, 일정 간격마다 /repair/status point]
+                    [의심 구역은 같은 방식으로 더 촘촘한 라인]
 event(detect)    → findings([...])
    손상 없음 → finish("no_damage")
 부품마다: part_available() → 없으면 finish("on_hold", "재고 없음: ...")
@@ -142,3 +149,4 @@ event(done) → finish("done") 또는 finish("failed")
 |---|---|---|---|
 | 2026-11-13 | v0.1 | 최초 작성 | 웹·DB |
 | 2026-11-16 | v0.2 | 부품 17종 · `robot_ok`(로봇 교체 대상은 1 만) · findings `z` · 문 좌표 규칙(협의) · point `z`(선택) | 웹·DB |
+| 2026-11-16 | v0.3 | 웹이 `/dsr01/joint_states` 구독(로봇팔 3D) · 스캔을 연속 접촉 방식으로, point 는 일정 간격마다 | 웹·DB |

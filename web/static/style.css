@@ -157,6 +157,7 @@ select.inline { display: inline-block; width: auto; margin: 0; padding: 6px 8px;
 .viewer-tools { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
 .viewer-tools .note { margin: 0 0 0 auto; }
 .btn.ghost-dark { background: #fff; border: 1px solid var(--line); color: var(--ink); }
+.btn.ghost-dark[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: #fff; }
 .status-head { display: flex; gap: 6px; flex-wrap: wrap; }
 .status-head .badge { font-size: 14px; padding: 5px 12px; }
 .parts-list { display: grid; gap: 6px; }

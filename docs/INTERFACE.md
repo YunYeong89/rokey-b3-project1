@@ -1,6 +1,6 @@
 # 인터페이스 약속서 (웹 ↔ 로봇)
 
-> 버전 v0.1 · 2026-11-13 · 작성: 웹·DB 담당
+> 버전 v0.2 · 2026-11-16 · 작성: 웹·DB 담당
 > 이 문서를 바꾸면 **팀 전체에 알리고** 맨 아래 변경 이력에 적기. `(협의)` 표시는 아직 확정 전.
 
 ## 1. 전체 구조
@@ -37,7 +37,23 @@
 | z | 위 (+) |
 | 단위 | mm, N |
 
-**부품 코드**: `bonnet`(보닛), `mirror_l`(사이드미러 좌), `mirror_r`(사이드미러 우)
+**부품 코드** — 코드는 로봇·DB·화면이 같이 쓰므로 바꾸지 않는다
+
+| 분류 | 코드 (이름) | robot_ok 기본 |
+|---|---|---|
+| 외판 | `bonnet`(보닛) · `door_fl`(앞문 좌) · `door_fr`(앞문 우) · `door_rl`(뒷문 좌) · `door_rr`(뒷문 우) | 1 |
+| 외판 | `bumper_f`(앞범퍼) · `bumper_r`(뒷범퍼) · `trunk`(트렁크 리드) · `fender_l`(펜더 좌) · `fender_r`(펜더 우) | 0 |
+| 미러 | `mirror_l`(사이드미러 좌) · `mirror_r`(사이드미러 우) | 1 |
+| 램프 | `headlamp_l` · `headlamp_r`(헤드램프 좌·우) · `taillamp_l` · `taillamp_r`(테일램프 좌·우) | 0 |
+| 기타 | `wiper`(와이퍼 블레이드) | 0 |
+
+- **로봇 교체 대상은 `robot_ok=1` 부품만.** 관리자가 재고 탭에서 켜고 끈다 (`GET /api/parts/<code>/check` 의 `robot_ok`).
+  수동 모드에서 `robot_ok=0` 부품을 지정하면 웹이 400 으로 거절하므로 `/repair/command` 의 `parts` 에는 오지 않는다.
+- 자동 모드에서 `robot_ok=0` 부품의 손상을 찾으면 findings 에는 기록하되 교체하지 않는다 (`warn` 이벤트로 알림).
+
+**손상 위치 (findings)** — `x, y` 는 위 좌표계. `z`(높이)는 옆면 부품(문)만 필수, 위에서 찍는 보닛은 생략(NULL)
+- 문: 왼쪽 문 `y = 0`, 오른쪽 문 `y = 110` (옆면), `x` = 문 길이 방향, `z` = 바닥에서 높이 `(협의, 실측 후 수정)`
+- 임시 모델 기준 문 범위: 뒷문 x 72~118, 앞문 x 120~165, 높이 z 13~38 mm
 
 **단계 이름 (stage)**: `calibrate` → `scan` → `detect` → `stock` → `replace` → `inspect` → `done`
 수동 모드는 `scan`, `detect` 생략
@@ -64,11 +80,11 @@
 
 | type | 필드 | 보내는 때 | 예 |
 |---|---|---|---|
-| `point` | `x, y` [mm], `dz` [mm], `state`, `fine`(선택) | 측정 점 1개 찍을 때마다 | `{"type":"point","x":120,"y":40,"dz":-0.8,"state":"dent"}` |
+| `point` | `x, y` [mm], `z`(선택, 옆면), `dz` [mm], `state`, `fine`(선택) | 측정 점 1개 찍을 때마다 | `{"type":"point","x":120,"y":40,"dz":-0.8,"state":"dent"}` |
 | `wrench` | `fz` [N] | 10 Hz 이하 | `{"type":"wrench","fz":-4.2}` |
 | `flush` | `mm` | 단차 측정 직후 | `{"type":"flush","mm":0.18}` |
 
-- `dz` = 측정 높이 − 정상 높이. **들어가면 음수**.
+- `dz` = 측정 높이 − 정상 높이. **들어가면 음수**. 옆면(문)은 바깥 기준으로 들어가면 음수 (findings `depth` 도 같은 기준).
 - `state` = `ok` / `suspect` / `dent` (임계값 기준, 아래 6장).
 - `fine: true` = 의심 구역 상세 스캔 점 (화면에 작게 표시).
 
@@ -81,8 +97,8 @@
 | `db.job(job_id)` | `GET /api/jobs/<id>` | 작업 정보 |
 | `db.requested_parts(job_id)` | (위와 같음) | 수동 모드 지정 부품 목록 |
 | `db.event(job_id, stage, msg, level)` | `POST /api/jobs/<id>/events` | 진행 기록. level = `info`/`warn`/`error` |
-| `db.findings(job_id, [...])` | `POST /api/jobs/<id>/findings` | 손상 판정. `[{part_code, x, y, depth, decision}]` |
-| `db.part_available(code)` | `GET /api/parts/<code>/check` | 재고 있으면 `True` |
+| `db.findings(job_id, [...])` | `POST /api/jobs/<id>/findings` | 손상 판정. `[{part_code, x, y, z, depth, decision}]` (z 는 문만) |
+| `db.part_available(code)` | `GET /api/parts/<code>/check` | 재고 있으면 `True`. 응답의 `robot_ok` 로 로봇 교체 가능 여부 확인 |
 | `db.replacement(job_id, code, success, retries, peak_force, flush_mm)` | `POST /api/jobs/<id>/replacements` | 교체·재검사 결과 |
 | `db.consume(code)` | `POST /api/parts/<code>/consume` | 교체 **성공 후** 재고 1개 차감 (0이면 에러 409) |
 | `db.finish(job_id, status, summary)` | `POST /api/jobs/<id>/finish` | 작업 종료 (한 번만) |
@@ -125,3 +141,4 @@ event(done) → finish("done") 또는 finish("failed")
 | 날짜 | 버전 | 내용 | 작성 |
 |---|---|---|---|
 | 2026-11-13 | v0.1 | 최초 작성 | 웹·DB |
+| 2026-11-16 | v0.2 | 부품 17종 · `robot_ok`(로봇 교체 대상은 1 만) · findings `z` · 문 좌표 규칙(협의) · point `z`(선택) | 웹·DB |

@@ -35,8 +35,18 @@ $$("#modeSeg .seg-btn").forEach((b) => b.addEventListener("click", () => {
   $("#partPick").classList.toggle("hidden", state.mode !== "manual");
   repaint();
 }));
-$$("#partPick input").forEach((c) => c.addEventListener("change", () => repaint()));
-const pickedParts = () => $$("#partPick input:checked").map((c) => c.value);
+$("#partPickList").addEventListener("change", () => repaint());
+const pickedParts = () => $$("#partPickList input:checked").map((c) => c.value);
+
+// 수동 모드 부품 목록: robot_ok=1 부품만. 재고 탭에서 바꾸면 다시 그림 (고른 것은 유지)
+function renderPartPick(ps) {
+  const picked = new Set(pickedParts());
+  $("#partPickList").innerHTML = ps.filter((p) => p.robot_ok).map((p) =>
+    `<label class="chk"><input type="checkbox" value="${esc(p.code)}"${picked.has(p.code) ? " checked" : ""}> ${esc(p.name)}</label>`).join("")
+    || `<p class="note">로봇 교체 가능 부품이 없습니다. 재고 탭에서 켜 주세요.</p>`;
+  $$("#partPickList input").forEach((c) => (c.disabled = $("#startBtn").disabled));
+  repaint();
+}
 
 // ------------------------------------------------------------ 데이터 로드
 async function loadVehicles() {
@@ -47,13 +57,24 @@ async function loadVehicles() {
 }
 
 async function loadParts() {
-  const ps = await api("GET", "/api/parts");
+  const ps = await api("GET", "/api/parts");          // 서버가 분류 순(외판·미러·램프·기타)으로 정렬
+  let cat = null;
   $("#partsBody").innerHTML = ps.map((p) => {
     const st = p.stock === 0 ? ["out", "없음"] : p.stock <= p.min_stock ? ["low", "부족"] : ["ok", "충분"];
-    return `<tr><td>${esc(p.code)}</td><td>${esc(p.name)}</td><td><b>${p.stock}</b></td><td>${p.min_stock}</td>
+    const head = p.category !== cat ? `<tr class="group"><td colspan="8">${esc((cat = p.category) || "미분류")}</td></tr>` : "";
+    return head + `<tr><td>${esc(p.code)}</td><td>${esc(p.name)}</td><td>${esc(p.location || "–")}</td><td><b>${p.stock}</b></td><td>${p.min_stock}</td>
       <td><span class="badge ${st[0]}">${st[1]}</span></td>
+      <td><label class="switch" title="로봇 교체 켜기/끄기"><input type="checkbox" data-robot="${esc(p.code)}"${p.robot_ok ? " checked" : ""}
+        aria-label="${esc(p.name)} 로봇 교체"><span></span></label>${p.robot_ok ? `<span class="badge robot">로봇 교체 가능</span>` : ""}</td>
       <td><input type="number" min="0" value="${p.stock}" data-code="${esc(p.code)}"><button class="btn primary small" data-save="${esc(p.code)}">저장</button></td></tr>`;
   }).join("");
+  renderPartPick(ps);
+  $$("[data-robot]").forEach((c) => c.addEventListener("change", async () => {
+    c.disabled = true;
+    try { await api("PATCH", `/api/parts/${c.dataset.robot}`, { robot_ok: c.checked ? 1 : 0 }); }
+    catch (e) { alert("저장 실패: " + e.message); }
+    loadParts();
+  }));
   $$("[data-save]").forEach((b) => b.addEventListener("click", async () => {
     const v = parseInt($(`input[data-code="${b.dataset.save}"]`).value, 10);
     try { await api("PATCH", `/api/parts/${b.dataset.save}`, { stock: v }); loadParts(); }
@@ -62,7 +83,7 @@ async function loadParts() {
 }
 
 async function loadJobs() {
-  const js = await api("GET", "/api/jobs");
+  const js = await api("GET", "/api/jobs?limit=200");
   const vs = await api("GET", "/api/vehicles");
   const owner = Object.fromEntries(vs.map((v) => [v.id, v.owner_name || "–"]));
   $("#jobsBody").innerHTML = js.map((j) => `<tr class="click" data-id="${j.id}">
@@ -116,7 +137,7 @@ const viewer = createCarViewer($("#viewer"), {
   msgEl: $("#viewerMsg"),
   onPartClick: (code) => {                     // 수동 모드: 3D 화면에서 부품을 눌러 선택
     if (state.mode !== "manual" || $("#startBtn").disabled) return;
-    const c = $(`#partPick input[value="${code}"]`);
+    const c = $(`#partPickList input[value="${code}"]`);   // 로봇 교체 가능 부품만 목록에 있음
     if (c) { c.checked = !c.checked; repaint(); }
   },
 });
@@ -358,10 +379,18 @@ async function runDemo(job) {
       toReplace = job.requested;
       await ev("stock", `수동 모드: 지정 부품 ${toReplace.map(partName).join(", ")} 교체 (스캔·판정 건너뜀)`);
     } else {
-      toReplace = await demoScan(jobId, ev, check);
-      if (!toReplace.length) {
+      const robotOk = new Set((await api("GET", "/api/parts")).filter((p) => p.robot_ok).map((p) => p.code));
+      const found = await demoScan(jobId, ev, check, robotOk);
+      if (!found.length) {
         await ev("detect", "손상 없음");
         await api("POST", `/api/jobs/${jobId}/finish`, { status: "no_damage", summary: "모든 측정 점이 임계값 이내" });
+        return;
+      }
+      toReplace = found.filter((c) => robotOk.has(c));        // 로봇은 robot_ok=1 부품만 교체
+      const manualOnly = found.filter((c) => !robotOk.has(c)).map(partName);
+      if (manualOnly.length) await ev("detect", `로봇 교체 불가 부품: ${manualOnly.join(", ")} (수작업 필요)`, "warn");
+      if (!toReplace.length) {
+        await api("POST", `/api/jobs/${jobId}/finish`, { status: "on_hold", summary: `로봇 교체 불가: ${manualOnly.join(", ")}` });
         return;
       }
     }
@@ -414,10 +443,23 @@ async function runDemo(job) {
   }
 }
 
-async function demoScan(jobId, ev, check) {
+// 문 영역 (차량 좌표계 mm, viewer3d.js 임시 모델·db.py 샘플과 같은 값). 옆면이라 y 는 0(왼쪽)/110(오른쪽), 높이 z
+const DOOR_AREA = {
+  door_rl: { x: [77, 113], y: 0 }, door_fl: { x: [125, 160], y: 0 },
+  door_rr: { x: [77, 113], y: 110 }, door_fr: { x: [125, 160], y: 110 },
+};
+const DOOR_Z = [16, 35];
+
+async function demoScan(jobId, ev, check, robotOk) {
   const r = Math.random();
   const dents = r < 0.55 ? [{ x: 200 + Math.random() * 30, y: 30 + Math.random() * 50, depth: 0.8 + Math.random() * 1.6 }] : [];
   const missing = r > 0.35 && r < 0.85 ? [Math.random() < 0.5 ? "mirror_l" : "mirror_r"] : [];
+  // 가끔(30%) 문 찌그러짐 — 로봇 교체 가능으로 켜진 문 중에서
+  const doors = Object.keys(DOOR_AREA).filter((d) => robotOk.has(d));
+  const doorDent = doors.length && Math.random() < 0.3 ? (() => {
+    const code = doors[Math.floor(Math.random() * doors.length)], a = DOOR_AREA[code];
+    return { code, x: a.x[0] + Math.random() * (a.x[1] - a.x[0]), y: a.y, z: DOOR_Z[0] + Math.random() * (DOOR_Z[1] - DOOR_Z[0]), depth: 0.9 + Math.random() * 1.6 };
+  })() : null;
   const SIGMA = 0.08, SUS = 1.5 * SIGMA * 3, DMG = 3 * SIGMA * 3;   // 데모용 임계값 [mm]
   const heightAt = (x, y) => {
     let dz = SIGMA * randn();
@@ -445,6 +487,30 @@ async function demoScan(jobId, ev, check) {
       await sleep(12);
     }
   }
+  // 측면(문) 스캔: 점에 z 가 있으면 화면이 옆면에 표시
+  await ev("scan", "측면 스캔 (문 4곳)");
+  const sideDz = (code, x, z) => {
+    let dz = SIGMA * randn();
+    if (doorDent && doorDent.code === code) { const dist = Math.hypot(x - doorDent.x, z - doorDent.z); if (dist < 10) dz -= doorDent.depth * (1 - (dist / 10) ** 2); }
+    return dz;
+  };
+  for (const [code, a] of Object.entries(DOOR_AREA)) {
+    for (let x = a.x[0]; x <= a.x[1]; x += 12) for (let z = DOOR_Z[0] + 2; z <= DOOR_Z[1]; z += 8) {
+      check();
+      const dz = sideDz(code, x, z);
+      onStatus({ type: "point", x, y: a.y, z, dz, state: classify(dz) });
+      await sleep(20);
+    }
+  }
+  if (doorDent) {
+    await ev("scan", `${partName(doorDent.code)} 의심 구역 상세 스캔`, "warn");
+    for (let dx = -8; dx <= 8; dx += 4) for (let dzz = -8; dzz <= 8; dzz += 4) {
+      check();
+      const x = doorDent.x + dx, z = doorDent.z + dzz, dz = sideDz(doorDent.code, x, z);
+      onStatus({ type: "point", x, y: doorDent.y, z, dz, state: classify(dz), fine: true });
+      await sleep(12);
+    }
+  }
   for (const m of ["mirror_l", "mirror_r"]) {
     check();
     await ev("scan", `${partName(m)} 접촉 확인: ${missing.includes(m) ? "접촉 없음" : "접촉 있음"}`, missing.includes(m) ? "warn" : "info");
@@ -453,6 +519,7 @@ async function demoScan(jobId, ev, check) {
   await ev("detect", "정상 모델과 비교 중"); await sleep(500); check();
   const findings = [
     ...dents.map((d) => ({ part_code: "bonnet", x: d.x, y: d.y, depth: -d.depth, decision: "dent" })),
+    ...(doorDent ? [{ part_code: doorDent.code, x: doorDent.x, y: doorDent.y, z: doorDent.z, depth: -doorDent.depth, decision: "dent" }] : []),
     ...missing.map((m) => ({ part_code: m, decision: "missing" })),
   ];
   if (findings.length) await api("POST", `/api/jobs/${jobId}/findings`, findings);

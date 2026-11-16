@@ -5,8 +5,9 @@
  *  GLB 준비 규칙 (모델링 담당에게 전달)
  *   - 단위 mm, 위쪽이 +Y (glTF 기본)
  *   - 원점 = 차량 좌표계 원점(뒤 왼쪽 모서리 바닥), +X = 차 앞쪽, +Z = 차 오른쪽
- *   - 교체 부품은 따로 분리된 메쉬로, 이름을 bonnet / mirror_l / mirror_r 로
+ *   - 교체 부품은 따로 분리된 메쉬로, 이름을 bonnet / mirror_l / mirror_r / door_fl / door_fr / door_rl / door_rr 로
  *  → 로봇이 찍은 손상 좌표 (x, y) 를 그대로 3D 위치 (X=x, Z=y) 에 올릴 수 있다.
+ *    높이 z 가 있으면 (문처럼 옆면) 3D 높이 Y=z 에 그대로, 없으면 (보닛) 위에서 표면을 찾아 올린다.
  */
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -14,7 +15,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
 const CAR = { L: 260, W: 110 };
 const MODEL_URL = "/static/models/car.glb";
-const PART_CODES = ["bonnet", "mirror_l", "mirror_r"];
+const PART_CODES = ["bonnet", "mirror_l", "mirror_r", "door_fl", "door_fr", "door_rl", "door_rr"];
 export const COLORS = {
   body: 0x9fb3c8, part: 0xc3d0dd, glass: 0x3a4a5c, tire: 0x2a2f36,
   ok: 0x2e9d6a, dent: 0xd64545, failed: 0xd64545, missing: 0x7c4dbd, requested: 0xe0a526, suspect: 0xe0a526, replaced: 0x2e9d6a,
@@ -54,7 +55,7 @@ export function createCarViewer(host, { msgEl = null, onPartClick = null } = {})
   const pointsGroup = new THREE.Group();        // 실시간 측정 점
   carRoot.add(markers, pointsGroup);
   let model = null;
-  const parts = {};                             // bonnet / mirror_l / mirror_r → Mesh(또는 Group)
+  const parts = {};                             // PART_CODES → Mesh(또는 Group)
   const baseMaterial = new Map();
 
   function setView(name) {
@@ -141,11 +142,17 @@ export function createCarViewer(host, { msgEl = null, onPartClick = null } = {})
     clearGroup(markers);
     for (const f of findings) {
       if (f.decision !== "dent" || f.x == null) continue;
-      const y = surfaceY(f.x, f.y);
       const dot = new THREE.Mesh(new THREE.SphereGeometry(4.5, 20, 14), new THREE.MeshBasicMaterial({ color: COLORS.dent }));
-      dot.position.set(f.x, y + 2, f.y);
       const ring = new THREE.Mesh(new THREE.RingGeometry(9, 11, 40), new THREE.MeshBasicMaterial({ color: COLORS.dent, side: THREE.DoubleSide }));
-      ring.rotation.x = -Math.PI / 2; ring.position.set(f.x, y + 1.5, f.y);
+      if (f.z != null) {                          // 옆면(문): 링을 세워서 바깥쪽에
+        const out = f.y < CAR.W / 2 ? -1 : 1;
+        dot.position.set(f.x, f.z, f.y + out * 3);
+        ring.position.set(f.x, f.z, f.y + out * 2.5);
+      } else {                                    // 윗면(보닛): 표면 위에 눕혀서
+        const y = surfaceY(f.x, f.y);
+        dot.position.set(f.x, y + 2, f.y);
+        ring.rotation.x = -Math.PI / 2; ring.position.set(f.x, y + 1.5, f.y);
+      }
       markers.add(dot, ring);
     }
   }
@@ -155,7 +162,8 @@ export function createCarViewer(host, { msgEl = null, onPartClick = null } = {})
   const pointMat = Object.fromEntries(["ok", "suspect", "dent"].map((k) => [k, new THREE.MeshBasicMaterial({ color: COLORS[k] })]));
   function addPoint(p) {
     const m = new THREE.Mesh(p.fine ? pointGeo.fine : pointGeo.coarse, pointMat[p.state] || pointMat.ok);
-    m.position.set(p.x, surfaceY(p.x, p.y) + 1.5, p.y);
+    if (p.z != null) m.position.set(p.x, p.z, p.y + (p.y < CAR.W / 2 ? -2.5 : 2.5));   // 옆면 점
+    else m.position.set(p.x, surfaceY(p.x, p.y) + 1.5, p.y);
     pointsGroup.add(m);
   }
   function clearPoints() { pointsGroup.clear(); }
@@ -207,6 +215,10 @@ function buildPlaceholderCar() {
   g.add(bonnet);
   g.add(box(16, 9, 14, COLORS.part, 158, lift + 36, -7, "mirror_l"));
   g.add(box(16, 9, 14, COLORS.part, 158, lift + 36, 117, "mirror_r"));
+  // 문 4개: 옆면에 붙은 얇은 판 (뒷문 x 72~118, 앞문 x 120~165, 높이 13~38, 왼쪽 y=0 / 오른쪽 y=110)
+  for (const [name, x, z] of [["door_rl", 95, -1], ["door_fl", 142.5, -1], ["door_rr", 95, 111], ["door_fr", 142.5, 111]]) {
+    g.add(box(name.startsWith("door_r") ? 46 : 45, 25, 2, COLORS.part, x, lift + 15.5, z, name));
+  }
   // 바퀴
   const wheelGeo = new THREE.CylinderGeometry(14, 14, 12, 24);
   wheelGeo.rotateX(Math.PI / 2);

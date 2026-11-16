@@ -82,10 +82,8 @@
         </div>
 
         <div id="partPick" class="part-pick hidden">
-          <div class="field-label">교체할 부품 <small>(3D 화면에서 눌러도 선택돼요)</small></div>
-          <label class="chk"><input type="checkbox" value="bonnet"> 보닛</label>
-          <label class="chk"><input type="checkbox" value="mirror_l"> 사이드미러 (좌)</label>
-          <label class="chk"><input type="checkbox" value="mirror_r"> 사이드미러 (우)</label>
+          <div class="field-label">교체할 부품 <small>(로봇 교체 가능 부품만 · 3D 화면에서 눌러도 선택돼요)</small></div>
+          <div id="partPickList"></div>
         </div>
 
         <div class="btnrow">
@@ -128,10 +126,11 @@
     <div class="card">
       <h2>부품 재고</h2>
       <table class="tbl">
-        <thead><tr><th>코드</th><th>부품</th><th>재고</th><th>최소</th><th>상태</th><th>수정</th></tr></thead>
+        <thead><tr><th>코드</th><th>부품</th><th>위치</th><th>재고</th><th>최소</th><th>상태</th><th>로봇 교체</th><th>수정</th></tr></thead>
         <tbody id="partsBody"></tbody>
       </table>
-      <p class="note">교체에 성공하면 재고가 자동으로 1개 줄어듭니다. 재고가 0이면 수리는 '보류'로 끝납니다.</p>
+      <p class="note">교체에 성공하면 재고가 자동으로 1개 줄어듭니다. 재고가 0이면 수리는 '보류'로 끝납니다.<br>
+        '로봇 교체'를 켠 부품만 수동 모드에서 고를 수 있고, 로봇이 교체합니다.</p>
     </div>
   </section>
 

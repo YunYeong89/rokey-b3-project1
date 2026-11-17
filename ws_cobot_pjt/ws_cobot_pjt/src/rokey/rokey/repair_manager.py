@@ -1,0 +1,188 @@
+"""Repair process node (INTERFACE.md section 5). Waits for /repair/command and runs one job at a time,
+recording every stage in the repair DB:
+
+  calibrate  probe pickup (simulation, when not held), calibration when there is no result for this mode
+             (or --calibrate), choose_car
+  scan       scan_surface over the replaceable parts (auto mode) -> detect: findings, no damage -> no_damage
+  stock      check_db for the parts to replace (auto: dent/missing, manual: the requested parts) -> on_hold
+  replace    replace_parts per part -> inspect -> replacement record, consume on success -> done / failed
+
+A stop command stops the robot at once and records nothing more (the web records `stopped`); an error is
+recorded, the job fails and the robot goes home.
+  ros2 run rokey repair_manager [--calibrate]          (or ros2 launch rokey repair.launch.py)
+"""
+import argparse
+import json
+
+from std_msgs.msg import String
+
+if __package__:
+    from .calibration import calibrate
+    from .check_db import StockChecker
+    from .choose_car import identify
+    from .configs import read_session
+    from .force_data import CalibrationRun
+    from .repair_db import RepairDB
+    from .replace_parts import PartReplacer
+    from .scan_surface import scan_parts
+else:
+    from calibration import calibrate
+    from check_db import StockChecker
+    from choose_car import identify
+    from configs import read_session
+    from force_data import CalibrationRun
+    from repair_db import RepairDB
+    from replace_parts import PartReplacer
+    from scan_surface import scan_parts
+
+
+class Stopped(Exception):
+    """The job ended early with a final status (no_damage, on_hold)."""
+
+    def __init__(self, status, summary):
+        super().__init__(summary)
+        self.status = status
+
+
+class RepairManager:
+    def __init__(self, always_calibrate):
+        self.program = CalibrationRun('repair_manager')
+        self.db = RepairDB(**self.program.config['db'])
+        self.always_calibrate, self.pending, self.job, self.stage = always_calibrate, None, None, None
+        self.program.node.create_subscription(String, '/repair/command', self.command, 10)
+        self.program.log(f'repair_manager ready ({self.program.mode}); waiting for /repair/command')
+
+    def command(self, message):
+        """Runs inside the robot executor: only queue a start or flag a stop."""
+        data = json.loads(message.data)
+        if data.get('cmd') == 'start' and self.job is None:
+            self.pending = data
+        elif data.get('cmd') == 'stop' and self.job is not None and data.get('job_id') == self.job['job_id']:
+            self.program.robot.cancelled = True
+            self.program.log(f'job {self.job["job_id"]}: stop requested')
+
+    def spin(self):
+        while True:
+            self.program.robot.executor.spin_once(timeout_sec=0.1)
+            if self.pending is not None:
+                self.job, self.pending = self.pending, None
+                self.run(self.job)
+                self.job = None
+
+    def event(self, stage, message, level='info'):
+        self.stage = stage
+        self.program.log(f'[{stage}] {message}')
+        self.db.event(self.job['job_id'], stage, message, level)
+
+    def run(self, job):
+        program, job_id = self.program, job['job_id']
+        try:
+            program.reload()
+            status, summary = self.process(job)
+            self.db.finish(job_id, status, summary)
+            return 0 if status in ('done', 'no_damage', 'on_hold') else 1
+        except Stopped as end:
+            self.db.finish(job_id, end.status, str(end))
+            return 0
+        except KeyboardInterrupt:
+            program.robot.cancelled = True
+            program.robot.stop()
+            program.probe.close()
+            self.db.finish(job_id, 'stopped', '웹에서 작업 중지')
+            return 130
+        except Exception as error:
+            if program.robot.cancelled:
+                program.probe.close()
+                program.log(f'job {job_id}: stopped')
+                self.db.finish(job_id, 'stopped', '웹에서 작업 중지')
+            else:
+                program.node.get_logger().error(f'job {job_id} failed in {self.stage}: {error}')
+                try:
+                    self.event(self.stage, str(error), 'error')
+                    self.db.finish(job_id, 'failed', str(error))
+                finally:
+                    program.home()
+            return 1
+        finally:
+            program.robot.cancelled = False
+
+    def process(self, job):
+        program, job_id = self.program, job['job_id']
+        self.event('calibrate', f'job {job_id} ({job.get("mode", "auto")}): probe, calibration, vehicle identification')
+        self.hold_probe()
+        result = read_session('calibration_result.json')
+        if self.always_calibrate or not result or result['mode'] != program.mode:
+            calibrate(program)
+        vehicle = identify(program)
+        self.event('calibrate', f'vehicle {vehicle["type"]} at {[round(v, 1) for v in vehicle["pose_base_mm_deg"]]} '
+                                f'({len(vehicle["touches"])} touches, rms {vehicle["rms_mm"]:.2f} mm)')
+        if job.get('mode') == 'manual':
+            parts = self.db.requested_parts(job_id)
+        else:
+            self.event('scan', f'parts {program.config["inspection"]["replaceable"]}')
+            scan = scan_parts(program, program.config['inspection']['replaceable'])
+            self.event('detect', f'findings {scan["findings"]}')
+            if scan['findings']:
+                self.db.findings(job_id, scan['findings'])
+            else:
+                raise Stopped('no_damage', '손상 없음')
+            parts = scan['replace']
+            if not parts:
+                raise Stopped('done', '교체 대상 없음 (의심 판정만 있음)')
+        self.event('stock', f'parts {parts}')
+        available, missing = StockChecker(self.db).check(parts)
+        if missing:
+            raise Stopped('on_hold', f'재고 없음: {", ".join(missing)}')
+        replacer, failed = PartReplacer(program), []
+        for part in parts:
+            self.event('replace', part)
+            outcome = replacer.replace(part)
+            self.event('inspect', f'{part}: flush {outcome["flush_mm"]} mm')
+            if outcome['flush_mm'] is not None:
+                program.publish(type='flush', mm=outcome['flush_mm'])
+            self.db.replacement(job_id, part, **outcome)
+            if outcome['success']:
+                self.db.consume(part)
+            else:
+                failed.append(part)
+        program.home()
+        self.event('done', f'replaced {[part for part in parts if part not in failed]}')
+        return ('failed', f'교체 실패: {", ".join(failed)}') if failed else ('done', f'교체 완료: {", ".join(parts)}')
+
+    def hold_probe(self):
+        """In the simulation, pick the probe from its rack unless the probe TCP is already active."""
+        program, probe = self.program, self.program.config['probe']
+        if program.mode != 'virtual' or program.robot.get_tcp() == probe['tcp_name']:
+            return
+        if __package__:
+            from .pick_probe import ProbePickup
+        else:
+            from pick_probe import ProbePickup
+        plan = read_session('probe_plan.json')
+        if plan is None:
+            raise RuntimeError('session/probe_plan.json 없음: ./run_virtual.sh --car sedan (suv, sports, random) 으로 세션을 시작하세요')
+        ProbePickup(program.node, program.robot, plan, program.config['motion']).run()
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('--calibrate', action='store_true', help='calibrate at every job start')
+    parser.add_argument('--job-id', type=int, help='Run one existing DB job and exit (web_control)')
+    options, _ = parser.parse_known_args()
+    manager = RepairManager(options.calibrate)
+    try:
+        if options.job_id is not None:
+            job = manager.db.job(options.job_id)
+            if job['status'] != 'running':
+                raise ValueError('The repair job is no longer running')
+            manager.job = dict(job, job_id=options.job_id)
+            return manager.run(manager.job)
+        manager.spin()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        manager.program.close()
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

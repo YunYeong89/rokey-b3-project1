@@ -1,8 +1,10 @@
 /* 관리자·고객 공용 3D 차량 뷰어 (three.js)
  *
  * 3D 모델
- *  static/models/car.glb 가 있으면 그걸 불러오고, 없으면 상자로 만든 임시 차를 그린다.
- *  GLB 준비 규칙 (모델링 담당에게 전달)
+ *  차량 모델 코드(예: sedan_1_18)의 앞부분으로 static/models/<sedan|suv|sports>.glb 를 불러온다.
+ *  이 파일들은 로봇 쪽 rokey 차량 모델(축소 척도, 가장 긴 차 400 mm)에서 만들어진다 (--web 시작 때 다시 생성).
+ *  없으면 static/models/car.glb, 그것도 없으면 상자로 만든 임시 차를 그린다. 화면 크기는 불러온 모델에 맞춘다.
+ *  GLB 준비 규칙
  *   - 단위 mm, 위쪽이 +Y (glTF 기본)
  *   - 원점 = 차량 좌표계 원점(뒤 왼쪽 모서리 바닥), +X = 차 앞쪽, +Z = 차 오른쪽
  *   - 교체 부품은 따로 분리된 메쉬로, 이름을 bonnet / mirror_l / mirror_r 로
@@ -12,8 +14,8 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
-const CAR = { L: 260, W: 110 };
-const MODEL_URL = "/static/models/car.glb";
+let CAR = { L: 260, W: 110 };                   // 불러온 모델의 길이·폭 [mm] (임시 차 기준값)
+const MODEL_DIR = "/static/models/";
 const PART_CODES = ["bonnet", "mirror_l", "mirror_r"];
 export const COLORS = {
   body: 0x9fb3c8, part: 0xc3d0dd, glass: 0x3a4a5c, tire: 0x2a2f36,
@@ -58,9 +60,11 @@ export function createCarViewer(host, { msgEl = null, onPartClick = null } = {})
   const baseMaterial = new Map();
 
   function setView(name) {
+    const k = CAR.L / 260;                      // 시점 거리는 차 길이에 비례
     const [x, y, z] = VIEWS[name];
-    camera.position.set(x, y, z);
-    controls.target.set(0, 25, 0);
+    camera.position.set(x * k, y * k, z * k);
+    controls.target.set(0, 25 * k, 0);
+    controls.maxDistance = 900 * k;
     controls.update();
   }
 
@@ -86,13 +90,25 @@ export function createCarViewer(host, { msgEl = null, onPartClick = null } = {})
   });
 
   // ---------------------------------------------------------------- 모델
-  async function load() {
+  let loaded = null;
+  async function load(vehicleModel = "sedan") {
+    const type = vehicleType(vehicleModel);
+    if (model && loaded === type) return;
+    loaded = type;
     let glb = null;
-    try {
-      const head = await fetch(MODEL_URL, { method: "HEAD" });
-      if (head.ok) glb = (await new GLTFLoader().loadAsync(MODEL_URL)).scene;
-    } catch (e) { console.warn("car.glb 불러오기 실패, 임시 모델 사용", e); }
+    for (const url of [`${MODEL_DIR}${type}.glb`, `${MODEL_DIR}car.glb`]) {
+      try {
+        const head = await fetch(url, { method: "HEAD" });
+        if (head.ok) { glb = (await new GLTFLoader().loadAsync(url)).scene; break; }
+      } catch (e) { console.warn(`${url} 불러오기 실패`, e); }
+    }
+    if (model) carRoot.remove(model);
+    for (const code of Object.keys(parts)) delete parts[code];
+    baseMaterial.clear();
     model = glb || buildPlaceholderCar();
+    const box = new THREE.Box3().setFromObject(model);
+    CAR = glb ? { L: box.max.x, W: box.max.z } : { L: 260, W: 110 };
+    carRoot.position.set(-CAR.L / 2, 0, -CAR.W / 2);
     carRoot.add(model);
     for (const code of PART_CODES) {
       const obj = model.getObjectByName(code);
@@ -106,7 +122,7 @@ export function createCarViewer(host, { msgEl = null, onPartClick = null } = {})
       parts[code] = obj;
     }
     if (msgEl) {
-      msgEl.textContent = glb ? "" : "임시 모델 (static/models/car.glb 를 넣으면 실제 모델로 바뀜)";
+      msgEl.textContent = glb ? "" : `임시 모델 (static/models/${type}.glb 가 없음)`;
       msgEl.classList.toggle("small-msg", !glb);
     }
     resize();
@@ -177,8 +193,11 @@ export function createCarViewer(host, { msgEl = null, onPartClick = null } = {})
     });
   }
 
-  return { load, paint, addPoint, clearPoints, setView, resize };
+  return { load, paint, addPoint, clearPoints, setView, resize, size: () => ({ ...CAR }) };
 }
+
+/** 차량 모델 코드 → 3D 모델 종류: "sedan_1_18" → "sedan" */
+export function vehicleType(model) { return String(model || "sedan").split("_")[0]; }
 
 // ================================================================ 유틸
 function eachMesh(obj, fn) { obj.traverse((o) => { if (o.isMesh) fn(o); }); }

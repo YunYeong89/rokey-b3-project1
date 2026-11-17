@@ -1,433 +1,167 @@
-# M0609 + RG2 기본 제어
+# M0609·RG2 표면 측정 개발 워크스페이스
 
-`run_virtual.sh`를 기준으로 정리한 `rokey-b3-project1`의 ROS 배포본입니다.
-`simple_move`의 관절·직선 이동과 RG2 그리퍼 제어를 포함합니다.
-가상 컨트롤러는 Doosan DRCF, ROS 배포판은 Jazzy, 로봇 모델은 M0609입니다.
+2026-11-16 소스 기준. Doosan M0609와 OnRobot RG2로 탐침을 파지하고, 접촉 힘을 제어하며 표면을 측정하는 개발용 워크스페이스다. macOS에서는 Gazebo·RViz를 native로 실행하고 ROS 2 Jazzy 제어 노드는 Docker에서 실행한다.
 
-법선 벡터 추정, 순응·힘 제어 애플리케이션, 표면 스캔, 포인트클라우드,
-탐침·거치대·도넛 맵, 실측 calibration 파일은 배포 범위에서 제외했습니다.
-벤더 SDK와 ROS 인터페이스의 일반 API 정의는 호환성을 위해 유지합니다.
+로봇 프로그램과 인터페이스 상세는 [rokey README](ws_cobot_pjt/src/rokey/README.md)에 정리했다. `rokey-b3-project1/ws_cobot_pjt/`는 기본 이동·그리퍼 제어를 정리한 별도 배포본이며, 최신 스캔 코드는 이 워크스페이스의 `ws_cobot_pjt/src/rokey/`에 있다.
 
-Docker 이미지 파일을 별도로 공유하지 않습니다. 이 저장소를 받은 뒤
-`Dockerfile`과 `compose.yaml`로 각 PC에서 이미지와 컨테이너를 생성합니다.
-ROS 소스도 해당 PC의 워크스페이스에서 빌드합니다.
+## 현재 구현 범위
 
-## 파일 구조와 실행 관계
+| 구성 | 구현 내용 | 확인 상태·범위 |
+|---|---|---|
+| native 가상 환경 | M0609·RG2, 차량·탐침·거치대, 충돌과 힘 센서, Docker↔native TCP 연결 | 실행 코드와 측정 로그 존재 |
+| 탐침 파지 | HOME → 거치대 접근 → RG2 파지 확인 → ProbeTCP/Tool 선택 → HOME | `pick_probe`, 거치대는 로봇 정면 기준 우측 (250, -400) mm |
+| 보정 | `calibration.json`의 TCP·Tool 질량/무게중심을 가상 모델에 적용, 측정 기반 힘·높이 잡음 보정 도구 | TCP/Tool 프로파일 적용과 측정 기반 보정은 별도 경로 |
+| 차량 수리 공정 | 차량 식별 → 부품 스캔·판정 → 재고 조회 → 교체·검사 → DB 기록 | `repair_manager`에 연결된 기존 공정 코드 |
+| **실차 부품 스캔** | `real_scan`: 팀 차량 조립품(`--car real`)의 범퍼·본넷·몸체·문을 **고정 축 + DSR 힘제어·순응제어**로 긁어 실측 점군 생성 | 가상 세션 전용. 범퍼는 현재 배치에서 접근 불가 (아래 결과) |
+| 블록 결함 측정 | `defect_scan`: 블록 윗면 1 mm 왕복, 크랙·덴트·힘·innovation·지연 분석 그래프 | hybrid 제어기(surface_follow)는 이 프로그램 전용으로만 남김 |
+| 점군 | BASE 기준 실측 PLT/PLY, 기준 메시 PLY, native RViz 점군 표시 | `real_scan`은 `session/clouds`를 통해 native RViz에 기준·실측 점군 표시 |
+| 웹 | URDF 로딩, 시뮬레이션 관절·장면 표시, 로봇 프로그램 실행 탭 | 기본 HTTP 5050, rosbridge 9090 |
 
-저장소 루트 아래의 `ws_cobot_pjt/`가 이 문서의 작업 디렉토리입니다.
-그 안의 `ws_cobot_pjt/`는 colcon 워크스페이스입니다.
+PID·admittance 제어와 이를 쓰던 프로그램(연속 표면 추종 CLI, `adaptive_scan`, `cloud_scan`, `pid_scan`)은 삭제했다. 고정축 스캔에는 PID가 필요하지 않으며(힘은 측정만 함), **PID 제어는 이후 옵션으로 도입할 예정**이다.
 
-```text
-rokey-b3-project1/
-├── README.md                      # 프로젝트 소개 및 ROS 문서 링크
-├── web/                           # 기존 웹 프로젝트
-└── ws_cobot_pjt/                   # 아래 명령을 실행하는 디렉토리
-    ├── README.md
-    ├── THIRD_PARTY.md
-    ├── run_virtual.sh             # macOS native 실행 진입점
-    ├── run_ubuntu.sh              # Ubuntu ROS 직접 실행 진입점(virtual)
-    ├── build_workspace.sh         # 두 환경에서 공통으로 사용하는 colcon 빌드
-    ├── Dockerfile
-    ├── compose.yaml               # ROS 컨테이너 + DRCF 에뮬레이터
-    ├── docker-entrypoint.sh
-    ├── emulator/
-    │   └── start.sh               # DRCF 및 API 프로세스 시작/종료
-    ├── native/
-    │   ├── environment.yml        # cobot-native Conda 환경
-    │   ├── run_display.sh         # Conda → session.py
-    │   ├── session.py             # Docker·Gazebo·RViz 세션 관리
-    │   ├── model_export.py        # 공통 xacro → native URDF/SDF
-    │   ├── displays.py            # Gazebo/RViz 관절 상태 표시
-    │   ├── joint_interpolator.py  # 표시용 관절 상태 보간
-    │   ├── ros_state_relay.py     # Docker ROS 상태 → host TCP 전달
-    │   └── gazebo.config
-    └── ws_cobot_pjt/
-        └── src/
-            ├── rokey/
-            │   ├── setup.py      # simple_move = rokey.move:main
-            │   └── rokey/move.py # HOME → 기본 이동 3회 → HOME
-            └── cobot_rg2/
-                ├── doosan-robot2/
-                │   ├── dsr_common2/      # Python SDK·DRFL 헤더/라이브러리
-                │   ├── dsr_msgs2/        # ROS 메시지·서비스
-                │   ├── dsr_hardware2/    # DRCF 하드웨어 인터페이스
-                │   ├── dsr_controller2/  # 이동 및 I/O 서비스
-                │   └── dsr_description2/ # M0609 메시만 포함
-                ├── onrobot-ros2/
-                │   ├── onrobot_rg_msgs/
-                │   ├── onrobot_rg_control/     # 실제 RG2 Modbus 드라이버
-                │   └── onrobot_rg_description/# RG2 메시만 포함
-                └── rg2/m0609_rg2_bringup/
-                    ├── launch/bringup.launch.py
-                    ├── config/virtual_robot.yaml
-                    ├── cobot_virtual/profiles.py # 가상 Tool/TCP 등록
-                    ├── scripts/gripper_virtual_node.py
-                    ├── scripts/gripper_joint_state_publisher.py
-                    ├── scripts/virtual_profile_loader.py
-                    ├── xacro/                   # M0609 + ros2_control
-                    ├── urdf/                    # RG2 결합
-                    └── rviz/default.rviz
-```
+## 디렉토리와 코드 관계
 
 ```text
-native(macOS)
-run_virtual.sh → native/session.py
-  ├─ Docker DRCF ← Docker ros2_control ← simple_move / 그리퍼 서비스
-  └─ Docker JointState → ros_state_relay(TCP) → native Gazebo + RViz
-
-Ubuntu
-run_ubuntu.sh → Docker DRCF ← Ubuntu ros2_control ← simple_move / 그리퍼 서비스
-                                        └─ JointState → Ubuntu RViz
+ws_cobot_pjt/                              이 README의 디렉토리
+├── README.md                             전체 구성·실행·노드 관계
+├── Dockerfile / compose.yaml             ROS 개발 컨테이너 + DRCF 에뮬레이터
+├── run_virtual.sh                        native/run_display.sh → session.py --mode virtual
+├── run_real.sh                           session.py --mode real --host <IP>
+├── run_rviz.sh                           session.py --mode real --observe-only
+├── native/
+│   ├── session.py                        세션·Docker·GUI·TCP 연결 수명 관리 (--car sedan|suv|sports|random|real)
+│   ├── model_export.py / calibration.py   URDF/SDF 생성·TCP/Tool 보정 적용
+│   ├── scene.py / scene.json              차량(팩 차량 또는 실차 조립품)·블록·반구·탐침 거치대 장면
+│   │   └── rokey real_vehicle.py         --car real: 조립품 정렬·축척·50 mm 리프트·부품 분할
+│   ├── probe_tool.py                     탐침·거치대 모델, 파지 계획
+│   ├── virtual_force.py                  GazeboForceBackend: DSR 순응·힘 service의 가상 구현, 관절·힘 피드백
+│   ├── surface_stream.py / normal_force.py  defect_scan hybrid 전용 연속 stream·법선 힘 servo(어드미턴스형)·Kalman
+│   ├── setpoint_ramp.py                  관절 목표 500 Hz 보간
+│   ├── displays.py                       Gazebo/RViz 표시와 native JointState 발행
+│   │   └── clouds.py                     session/clouds/*.npy → /cobot_native/cloud/{reference,measured}
+│   ├── ros_state_relay.py                실기/관찰 모드의 관절 상태 TCP 전달
+│   ├── environment.yml                   cobot-native Conda 환경
+│   └── results/                          과거 검증·비용 분석 기록(데이터)
+├── practice/surface_lab/                  2D 표면 추종 실험 환경
+├── ws_cobot_pjt/                          컨테이너 /workspace에 마운트하는 colcon workspace
+│   ├── src/
+│   │   ├── rokey/                        탐침·보정·측정·수리 프로그램
+│   │   │   ├── README.md                 프로그램 호출 구조·ROS 인터페이스 상세
+│   │   │   ├── rokey/real_scan.py         실차 부품 고정축 스캔 (part_scan 사용)
+│   │   │   ├── rokey/part_scan/           기준 점군·높이맵·공구/팔 충돌·IK·DSR 힘제어 실행
+│   │   │   ├── rokey/defect_scan.py       블록 결함 스캔·그래프 (surface_follow hybrid)
+│   │   │   ├── rokey/surface_follow/      defect_scan 전용 hybrid 실행부
+│   │   │   ├── config/                   robot / surface_following / vehicles
+│   │   │   ├── meshes/vehicles/          rgsdev(팩 차량) · b3_project1(팀 차량 조립품 STL)
+│   │   │   └── pointcloud/ · surface_runs/ · images/ · calibration/
+│   │   └── cobot_rg2/
+│   │       ├── doosan-robot2/             DSR hardware/controller·dsr_msgs2
+│   │       ├── onrobot-ros2/              실제 RG2 드라이버·메시지·서비스
+│   │       └── rg2/m0609_rg2_bringup/     launch·URDF·가상 그리퍼·force bridge
+│   └── session/                          탐침 계획·장면 정답·보정 결과·점군 파일 공유
+├── rokey-b3-project1/
+│   ├── web/                              Flask·DB·URDF viewer·rosbridge 클라이언트
+│   └── ws_cobot_pjt/                      기본 제어 배포본 스냅샷
+├── ADAPTIVE_SCAN_PLAN.md                  (삭제된 adaptive_scan의 과거 설계 기록)
+└── SURFACE_FOLLOWING_PLAN.md              표면 추종 설계 기록 (admittance·PID 코드는 삭제됨)
 ```
 
-## 공통: 소스 받기와 빌드 구분
+## Action·Service·Topic의 역할
 
-```bash
-git clone --branch ros https://github.com/YunYeong89/rokey-b3-project1.git
-cd rokey-b3-project1/ws_cobot_pjt
+| 방식 | 역할 | 현재 시스템에서의 사용 |
+|---|---|---|
+| **Action** | 시간이 걸리는 작업을 goal로 시작하고 feedback·result·cancel로 관리 | 벤더 DSR의 H2R 이동 action과 실기 OnRobot 드라이버의 gripper action이 존재한다. rokey의 스캔·수리 공정은 자체 action server/client가 없다. |
+| **Service** | 요청과 응답을 한 쌍으로 처리 | HOME/접근 이동, TCP·Tool 설정, RG2 명령, 탐침 attach, DSR 순응·힘 설정, defect_scan의 hybrid stream 시작·종료 |
+| **Topic** | 상태나 명령 스트림 전달 | JointState·TF·힘·PointCloud2, defect_scan의 40 Hz setpoint·state, 웹의 `/repair/command`와 `/repair/status` |
+
+`real_scan`은 **service만** 쓴다: 이동(movel)·순응제어(`task_compliance_ctrl`)·목표 힘(`set_desired_force`)·상태 조회. `defect_scan`은 **service로 HOME/접근 → service로 hybrid stream 시작 → topic으로 setpoint/state 교환 → service로 종료** 순서다.
+
+## 노드·프로세스 관계도
+
+아래는 `run_virtual.sh --car ...` 기준이다. rokey 이동 프로그램은 필요한 것을 하나씩 실행한다.
+
+```mermaid
+flowchart LR
+  subgraph Docker["Docker · ROS_DOMAIN_ID=29"]
+    APP["rokey 실행 노드<br/>pick_probe / real_scan / defect_scan 등"]
+    CTRL["controller_manager<br/>dsr_controller2 + joint_state_broadcaster"]
+    GRIP["gripper_virtual_node"]
+    BRIDGE["virtual_force_bridge"]
+    JSP["joint_state_publisher"]
+    RSP["robot_state_publisher"]
+    APP -->|"이동·프로파일 service"| CTRL
+    APP -->|"/onrobot/sendCommand"| GRIP
+    APP -->|"DSR 순응·힘·pose service (real_scan)"| BRIDGE
+    APP <-->|"hybrid 시작/종료 · setpoint/state (defect_scan)"| BRIDGE
+    CTRL -->|"nominal_joint_states"| BRIDGE
+    GRIP -->|"gripper_joint_states"| BRIDGE
+    BRIDGE -->|"virtual_control/joint_states"| JSP
+    JSP -->|"/dsr01/joint_states"| RSP
+  end
+  EMU["DRCF emulator · 별도 Docker 컨테이너"]
+  CTRL <-->|"DRFL/TCP"| EMU
+  subgraph Host["native 호스트"]
+    BACK["session.py / GazeboForceBackend<br/>DSR 순응 가상 구현 · SurfaceStream<br/>ROS 노드 아님"]
+    GZ["Gazebo Sim · 물리·관절·힘 센서"]
+    NR["ROS domain 129<br/>robot_state_publisher · 장면 · 점군 → RViz"]
+    BACK <-->|"Gazebo Transport"| GZ
+    BACK --> NR
+  end
+  BRIDGE <-->|"세션 전용 TCP/JSON"| BACK
+  APP -->|"session/clouds/*.npy (공유 폴더)"| NR
 ```
 
-이미 저장소가 있으면 그 안의 `ws_cobot_pjt/`로 이동합니다.
-아래 Docker 및 실행 명령은 모두 `Dockerfile`과 `compose.yaml`이 있는 이 디렉토리에서 실행합니다.
+컨테이너의 ROS domain은 **29**, native GUI 쪽은 **129**다. 두 환경은 bridge와 native backend 사이의 TCP로 연결되고, 컨테이너의 ROS topic은 native RViz에 보이지 않는다. 그래서 `real_scan`은 기준·실측 점군을 공유 폴더 `session/clouds/`에 쓰고, native `clouds.py`가 이를 1초마다 확인해 RViz의 `Cloud reference`(파랑)·`Cloud measured`(주황)로 발행한다.
 
-이 프로젝트에는 두 가지 빌드가 있습니다.
+## 빌드와 가상 환경 실행
 
-| 단계 | 입력 | 결과 | 필요한 환경 |
-|---|---|---|---|
-| Docker 이미지 빌드 | `Dockerfile`, ROS `package.xml`, `docker-entrypoint.sh` | 로컬 `rokey-ros:jazzy` 이미지 | macOS native |
-| ROS 워크스페이스 빌드 | `ws_cobot_pjt/src/`의 소스 | `ws_cobot_pjt/build/`, `install/`, `log/` | 두 환경 모두 |
-
-Docker 이미지는 ROS Jazzy, 컴파일 도구, `rosdep`으로 설치한 의존성과
-그리퍼용 `pymodbus==3.6.9`를 담는 개발 환경입니다.
-**이미지 빌드만으로 ROS 패키지가 빌드되는 것은 아닙니다.**
-`compose.yaml`이 호스트의 `./ws_cobot_pjt`를 컨테이너의 `/workspace`에 연결하므로,
-컨테이너에서 수행한 colcon 빌드 결과는 호스트에도 남습니다.
-
-가상 DRCF는 Doosan의 공개 이미지를 내려받아 사용합니다. 첫 이미지 빌드 및
-에뮬레이터 다운로드에는 인터넷 연결이 필요합니다. 자체 이미지 레지스트리 로그인은 필요하지 않습니다.
-
-## 1. macOS native 실행
-
-### 준비 및 최초 빌드
-
-Docker Desktop과 Conda가 필요합니다. Docker Desktop을 실행한 상태에서 진행합니다.
-Linux/amd64 DRCF 이미지는 Apple Silicon에서 Docker의 에뮬레이션으로 실행하며,
-Gazebo와 RViz 창은 macOS에서 직접 실행합니다.
-
-#### 1) Docker 사용 가능 여부 확인
-
-```bash
-docker version
-docker compose version
-docker compose --profile virtual config --quiet
-```
-
-`docker version`에 Server 정보가 나와야 합니다. 마지막 명령은 Compose 설정을
-검사하며, 정상이라면 출력 없이 끝납니다.
-
-#### 2) native 표시 환경 설치
+### macOS native + Docker
 
 ```bash
 conda env create -f native/environment.yml
-```
-
-이미 `cobot-native` 환경이 있으면 다음 명령으로 갱신합니다.
-
-```bash
-conda env update -f native/environment.yml
-```
-
-#### 3) ROS 개발용 Docker 이미지 빌드
-
-```bash
 docker compose build cobot
+docker compose --profile virtual up -d --wait
+docker exec -it ws_cobot_pjt bash
 ```
 
-Compose의 `cobot` 서비스에 지정된 현재 디렉토리의 `Dockerfile`로
-`rokey-ros:jazzy` 이미지를 생성합니다. Dockerfile은 다음 작업을 수행합니다.
-
-1. `ros:jazzy-ros-base-noble` 베이스 이미지를 받습니다.
-2. 컴파일 도구와 colcon, rosdep을 설치합니다.
-3. `ws_cobot_pjt/src/`의 manifest를 읽어 ROS 의존성을 설치합니다.
-4. 그리퍼 통신용 Python 의존성과 컨테이너 시작 스크립트를 설치합니다.
-
-진행 로그를 자세히 보려면 아래 명령을 사용합니다.
-
-```bash
-docker compose --progress plain build cobot
-```
-
-완료 후 로컬 이미지가 생성되었는지 확인합니다.
-
-```bash
-docker image inspect rokey-ros:jazzy --format '{{.Id}}'
-```
-
-#### 4) 컨테이너에서 ROS 패키지 빌드
-
-```bash
-docker compose run --rm cobot /opt/rokey-native/build_workspace.sh /workspace
-```
-
-이 명령은 방금 만든 이미지로 임시 `cobot` 컨테이너를 생성하여 빌드합니다.
-`build_workspace.sh`는 `/workspace`에서 아래 colcon 명령을 실행합니다.
-
-```bash
-colcon build --symlink-install --cmake-args -DBUILD_TESTING=OFF -DDRCF_VER=2
-```
-
-끝나면 임시 컨테이너는 `--rm`에 의해 삭제됩니다. 다음 빌드 결과는 호스트에 남습니다.
-
-```text
-ws_cobot_pjt/                  # 현재 작업 디렉토리
-└── ws_cobot_pjt/              # 컨테이너에서는 /workspace
-    ├── src/                  # Git으로 받은 소스
-    ├── build/                # 중간 빌드 결과
-    ├── install/setup.bash    # 실행 환경 설정
-    └── log/                  # colcon 로그
-```
-
-빌드 로그 마지막의 `Summary: 10 packages finished`를 확인합니다.
-실행 파일 등록은 로봇을 구동하지 않고 다음과 같이 확인할 수 있습니다.
-
-```bash
-docker compose run --rm cobot bash -lc \
-  'source /workspace/install/setup.bash && ros2 pkg executables rokey'
-```
-
-출력에 `rokey simple_move`가 있어야 합니다.
-
-#### 5) DRCF 에뮬레이터 이미지 받기
-
-```bash
-docker compose --profile virtual pull emulator
-```
-
-이 명령은 `compose.yaml`에 지정된 Doosan 이미지와 digest를 사용합니다.
-에뮬레이터 이미지를 직접 빌드하거나 이미지 파일로 공유할 필요는 없습니다.
-여기까지는 이동·그리퍼 동작을 실행하지 않습니다.
-
-### 터미널 1: 가상 세션 시작
-
-```bash
-./run_virtual.sh
-```
-
-`run_virtual.sh`가 Compose의 `cobot`·`emulator` 컨테이너를 생성·시작한 뒤
-ROS 컨트롤러와 native Gazebo/RViz를 실행합니다.
-`Virtual profiles ready` 로그가 나온 후 이동 및 그리퍼 명령을 실행합니다.
-세션 시작만으로 `simple_move`를 자동 실행하지 않습니다.
-
-다른 터미널에서 컨테이너 상태를 확인할 수 있습니다.
-
-```bash
-docker compose --profile virtual ps
-```
-
-### 터미널 2: simple_move
-
-같은 `ws_cobot_pjt/` 디렉토리에서 실행합니다.
-
-```bash
-docker compose exec cobot bash -lc \
-  'source /workspace/install/setup.bash && ros2 run rokey simple_move'
-```
-
-### 터미널 2: 그리퍼 열기 / 닫기
-
-```bash
-# 열기
-docker compose exec cobot bash -lc \
-  'source /workspace/install/setup.bash && ros2 service call /onrobot/sendCommand onrobot_rg_msgs/srv/SetCommand "{command: o}"'
-
-# 닫기
-docker compose exec cobot bash -lc \
-  'source /workspace/install/setup.bash && ros2 service call /onrobot/sendCommand onrobot_rg_msgs/srv/SetCommand "{command: c}"'
-```
-
-가상 그리퍼는 `o`/`c` 및 부분 열림 각도(rad)를 받습니다.
-컨트롤러의 가상 디지털 출력도 연결되어 있으며 1번은 닫기, 2번은 열기입니다.
-`simple_move`와 그리퍼 명령은 각각 실행합니다.
-
-### 종료와 로그
-
-터미널 1에서 `Ctrl+C`로 세션과 해당 Compose 프로젝트의 컨테이너를 종료합니다.
-필요하면 다음 명령으로 남은 컨테이너를 정리합니다.
-
-```bash
-docker compose --profile virtual down
-```
-
-실행 로그 및 생성된 모델은 `native/.cache/`에 저장되며 Git에서 제외됩니다.
-`./run_virtual.sh --no-gui --duration 10`으로 화면 없이 제한 시간 동안 실행할 수도 있습니다.
-
-native Gazebo는 관절 위치 표시용입니다. 중력은 0으로 설정하며 힘 센서·순응·법선 방향
-힘 제어를 계산하지 않습니다. Docker ROS 도메인은 29, host 표시 도메인은 129이고,
-두 환경의 상태는 DDS 대신 TCP relay로 연결합니다.
-
-## 2. 일반 Ubuntu 실행
-
-Ubuntu 24.04와 ROS 2 Jazzy가 설치된 환경을 기준으로 합니다.
-ROS 노드와 RViz는 Ubuntu에서 직접 실행하고, 가상 DRCF만 Docker에서 실행합니다.
-Conda와 native Gazebo는 사용하지 않습니다.
-
-### 준비 및 빌드
-
-Docker Engine/Compose 플러그인 및 ROS 2 Jazzy를 먼저 설치합니다.
-아래 명령은 저장소의 `ws_cobot_pjt/` 디렉토리에서 실행합니다.
-Ubuntu 직접 실행에서는 `cobot` 이미지를 빌드하지 않습니다.
-컴파일 도구와 ROS 의존성을 Ubuntu에 설치하고, DRCF 에뮬레이터 이미지만 받습니다.
-
-```bash
-sudo apt update
-sudo apt install -y build-essential python3-colcon-common-extensions python3-rosdep \
-  python3-pymodbus python3-numpy
-source /opt/ros/jazzy/setup.bash
-
-# rosdep을 아직 초기화하지 않은 PC에서만 한 번 실행
-sudo rosdep init
-
-rosdep update --rosdistro jazzy
-rosdep install --from-paths ws_cobot_pjt/src --ignore-src --rosdistro jazzy -y
-
-# ROS 소스 빌드: 호스트의 ws_cobot_pjt/build, install, log 생성
-./build_workspace.sh
-
-# 가상 컨트롤러 이미지 다운로드
-docker compose --profile virtual pull emulator
-```
-
-빌드는 `BUILD_TESTING=OFF`, `DRCF_VER=2`로 수행합니다. 테스트와 빌드 산출물은
-배포 파일에 포함하지 않습니다. Doosan SDK의 Jazzy용 `libDRFL.a`는 x86_64/arm64
-빌드에 필요한 벤더 입력 파일이므로 소스와 함께 포함합니다.
-
-빌드 완료 후 다음 명령으로 실행 파일 등록을 확인합니다.
-
-```bash
-source ws_cobot_pjt/install/setup.bash
-ros2 pkg executables rokey
-```
-
-`rokey simple_move`가 출력되면 다음 실행 단계로 진행합니다.
-
-### 터미널 1: 가상 실행
-
-```bash
-./run_ubuntu.sh
-```
-
-호스트 ROS는 `127.0.0.1:12349`를 통해 DRCF에 연결합니다.
-화면을 생략하려면 `./run_ubuntu.sh gui:=false`로 실행합니다.
-`Virtual profiles ready` 로그 이후 다음 명령을 실행합니다.
-
-### 터미널 2: 이동 및 그리퍼
+컨테이너에서 ROS 패키지를 빌드한다.
 
 ```bash
 source /opt/ros/jazzy/setup.bash
-source ws_cobot_pjt/install/setup.bash
-export ROS_DOMAIN_ID=29
-
-ros2 run rokey simple_move
-
-# 열기 / 닫기
-ros2 service call /onrobot/sendCommand onrobot_rg_msgs/srv/SetCommand "{command: o}"
-ros2 service call /onrobot/sendCommand onrobot_rg_msgs/srv/SetCommand "{command: c}"
+cd /workspace
+colcon build --symlink-install --packages-up-to m0609_rg2_bringup dsr_controller2 dsr_hardware2 onrobot_rg_control \
+  --cmake-args -DBUILD_TESTING=OFF
+source install/setup.bash
+exit
 ```
 
-터미널 1의 `Ctrl+C`로 ROS와 에뮬레이터를 종료합니다.
-기본 DDS 도메인은 29입니다. 변경할 경우 ROS를 실행하는 모든 터미널에서 같은 값을 사용합니다.
-
-### Ubuntu에서 실제 로봇 연결
-
-가상 세션을 종료하고, Ubuntu ROS 터미널에서 실제 IP를 지정합니다.
-실제 컨트롤러에는 `Tool Weight_1`과 `GripperDA_v1`을 미리 등록해야 합니다.
-가상용 Tool/TCP 등록기는 실제 모드에서 실행하지 않습니다.
+호스트에서 가상 세션을 실행한다.
 
 ```bash
-source /opt/ros/jazzy/setup.bash
-source ws_cobot_pjt/install/setup.bash
-export ROS_DOMAIN_ID=29
-
-ros2 launch m0609_rg2_bringup bringup.launch.py \
-  mode:=real host:=192.168.1.100 rt_host:=192.168.1.100 port:=12345 \
-  gripper_host:=192.168.1.1
+./run_virtual.sh --car real --probe ball      # 팀 차량 조립품: 로봇 정면, 앞이 로봇을 향함, 50 mm 리프트
+./run_virtual.sh --car sedan --probe ball     # 팩 차량 + 블록·반구 (defect_scan, contact_scrape)
+# --no-gazebo-gui: Gazebo 창 없이 RViz만, --web: 웹 탭 (http://localhost:5050/admin?tab=robot)
 ```
 
-IP는 실제 연결 환경에 맞게 수정합니다. 이후 이동·그리퍼 명령은 위 Ubuntu 터미널 2와 같습니다.
-이 배포본의 native 진입점은 가상 실행용이며, 실제 로봇 연결은 Ubuntu 직접 실행 경로를 사용합니다.
-
-## 변경 후 재빌드
-
-먼저 실행 중인 가상 세션을 `Ctrl+C`로 종료합니다.
-
-| 변경 내용 | macOS native | Ubuntu 직접 실행 |
-|---|---|---|
-| ROS 소스, launch, xacro, 설정, `setup.py` | 컨테이너에서 워크스페이스 재빌드 | `./build_workspace.sh` |
-| ROS 의존성(`package.xml`), Dockerfile의 설치 항목 | 이미지 재빌드 후 워크스페이스 재빌드 | rosdep 의존성 설치 후 워크스페이스 재빌드 |
-| `compose.yaml` | 컨테이너를 재생성하고 세션 재시작 | 변경된 에뮬레이터 설정으로 재시작 |
-| `native/environment.yml` | Conda 환경 갱신 | 해당 없음 |
-
-macOS에서 ROS 코드만 변경했다면 다음 명령으로 충분합니다.
+로봇 프로그램은 다른 터미널에서 컨테이너에 들어가 실행한다.
 
 ```bash
-docker compose run --rm cobot /opt/rokey-native/build_workspace.sh /workspace
-./run_virtual.sh
+docker exec -it ws_cobot_pjt bash
+source /opt/ros/jazzy/setup.bash && source /workspace/install/setup.bash
+ros2 run rokey pick_probe
+ros2 run rokey real_scan --part bonnet --plan-only   # 기준 점군·경로·접근 가능 비율만
+ros2 run rokey real_scan --part bonnet               # --part bumper|bonnet|body|door
+ros2 run rokey defect_scan --rows 2                  # --car sedan 장면에서
 ```
 
-Docker 이미지의 의존성이 바뀌었다면 다음 순서로 실행합니다.
+### 기존 수리 공정과 실기 연결
 
-```bash
-docker compose --profile virtual down
-docker compose build cobot
-docker compose run --rm cobot /opt/rokey-native/build_workspace.sh /workspace
-./run_virtual.sh
-```
+수리 공정은 컨테이너에서 `ros2 launch rokey repair.launch.py`로 실행한다(`repair_manager`, `repair_pointcloud`). 실기 연결은 `./run_real.sh <ROBOT_IP>`, 관찰은 `./run_rviz.sh`다. `real_scan`과 `defect_scan`은 현재 가상 세션으로 제한한다(`real_scan`은 차량 위치를 장면 정보에서 읽음).
 
-이미지 설치 단계를 캐시 없이 다시 수행해야 할 때만 아래 명령을 사용합니다.
+## 결과와 검증 상태
 
-```bash
-docker compose build --no-cache cobot
-```
+`rokey/pointcloud/`에 실측·기준 점군이 저장된다. 실측은 `base_link`, m 단위다.
 
-Ubuntu에서 `package.xml` 의존성을 변경했다면 다음과 같이 실행합니다.
-
-```bash
-source /opt/ros/jazzy/setup.bash
-rosdep install --from-paths ws_cobot_pjt/src --ignore-src --rosdistro jazzy -y
-./build_workspace.sh
-```
-
-`--symlink-install`을 사용하더라도 실행 파일 추가나 manifest 변경은 재빌드해야 합니다.
-다른 PC나 운영 환경으로 옮길 때는 `build/`, `install/`, `log/`를 복사하지 않고
-소스에서 다시 빌드합니다. Git에는 이 산출물을 포함하지 않습니다.
-
-## simple_move와 가상 설정
-
-`simple_move`는 기존 `rokey/move.py`에 연결됩니다.
-HOME `[0, 0, 90, 0, 90, 0]`으로 이동한 뒤 관절 자세와 두 Cartesian 위치를 3회 반복하고
-정상 완료 시 HOME으로 복귀합니다. 관절 속도는 30 deg/s, 직선 속도는 30 mm/s입니다.
-이동 위치와 반복 횟수는 `move.py`에서 수정합니다.
-
-가상 컨트롤러의 Tool/TCP 이름과 값은
-`ws_cobot_pjt/src/cobot_rg2/rg2/m0609_rg2_bringup/config/virtual_robot.yaml`에 있습니다.
-`simple_move`에서 사용하는 이름은 `Tool Weight_1`, `GripperDA_v1`입니다.
-실측 `calibration.json` 대신 기본 RG2 예제 프로파일을 사용합니다.
-
-## Git 배포 준비
-
-빌드·실행 산출물, Python 캐시, `.env`, 로그는 `.gitignore`로 제외합니다.
-개발 폴더의 스캔·힘 제어·포인트클라우드 코드, 실험 결과, 벤치마크,
-중복 rokey 패키지, MoveIt 예제, 다른 로봇/그리퍼 모델은 복사하지 않았습니다.
-벤더 라이선스와 변경 범위는 [THIRD_PARTY.md](THIRD_PARTY.md)에 정리했습니다.
-
-변경 파일을 검토한 뒤 저장소 루트에서 커밋하고 push합니다.
-
-```bash
-cd ..
-git switch ros
-git status --short
-git add README.md ws_cobot_pjt
-git diff --cached --stat
-git commit -m "Add ROS simple motion and RG2 gripper runtime"
-git push -u origin ros
-```
+- `defect_scan`: 복원한 hybrid 경로로 2행(149 mm) 완료, 평균 1.50 N·표준편차 0.015 N (2026-11-16 13:13).
+- `real_scan --plan-only` (공구 원기둥·팔 캡슐 충돌, URDF IK 포함): 본넷 접근 가능 98%·경로 7개·1,341 mm, 문(양쪽) 100%·경로 40개·3,154 mm, **범퍼 0%** — 범퍼 윗면은 22 mm 위를 차체 앞부분이 덮고, 앞면은 차량 앞 끝이 로봇에서 440 mm라 손목이 로봇 베이스와 겹친다. 범퍼를 측정하려면 차량을 더 멀리 두거나 축을 바꿔야 한다.
+- `real_scan` 실행(DSR 힘제어·순응제어): 본넷 6개 경로 모두 완료(2026-11-16 13:23), 실측점 56,069개, 힘 평균 1.52 N·표준편차 0.27 N; 같은 1 mm 칸의 기준 윗면 대비 높이 중앙값 −0.02 mm(5–95%: −0.22 ~ +1.63 mm, 큰 값은 띠 돌기·가장자리에서 공이 이웃 면에 먼저 닿는 경우). 경로마다 HOME을 거쳐 약 9분.

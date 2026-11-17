@@ -1,0 +1,36 @@
+{
+  "title": "Free Low Poly Vehicles Pack",
+  "author": "Raphael Gonçalves (RgsDev)",
+  "sketchfab_url": "https://sketchfab.com/3d-models/free-low-poly-vehicles-pack-cb7640039e7a40679a53be705ebff50e",
+  "download_page": "https://opengameart.org/content/free-low-poly-vehicles-pack",
+  "archive_url": "https://opengameart.org/sites/default/files/free_low_poly_vehicles_pack_by_rgsdev.zip",
+  "archive_sha256": "9091e478bd211a7cf8b562f04e8f061a2188d323e2fa0878f3f1641e5e67c800",
+  "retrieved_on": "2026-11-15",
+  "license": "CC0-1.0",
+  "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "license_basis": "License.txt bundled by the author in the OpenGameArt archive.",
+  "modifications": "Selected three vehicles; converted FBX to COLLADA with Assimp 6.0.6 and triangulation. Preserved imported scene transforms and materials; no manual physical rescaling.",
+  "assets": [
+    {
+      "type": "sedan",
+      "original": "sedan.fbx",
+      "mesh": "sedan.dae",
+      "geometry_count": 14,
+      "sha256": "9d2a633b63d4b4f68e229e0fdb892ffd4a9fc01a5767ac394b1e0ada4853eae1"
+    },
+    {
+      "type": "suv",
+      "original": "suv.fbx",
+      "mesh": "suv.dae",
+      "geometry_count": 14,
+      "sha256": "50cd66a7deef802cad0fdcf895d2fd4db35d27a2021053e53bd3c4e5a3cc4bb0"
+    },
+    {
+      "type": "sports",
+      "original": "sports.fbx",
+      "mesh": "sports.dae",
+      "geometry_count": 14,
+      "sha256": "cb5b7d5863860a492fc9b9da848cda1cf897d1d99835058e89fded256a3dfef9"
+    }
+  ]
+}

@@ -3,7 +3,7 @@
 # Tool weight: kg. null inertia means unspecified; the API receives six zeros.
 active:
   tcp: GripperDA_v1
-  tool: Tool Weight_1
+  tool: Tool Weight
 
 tcps:
   GripperDA_v1:

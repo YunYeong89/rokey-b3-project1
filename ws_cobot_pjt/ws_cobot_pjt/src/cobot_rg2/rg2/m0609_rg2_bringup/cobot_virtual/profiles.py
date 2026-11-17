@@ -19,7 +19,7 @@ class VirtualProfileLoader(Node):
         path = Path(self.get_parameter('profile_file').value)
         contents = path.read_text(encoding='utf-8')
         self.profiles = json.loads(contents) if path.suffix == '.json' else yaml.safe_load(contents)
-        self.get_logger().info(f'Loading virtual Tool/TCP profiles: {path}')
+        self.get_logger().info(f'Loading virtual calibration: {path}')
 
     def call(self, service, path, **values):
         client = self.create_client(service, f'dsr_controller2/{path}')

@@ -6,6 +6,8 @@
 	<xacro:include filename="$(find dsr_description2)/config/macro.transmission.xacro" />
 	<xacro:include filename="$(find dsr_description2)/config/macro.materials.xacro" /> -->
 
+	<xacro:include filename="$(find m0609_rg2_bringup)/xacro/my_m0609.ros2_control.xacro" />
+	<xacro:include filename="$(find m0609_rg2_bringup)/xacro/my_m0609.gz_ros2_control.xacro" />
 	<xacro:macro name="m0609" params="namespace simple:=false">
 		<!-- <xacro:dsr_materials /> -->
 		<link name="base_link">

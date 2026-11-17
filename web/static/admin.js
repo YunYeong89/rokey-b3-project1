@@ -2,7 +2,7 @@
  *
  * 흐름
  *  [수리 시작] → POST /api/jobs {vehicle_id, mode, parts} → rosbridge /repair/command 로
- *     {"cmd":"start","job_id","vehicle_id","mode":"auto|manual","parts":[...]} 발행
+ *     {"cmd":"start","job_id":123} 발행 (모드·부품은 DB에서 조회)
  *  로봇 쪽 공정 관리 노드가 단계마다 API 로 DB 에 기록하고 /repair/status 로 실시간 값을 보낸다.
  *  화면은 (1) /repair/status 로 측정 점·힘을 실시간 표시, (2) /api/jobs/<id> 를 주기적으로 읽어 단계·결과 표시.
  *  데모 모드에서는 브라우저 안 시뮬레이터가 로봇 대신 같은 API 를 호출한다.
@@ -11,9 +11,10 @@
  *  {"type":"point","x":120,"y":40,"dz":-0.8,"state":"dent"}  {"type":"wrench","fz":-4.2}  {"type":"flush","mm":0.18}
  */
 import { createCarViewer } from "./viewer3d.js";
+import { robotControl } from "./robot_control.js";
 
 const state = {
-  job: null, pollTimer: null, points: [], ros: null, cmdTopic: null, rosOk: false,
+  job: null, pollTimer: null, points: [], rosOk: false,
   demo: false, demoCancel: false, mode: "auto",
 };
 
@@ -40,7 +41,7 @@ const pickedParts = () => $$("#partPick input:checked").map((c) => c.value);
 async function loadVehicles() {
   const vs = await api("GET", "/api/vehicles");
   $("#vehicleSel").innerHTML = vs.map((v) =>
-    `<option value="${v.id}">${esc(v.name)} · ${esc(v.owner_name || "차주 없음")}</option>`).join("");
+    `<option value="${v.id}" data-model="${esc(v.model)}">${esc(v.name)} · ${esc(v.owner_name || "차주 없음")}</option>`).join("");
   return vs;
 }
 
@@ -164,6 +165,7 @@ async function showVehicle() {
   const sel = $("#vehicleSel");
   $("#viewerTitle").textContent = sel.selectedOptions[0] ? sel.selectedOptions[0].textContent : "차량";
   if ($("#startBtn").disabled || !sel.value) return;
+  await viewer.load(sel.selectedOptions[0].dataset.model);    // 차종에 맞는 축소 모델
   try {
     let job = await api("GET", `/api/jobs/current?vehicle_id=${sel.value}`);
     if (!job) {
@@ -190,8 +192,11 @@ function setRunning(on) {
 
 // ------------------------------------------------------------ 시작 / 정지
 $("#startBtn").addEventListener("click", async () => {
-  if (!state.demo && !state.rosOk) {
-    alert("로봇(rosbridge)에 연결되지 않았습니다.\n로봇 없이 확인하려면 '데모 모드'를 켜세요."); return;
+  if (!state.demo && (!robotControl.ready || robotControl.status?.busy)) {
+    alert("ROS 제어 노드와 가상 로봇이 준비되어야 하며, 다른 기능 실행 중에는 수리를 시작할 수 없습니다."); return;
+  }
+  if (!state.demo && !["sedan", "suv", "sports"].includes(robotControl.status?.scene)) {
+    alert("수리 공정은 sedan/suv/sports 장면에서 실행하세요. 실차 모델은 로봇 탭의 부품 스캔을 사용하세요."); return;
   }
   const parts = state.mode === "manual" ? pickedParts() : [];
   if (state.mode === "manual" && !parts.length) { alert("교체할 부품을 1개 이상 고르세요."); return; }
@@ -211,31 +216,37 @@ $("#startBtn").addEventListener("click", async () => {
   }
   setRunning(true); renderJob(job); startPolling(job.id);
   if (state.demo) runDemo(job);
-  else state.cmdTopic.publish(new ROSLIB.Message({ data: JSON.stringify(
-    { cmd: "start", job_id: job.id, vehicle_id: job.vehicle_id, mode: job.mode, parts: job.requested }) }));
+  else {
+    try { robotControl.repair({ cmd: "start", job_id: job.id }); }
+    catch (e) {
+      await api("POST", `/api/jobs/${job.id}/finish`, { status: "failed", summary: e.message });
+      alert(e.message);
+    }
+  }
 });
 
 $("#stopBtn").addEventListener("click", async () => {
   if (!state.job) return;
-  if (state.demo) state.demoCancel = true;
-  else if (state.rosOk) state.cmdTopic.publish(new ROSLIB.Message({ data: JSON.stringify({ cmd: "stop", job_id: state.job.id }) }));
-  try { await api("POST", `/api/jobs/${state.job.id}/finish`, { status: "stopped", summary: "관리자가 정지 버튼을 누름" }); } catch (e) { }
+  if (state.demo) {
+    state.demoCancel = true;
+    await api("POST", `/api/jobs/${state.job.id}/finish`, { status: "stopped", summary: "관리자가 데모를 정지함" });
+  } else {
+    try { robotControl.stop(); }
+    catch (e) { alert(e.message); }
+  }
 });
 
 // ------------------------------------------------------------ rosbridge
 function connectRos() {
-  if (typeof ROSLIB === "undefined") { if (!state.demo) setRosPill("off", "roslib 없음 (인터넷 확인)"); return; }
-  const ros = new ROSLIB.Ros({ url: APP.rosbridgeUrl || `ws://${location.hostname}:9090` });
-  state.ros = ros;
-  ros.on("connection", () => {
-    state.rosOk = true; if (!state.demo) setRosPill("on", "로봇 연결됨");
-    state.cmdTopic = new ROSLIB.Topic({ ros, name: "/repair/command", messageType: "std_msgs/String" });
-    state.cmdTopic.advertise();   // 미리 광고해 두지 않으면 첫 명령이 유실될 수 있음
-    new ROSLIB.Topic({ ros, name: "/repair/status", messageType: "std_msgs/String", throttle_rate: 50 })
-      .subscribe((m) => { if (!state.demo) { try { onStatus(JSON.parse(m.data)); } catch (e) { } } });
+  robotControl.addEventListener("state", async () => {
+    state.rosOk = robotControl.ready;
+    if (!state.demo) setRosPill(state.rosOk ? "on" : "off", !robotControl.live ? "ROS 제어 노드 응답 대기"
+      : !state.rosOk ? "가상 로봇 준비 대기" : robotControl.status.busy ? "로봇 실행 중" : "로봇 제어 준비됨");
+    const status = robotControl.status;
+    if (!state.demo && status?.event === "rejected" && status.rejected_job === state.job?.id)
+      console.warn(status.error);
   });
-  ros.on("error", () => { });
-  ros.on("close", () => { state.rosOk = false; if (!state.demo) setRosPill("off", "로봇 연결 안 됨"); setTimeout(connectRos, 3000); });
+  robotControl.addEventListener("repair", (event) => { if (!state.demo) onStatus(event.detail); });
 }
 function setRosPill(cls, text) { const p = $("#rosState"); p.className = "pill " + cls; p.textContent = text; }
 $("#demoMode").addEventListener("change", (e) => {
@@ -317,19 +328,20 @@ async function runDemo(job) {
 
 async function demoScan(jobId, ev, check) {
   const r = Math.random();
-  const dents = r < 0.55 ? [{ x: 200 + Math.random() * 30, y: 30 + Math.random() * 50, depth: 0.8 + Math.random() * 1.6 }] : [];
+  const { L, W } = viewer.size(), kx = L / 260, ky = W / 110;   // 260 x 110 mm 기준 데모 값을 불러온 차 크기로
+  const dents = r < 0.55 ? [{ x: (200 + Math.random() * 30) * kx, y: (30 + Math.random() * 50) * ky, depth: 0.8 + Math.random() * 1.6 }] : [];
   const missing = r > 0.35 && r < 0.85 ? [Math.random() < 0.5 ? "mirror_l" : "mirror_r"] : [];
   const SIGMA = 0.08, SUS = 1.5 * SIGMA * 3, DMG = 3 * SIGMA * 3;   // 데모용 임계값 [mm]
   const heightAt = (x, y) => {
     let dz = SIGMA * randn();
-    for (const d of dents) { const dist = Math.hypot(x - d.x, y - d.y); if (dist < 14) dz -= d.depth * (1 - (dist / 14) ** 2); }
+    for (const d of dents) { const dist = Math.hypot(x - d.x, y - d.y), rad = 14 * kx; if (dist < rad) dz -= d.depth * (1 - (dist / rad) ** 2); }
     return dz;
   };
   const classify = (dz) => (dz < -DMG ? "dent" : dz < -SUS ? "suspect" : "ok");
 
-  await ev("scan", "격자 스캔 시작 (20 mm 간격)");
+  await ev("scan", `격자 스캔 시작 (${(20 * kx).toFixed(0)} mm 간격)`);
   const suspicious = [];
-  for (let x = 10; x <= 250; x += 20) for (let y = 10; y <= 100; y += 15) {
+  for (let x = 10 * kx; x <= L - 10 * kx; x += 20 * kx) for (let y = 10 * ky; y <= W - 10 * ky; y += 15 * ky) {
     check();
     const dz = heightAt(x, y), st = classify(dz);
     onStatus({ type: "point", x, y, dz, state: st });
@@ -338,10 +350,10 @@ async function demoScan(jobId, ev, check) {
     await sleep(25);
   }
   if (suspicious.length) {
-    await ev("scan", `의심 구역 ${suspicious.length}곳 상세 스캔 (5 mm 간격)`);
+    await ev("scan", `의심 구역 ${suspicious.length}곳 상세 스캔 (${(5 * kx).toFixed(0)} mm 간격)`);
     for (const s of suspicious) for (let dx = -10; dx <= 10; dx += 5) for (let dy = -10; dy <= 10; dy += 5) {
       check();
-      const x = s.x + dx, y = s.y + dy, dz = heightAt(x, y);
+      const x = s.x + dx * kx, y = s.y + dy * ky, dz = heightAt(x, y);
       onStatus({ type: "point", x, y, dz, state: classify(dz), fine: true });
       await sleep(12);
     }
@@ -373,6 +385,7 @@ async function demoScan(jobId, ev, check) {
   if (cur) {
     $("#vehicleSel").value = cur.vehicle_id;
     $("#viewerTitle").textContent = $("#vehicleSel").selectedOptions[0]?.textContent || cur.vehicle_name;
+    await viewer.load(cur.model);
     setRunning(true); renderJob(cur); startPolling(cur.id);
   } else {
     await showVehicle();

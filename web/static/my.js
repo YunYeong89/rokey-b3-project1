@@ -17,6 +17,7 @@ function renderStatus(job) {
 async function refresh() {
   if (!ui.vehicleId) return;
   try {
+    await viewer.load(ui.vehicles.find((v) => v.id === ui.vehicleId)?.model);   // 차종에 맞는 축소 모델
     let job = await api("GET", `/api/jobs/current?vehicle_id=${ui.vehicleId}`);
     if (!job) {
       const last = await api("GET", `/api/jobs?vehicle_id=${ui.vehicleId}&limit=1`);

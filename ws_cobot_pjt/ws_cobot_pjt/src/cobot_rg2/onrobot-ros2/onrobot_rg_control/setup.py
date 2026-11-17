@@ -14,7 +14,7 @@ setup(
         ('share/' + package_name, ['package.xml']),
         (os.path.join('share', package_name, 'launch'), glob(os.path.join('launch', '*launch.[pxy][yma]*')))
     ],
-    install_requires=['setuptools'],
+    install_requires=['setuptools', 'pymodbustcp'],
     zip_safe=True,
     maintainer='Makány András',
     maintainer_email='andras.makany@uni-obuda.hu',

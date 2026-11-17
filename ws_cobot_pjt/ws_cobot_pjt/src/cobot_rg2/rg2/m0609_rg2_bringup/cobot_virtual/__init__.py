@@ -1,1 +1,1 @@
-"""Tool/TCP profile registration for the virtual controller."""
+"""ROS adapters for the virtual Gazebo force controller."""

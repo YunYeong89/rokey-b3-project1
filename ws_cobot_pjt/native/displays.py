@@ -1,7 +1,9 @@
 """Native display adapters; the robot controller remains in Docker."""
 import json
 from pathlib import Path
+import subprocess
 import sys
+import socket
 import threading
 import time
 
@@ -21,6 +23,9 @@ class StateReceiver:
     def receive(self):
         try:
             self.stream, _ = self.listener.accept()
+            # Small 100 Hz state lines: without it Nagle held them for the container's delayed ACKs (arrivals in
+            # bursts, gaps up to 140 ms). The container end already sets it.
+            self.stream.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             self.stream.settimeout(30)
             with self.stream.makefile('r') as file:
                 if file.readline().strip() != self.token:
@@ -89,6 +94,19 @@ class RVizDisplay:
         rclpy.init()
         self.node = rclpy.create_node('cobot_native_joint_source', namespace='/cobot_native')
         self.publisher = self.node.create_publisher(JointState, 'joint_states', 10)
+        scene_map = getattr(model, 'scene_map', None)
+        self.scene_map = scene_map
+        if scene_map is not None:
+            from visualization_msgs.msg import MarkerArray
+            from rclpy.qos import DurabilityPolicy, QoSProfile
+            self.map_publisher = self.node.create_publisher(
+                MarkerArray, '/cobot_native/map',
+                QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
+            self.map_markers = scene_map.markers()
+            self.map_timer = self.node.create_timer(0.1, self.publish_map)
+            self.publish_map()
+            from clouds import CloudFiles
+            self.clouds = CloudFiles(self.node)
         parameters = model.urdf.parent / 'robot_state_publisher.yaml'
         parameters.write_text(yaml.safe_dump({'/**': {'ros__parameters': {
             'robot_description': model.urdf.read_text(), 'use_sim_time': False}}}))
@@ -103,9 +121,23 @@ class RVizDisplay:
             if display.get('Class') == 'rviz_default_plugins/RobotModel':
                 display['Description Topic']['Value'] = '/cobot_native/robot_description'
         config['Visualization Manager']['Global Options']['Fixed Frame'] = 'world'
+        if scene_map is not None:
+            config['Visualization Manager']['Displays'].append({
+                'Class': 'rviz_default_plugins/MarkerArray', 'Name': 'Car scene',
+                'Enabled': True, 'Value': True,
+                'Topic': {'Value': '/cobot_native/map', 'Depth': 1,
+                                 'Reliability Policy': 'Reliable', 'Durability Policy': 'Transient Local'},
+            })
+            config['Visualization Manager']['Displays'] += CloudFiles.displays()
         target = model.urdf.parent / 'native.rviz'
         target.write_text(yaml.safe_dump(config))
         self.viewer = start_process(['rviz2', '-d', str(target)])
+
+    def publish_map(self):
+        self.map_markers = self.scene_map.markers()
+        for marker in self.map_markers.markers:
+            marker.header.stamp = self.node.get_clock().now().to_msg()
+        self.map_publisher.publish(self.map_markers)
 
     def update(self, positions):
         message = self.JointState()

@@ -1,0 +1,22 @@
+{
+  "frame": "base_link",
+  "plane": {"z_m": 0.0, "size_m": [2.0, 2.0]},
+  "damage": [
+    {"type": "dent", "part": "bonnet", "offset_mm": [17, 14], "radius": 11, "depth": 2.5},
+    {"type": "missing", "part": "mirror_r"}
+  ],
+  "probes": {
+    "standard": {"pose_base_mm_deg": [250.0, -400.0, 230.8, 180.0], "grip_axis": "x",
+                 "mesh": "ws_cobot_pjt/src/rokey/meshes/probe_v2_2.stl",
+                 "holder": "ws_cobot_pjt/src/rokey/meshes/gripper_tip_holder.stl",
+                 "grip_from_top_mm": 9, "grip_pocket": {"span_mm": 21.0, "z_mm": [2.0, 20.0]},
+                 "tip_radius_mm": 1.0, "mass_kg": 0.039,
+                 "ball": {"centre_mm": [0.0, 0.0, -55.73738670349121], "friction": 0.3, "color": [0.15, 0.35, 0.7]}},
+    "ball": {"pose_base_mm_deg": [250.0, -400.0, 230.8, 180.0], "grip_axis": "x",
+             "mesh": "ws_cobot_pjt/src/rokey/meshes/probe_v2_2.stl",
+             "holder": "ws_cobot_pjt/src/rokey/meshes/gripper_tip_holder.stl",
+             "grip_from_top_mm": 9, "grip_pocket": {"span_mm": 21.0, "z_mm": [2.0, 20.0]},
+             "tip_radius_mm": 1.0, "mass_kg": 0.039,
+             "ball": {"centre_mm": [0.0, 0.0, -55.73738670349121], "friction": 0.01, "color": [0.78, 0.8, 0.84]}}
+  }
+}

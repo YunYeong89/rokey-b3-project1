@@ -1,9 +1,9 @@
-.git
 **/.git
 **/__pycache__
 **/.DS_Store
 ws_cobot_pjt/build
 ws_cobot_pjt/install
 ws_cobot_pjt/log
+emulator/results
 native/.cache
-.venv
+native/__pycache__

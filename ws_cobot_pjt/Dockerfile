@@ -26,6 +26,8 @@ RUN python3 -m venv --system-site-packages /opt/cobot-venv \
 ENV PYTHONPATH=/opt/cobot-venv/lib/python3.12/site-packages
 
 COPY --chmod=755 docker-entrypoint.sh /cobot-entrypoint.sh
+RUN apt-get update && apt-get install -y --no-install-recommends ros-jazzy-rosbridge-server \
+    && rm -rf /var/lib/apt/lists/*
 RUN printf '\nsource /opt/ros/jazzy/setup.bash\n[ ! -f /workspace/install/setup.bash ] || source /workspace/install/setup.bash\n' >> /root/.bashrc
 
 WORKDIR /workspace

@@ -3,7 +3,7 @@ set -eo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source /opt/ros/jazzy/setup.bash
 source "$ROOT/ws_cobot_pjt/install/setup.bash"
-export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-29}"
+export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-71}"
 cleanup() {
   docker compose -f "$ROOT/compose.yaml" stop emulator
 }

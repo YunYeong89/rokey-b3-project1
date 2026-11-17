@@ -1,7 +1,7 @@
 """
 자동차 자동 수리 로봇 - 웹 서버 (Flask + SQLite)
 
-실행:  python3 app.py            → http://<PC IP>:5000  (태블릿에서 접속)
+실행:  python3 app.py            → http://<PC IP>:5050  (태블릿에서 접속)
 처음 실행 시 repair.db 를 만들고 기본 계정·부품·차량을 넣는다.
   관리자 admin / admin1234,  사용자(차주) user1 / user1234, user2 / user1234   ← 꼭 바꾸기
 
@@ -106,7 +106,8 @@ def home():
 @app.route("/admin")
 @require("admin")
 def admin_page():
-    return render_template("admin.html", name=session["name"], rosbridge_url=ROSBRIDGE_URL)
+    return render_template("admin.html", name=session["name"], rosbridge_url=ROSBRIDGE_URL,
+                           robot_joint_topic=os.environ.get("ROBOT_JOINT_TOPIC", "/dsr01/sim_joint_states"))
 
 
 @app.route("/my")
@@ -391,4 +392,4 @@ def finish_job(job_id):
 
 if __name__ == "__main__":
     db.init_db()
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=False)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5050)), debug=False)

@@ -5,11 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>관리자 · 자동차 수리 로봇</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-<script src="https://cdn.jsdelivr.net/npm/roslib@1.4.1/build/roslib.min.js"></script>
+<link rel="stylesheet" href="{{ url_for('static', filename='robot.css') }}">
+<script src="{{ url_for('static', filename='vendor/roslib/roslib.min.js') }}"></script>
 <script type="importmap">
 { "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    "three": "/static/vendor/three/build/three.module.js",
+    "three/addons/": "/static/vendor/three/examples/jsm/",
+    "three/examples/jsm/": "/static/vendor/three/examples/jsm/"
 } }
 </script>
 </head>
@@ -18,6 +20,7 @@
   <div class="brand"><span class="dot"></span> 자동차 자동 수리 로봇 <span class="role-tag">관리자</span></div>
   <nav class="tabs">
     <button class="tab active" data-tab="repair">수리</button>
+    <button class="tab" data-tab="robot">로봇</button>
     <button class="tab" data-tab="stock">재고</button>
     <button class="tab" data-tab="history">이력</button>
     <button class="tab" data-tab="members">회원·차량</button>
@@ -31,6 +34,59 @@
 </header>
 
 <main>
+  <section id="tab-robot" class="panel">
+    <div class="robot-layout">
+      <div class="card robot-scene-card">
+        <div class="cardhead"><h2>M0609 + RG2</h2><span data-robot-status class="pill off">연결 대기</span></div>
+        <div class="robot-meta"><span>Fixed frame: base_link</span><span>길이: m · 관절: deg</span>
+          <span class="robot-axis"><b>X</b><b>Y</b><b>Z</b></span></div>
+        <div class="robot-canvas" data-robot-viewer><div class="robot-message" data-robot-message>로봇 탭에서 모델과 관절값을 불러옵니다.</div></div>
+        <div class="robot-tools">
+          <button class="btn ghost-dark small" data-robot-fit>전체 보기</button>
+          <button class="btn ghost-dark small" data-robot-view="iso">기본</button>
+          <button class="btn ghost-dark small" data-robot-view="front">정면</button>
+          <button class="btn ghost-dark small" data-robot-view="side">측면</button>
+          <button class="btn ghost-dark small" data-robot-view="top">위에서</button>
+          <span class="note">드래그: 회전 · 우클릭: 이동 · 휠: 확대</span>
+        </div>
+      </div>
+      <aside class="robot-side">
+        <div class="card">
+          <h3>ROS 기능 제어</h3>
+          <p class="note" data-task-status>ROS 제어 노드 응답 대기</p>
+          <label>실행 기능<select data-task-select><option>연결 대기</option></select></label>
+          <div data-task-fields></div>
+          <div class="robot-task-buttons">
+            <button class="btn primary small" data-task-start disabled>실행</button>
+            <button class="btn danger small" data-task-stop disabled>작업 중지</button>
+          </div>
+          <p class="form-msg err" data-task-error role="alert"></p>
+          <p class="note">가상 세션에서 한 기능씩 실행합니다. 탐침 파지 후 측정하세요.
+            모델 차량은 식별 후 표면 추종·부품 스캔을 실행합니다.
+            실차 모델 스캔은 --car real 장면용입니다. 점군 기반 스캔은 입력 PointCloud2가 필요합니다.</p>
+          <details><summary>실행 로그</summary><pre class="robot-task-log" data-task-log></pre></details>
+        </div>
+        <div class="card">
+          <h3>ROS 연결</h3>
+          <label>WebSocket<input type="text" data-robot-url></label>
+          <label>JointState topic<input type="text" data-robot-topic></label>
+          <button class="btn primary small" data-robot-connect>다시 연결</button>
+          <p class="note">수신 <b data-robot-rate>—</b> · 마지막 갱신 <b data-robot-age>—</b></p>
+        </div>
+        <div class="card">
+          <h3>표시</h3>
+          <label class="robot-check"><input type="checkbox" checked data-robot-display="visual">로봇 외형</label>
+          <label class="robot-check"><input type="checkbox" data-robot-display="collision">충돌 형상</label>
+          <label class="robot-check"><input type="checkbox" data-robot-display="frames">링크 좌표축</label>
+          <label class="robot-check"><input type="checkbox" checked data-robot-display="grid">격자 (0.1 m)</label>
+          <label>확인할 링크<select data-robot-frame><option>tool0</option></select></label>
+          <p class="note">base_link 기준 위치 [m]</p><div class="robot-pose" data-robot-position>—</div>
+          <p class="note">Quaternion [x, y, z, w]</p><div class="robot-pose" data-robot-orientation>—</div>
+        </div>
+        <div class="card"><h3>관절각</h3><table class="tbl robot-joints"><thead><tr><th>관절</th><th>deg</th></tr></thead><tbody data-robot-joints></tbody></table></div>
+      </aside>
+    </div>
+  </section>
   <!-- 수리 (SCR-101) -->
   <section id="tab-repair" class="panel active">
     <div class="grid-my grid-admin">
@@ -174,8 +230,9 @@
   </section>
 </main>
 
-<script>window.APP = { rosbridgeUrl: "{{ rosbridge_url }}" };</script>
+<script>window.APP = {{ {"rosbridgeUrl": rosbridge_url, "robotJointTopic": robot_joint_topic}|tojson }};</script>
 <script src="{{ url_for('static', filename='common.js') }}"></script>
 <script type="module" src="{{ url_for('static', filename='admin.js') }}"></script>
+<script type="module" src="{{ url_for('static', filename='robot_panel.js') }}"></script>
 </body>
 </html>

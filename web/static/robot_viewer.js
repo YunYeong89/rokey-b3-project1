@@ -3,6 +3,8 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { STLLoader } from "three/addons/loaders/STLLoader.js";
 import URDFLoader from "./vendor/urdf-loader/URDFLoader.js";
 
+const CLOUD_COLORS = { reference: 0x5a96ff, measured: 0xff6e1e };
+
 /** RViz-style robot display. All model transforms use ROS meters/radians and Z-up. */
 export class RobotViewer {
   constructor(host) {
@@ -109,6 +111,27 @@ export class RobotViewer {
     }
   }
 
+  /** Point cloud in base_link (Float32Array x, y, z in metres), coloured as in the native RViz. */
+  setCloud(name, positions) {
+    this.clouds ??= new Map();
+    let points = this.clouds.get(name);
+    if (!points) {
+      points = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({
+        color: CLOUD_COLORS[name] ?? 0xffffff, size: 2, sizeAttenuation: false }));
+      points.visible = this.cloudVisible?.[name] ?? true;
+      this.clouds.set(name, points);
+      this.scene.add(points);
+    }
+    points.geometry.dispose();
+    points.geometry = new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  }
+
+  setCloudVisible(name, visible) {
+    this.cloudVisible = { ...this.cloudVisible, [name]: visible };
+    const points = this.clouds?.get(name);
+    if (points) points.visible = visible;
+  }
+
   createMarker({ type, scale: { x, y, z }, color, mesh_resource }) {
     const material = new THREE.MeshStandardMaterial({ color: new THREE.Color(color.r, color.g, color.b),
       opacity: color.a, transparent: color.a < 1, side: THREE.DoubleSide });
@@ -117,7 +140,7 @@ export class RobotViewer {
     if (type === 1) add(new THREE.BoxGeometry(x, y, z));
     else if (type === 2) add(new THREE.SphereGeometry(x/2, 24, 16));
     else if (type === 3) add(new THREE.CylinderGeometry(x/2, x/2, z, 24).rotateX(Math.PI/2));  // ROS axis is Z
-    else if (type === 10) new STLLoader().load(`/static/robot/${mesh_resource}`,
+    else if (type === 10) new STLLoader().load(`/api/robot/${mesh_resource}`,  // scene/<name>.stl (robot_files.py)
       (geometry) => add(geometry.scale(x, y, z)));
     return group;
   }

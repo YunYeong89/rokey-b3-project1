@@ -24,13 +24,16 @@
     <button class="tab" data-tab="stock">재고</button>
     <button class="tab" data-tab="history">이력</button>
     <button class="tab" data-tab="members">회원·차량</button>
+    <button class="tab" data-tab="alarms">알람 <span id="alarmCount" class="tab-count hidden">0</span></button>
   </nav>
   <div class="conn">
+    <span id="robotState" class="robot-state off" title="로봇 상태"><i></i><span>연결 끊김</span></span>
     <span id="rosState" class="pill off">로봇 연결 안 됨</span>
     <label class="demo"><input type="checkbox" id="demoMode"> 데모 모드</label>
     <span class="user">{{ name }}</span>
     <a href="{{ url_for('logout') }}" class="btn ghost small">로그아웃</a>
   </div>
+  <button id="estopBtn" class="estop" disabled title="진행 중인 수리를 정지 (소프트웨어 정지)">■ 정지</button>
 </header>
 
 <main>
@@ -58,12 +61,13 @@
           <div data-task-fields></div>
           <div class="robot-task-buttons">
             <button class="btn primary small" data-task-start disabled>실행</button>
-            <button class="btn danger small" data-task-stop disabled>작업 중지</button>
+            <button class="btn danger small" data-task-stop disabled>로봇 정지</button>
           </div>
           <p class="form-msg err" data-task-error role="alert"></p>
-          <p class="note">가상 세션에서 한 기능씩 실행합니다. 탐침 파지 후 측정하세요.
-            모델 차량은 식별 후 표면 추종·부품 스캔을 실행합니다.
-            실차 모델 스캔은 --car real 장면용입니다. 점군 기반 스캔은 입력 PointCloud2가 필요합니다.</p>
+          <p class="note">가상 세션과 실제 로봇 모두 한 기능씩 실행합니다. 로봇 정지는 웹에서 시작한 작업을 중지하고,
+            작업이 없어도 로봇 동작을 멈춥니다 (소프트웨어 정지 · 비상 시 티치 펜던트 비상정지).
+            시뮬레이션: 탐침 파지 후 측정, 실차 모델 스캔은 --car real 장면. 실제 로봇: 펜던트에서 탐침 TCP를 선택하고,
+            실차 모델 스캔은 config/real_scene.yaml 실측값이 필요합니다. "계획만 확인"은 로봇을 움직이지 않습니다.</p>
           <details><summary>실행 로그</summary><pre class="robot-task-log" data-task-log></pre></details>
         </div>
         <div class="card">
@@ -79,12 +83,31 @@
           <label class="robot-check"><input type="checkbox" data-robot-display="collision">충돌 형상</label>
           <label class="robot-check"><input type="checkbox" data-robot-display="frames">링크 좌표축</label>
           <label class="robot-check"><input type="checkbox" checked data-robot-display="grid">격자 (0.1 m)</label>
+          <label class="robot-check"><input type="checkbox" checked data-robot-cloud="reference">기준 점군 (계획 후: 측정 가능 영역)</label>
+          <label class="robot-check"><input type="checkbox" checked data-robot-cloud="measured">측정 점군 (접촉점)</label>
           <label>확인할 링크<select data-robot-frame><option>tool0</option></select></label>
           <p class="note">base_link 기준 위치 [m]</p><div class="robot-pose" data-robot-position>—</div>
           <p class="note">Quaternion [x, y, z, w]</p><div class="robot-pose" data-robot-orientation>—</div>
         </div>
         <div class="card"><h3>관절각</h3><table class="tbl robot-joints"><thead><tr><th>관절</th><th>deg</th></tr></thead><tbody data-robot-joints></tbody></table></div>
       </aside>
+      <div class="card robot-results" data-robot-results>
+        <div class="robot-results-head">
+          <h3>실시간 힘 그래프</h3>
+          <button class="btn primary small" data-graph-toggle disabled>실시간 힘 그래프 시작</button>
+          <label class="robot-check"><input type="checkbox" data-graph-compensated>보정 모델 겹쳐 보기</label>
+        </div>
+        <p class="note">외력 Fx·Fy·Fz, |F|·Fn, TCP 위치, 경로별 |F| (최근 30초, 1초마다 갱신). 종료하면 전체 그래프와 CSV를 결과에 저장합니다.</p>
+        <p class="form-msg err" data-graph-error role="alert"></p>
+        <img class="robot-graph-live" data-graph-live hidden alt="힘 그래프 준비 중">
+        <div class="robot-results-head">
+          <h3>실행 결과</h3>
+          <select data-run-select aria-label="실행 기록"></select>
+        </div>
+        <p class="note">계획(plan)·표면·이상치·힘·ROI 그래프와 CSV·JSON·PLY. 새 실행이 끝나면 자동으로 최신 결과를 보여줍니다.</p>
+        <div class="robot-run-images" data-run-images></div>
+        <div class="robot-run-files" data-run-files></div>
+      </div>
     </div>
   </section>
   <!-- 수리 (SCR-101) -->
@@ -108,6 +131,7 @@
           <button class="btn ghost-dark small" data-view="top">위에서</button>
           <button class="btn ghost-dark small" data-view="front">앞에서</button>
           <button class="btn ghost-dark small" data-view="side">옆에서</button>
+          <button class="btn ghost-dark small" id="robotToggle" aria-pressed="false">로봇팔 표시</button>
           <span class="note">드래그: 회전 · 휠/두 손가락: 확대/이동 · 수동 모드에서 부품 클릭: 선택</span>
         </div>
         <div class="stats">
@@ -115,6 +139,10 @@
           <div><b id="statFz">–</b><span>현재 Fz [N]</span></div>
           <div><b id="statDepth">–</b><span>최대 깊이 [mm]</span></div>
           <div><b id="statFlush">–</b><span>재검사 단차 [mm]</span></div>
+        </div>
+        <div class="fz-chart">
+          <div class="fz-head"><span>힘 Fz [N] · 최근 200개</span><span id="fzRange" class="note"></span></div>
+          <canvas id="fzCanvas"></canvas>
         </div>
       </div>
 
@@ -131,10 +159,8 @@
         </div>
 
         <div id="partPick" class="part-pick hidden">
-          <div class="field-label">교체할 부품 <small>(3D 화면에서 눌러도 선택돼요)</small></div>
-          <label class="chk"><input type="checkbox" value="bonnet"> 보닛</label>
-          <label class="chk"><input type="checkbox" value="mirror_l"> 사이드미러 (좌)</label>
-          <label class="chk"><input type="checkbox" value="mirror_r"> 사이드미러 (우)</label>
+          <div class="field-label">교체할 부품 <small>(로봇 교체 가능 부품만 · 3D 화면에서 눌러도 선택돼요)</small></div>
+          <div id="partPickList"></div>
         </div>
 
         <div class="btnrow">
@@ -152,7 +178,7 @@
         <h3>진행 단계</h3>
         <ol id="steps" class="steps">
           <li data-stage="calibrate">차량 위치 확인 <small>좌표계</small></li>
-          <li data-stage="scan">표면 스캔 <small>자동만</small></li>
+          <li data-stage="scan">표면 스캔(연속 접촉) <small>자동만</small></li>
           <li data-stage="detect">손상 판정 <small>자동만</small></li>
           <li data-stage="stock">재고 확인</li>
           <li data-stage="replace">부품 교체</li>
@@ -177,10 +203,11 @@
     <div class="card">
       <h2>부품 재고</h2>
       <table class="tbl">
-        <thead><tr><th>코드</th><th>부품</th><th>재고</th><th>최소</th><th>상태</th><th>수정</th></tr></thead>
+        <thead><tr><th>코드</th><th>부품</th><th>위치</th><th>재고</th><th>최소</th><th>상태</th><th>로봇 교체</th><th>수정</th></tr></thead>
         <tbody id="partsBody"></tbody>
       </table>
-      <p class="note">교체에 성공하면 재고가 자동으로 1개 줄어듭니다. 재고가 0이면 수리는 '보류'로 끝납니다.</p>
+      <p class="note">교체에 성공하면 재고가 자동으로 1개 줄어듭니다. 재고가 0이면 수리는 '보류'로 끝납니다.<br>
+        '로봇 교체'를 켠 부품만 수동 모드에서 고를 수 있고, 로봇이 교체합니다.</p>
     </div>
   </section>
 
@@ -228,9 +255,25 @@
       </div>
     </div>
   </section>
+
+  <!-- 알람 -->
+  <section id="tab-alarms" class="panel">
+    <div class="card">
+      <div class="cardhead">
+        <h2>알람 <small>경고·오류 로그, 최신순 100개</small></h2>
+        <button id="alarmRefresh" class="btn ghost-dark small">새로고침</button>
+      </div>
+      <div class="tbl-wrap">
+      <table class="tbl">
+        <thead><tr><th>시각</th><th>수준</th><th>작업</th><th>차량</th><th>단계</th><th>내용</th></tr></thead>
+        <tbody id="alarmsBody"></tbody>
+      </table>
+      </div>
+    </div>
+  </section>
 </main>
 
-<script>window.APP = {{ {"rosbridgeUrl": rosbridge_url, "robotJointTopic": robot_joint_topic}|tojson }};</script>
+<script>window.APP = {{ {"rosbridgeUrl": rosbridge_url, "rosbridgePort": rosbridge_port, "rosbridgeTlsPort": rosbridge_tls_port, "robotJointTopic": robot_joint_topic}|tojson }};</script>
 <script src="{{ url_for('static', filename='common.js') }}"></script>
 <script type="module" src="{{ url_for('static', filename='admin.js') }}"></script>
 <script type="module" src="{{ url_for('static', filename='robot_panel.js') }}"></script>

@@ -54,5 +54,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--urdf', type=Path, required=True)
     parser.add_argument('--source-root', type=Path, required=True)
+    parser.add_argument('--tcp-frame', default='tool0', help='link shown as the TCP (tool0 if the URDF lacks it)')
     args = parser.parse_args()
-    print(RobotModelAssets(Path(__file__).parent).export(args.urdf, args.source_root))
+    print(RobotModelAssets(Path(__file__).parent).export(args.urdf, args.source_root, args.tcp_frame))

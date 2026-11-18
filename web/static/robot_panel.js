@@ -1,6 +1,8 @@
 import { RobotViewer } from "./robot_viewer.js";
 import { RobotRosClient } from "./robot_ros.js";
-import { RobotTaskPanel } from "./robot_control.js";
+import { RobotTaskPanel, robotControl, rosbridgeUrl } from "./robot_control.js";
+import { RobotResults } from "./robot_results.js";
+import { CloudFeed } from "./robot_clouds.js";
 
 export class RobotPanel {
   constructor(panel) {
@@ -9,9 +11,14 @@ export class RobotPanel {
     this.status = panel.querySelector("[data-robot-status]");
     this.message = panel.querySelector("[data-robot-message]");
     this.viewer = new RobotViewer(panel.querySelector("[data-robot-viewer]"));
+    this.results = new RobotResults(panel.querySelector("[data-robot-results]"));
+    this.clouds = new CloudFeed(this.viewer);
+    panel.querySelectorAll("[data-robot-cloud]").forEach((input) =>
+      input.addEventListener("change", () => this.viewer.setCloudVisible(input.dataset.robotCloud, input.checked)));
     this.url = panel.querySelector("[data-robot-url]");
     this.topic = panel.querySelector("[data-robot-topic]");
-    this.url.value = window.APP.rosbridgeUrl || `${location.protocol === "https:" ? "wss" : "ws"}://${location.hostname}:9090`;
+    this.url.value = rosbridgeUrl();
+    robotControl.addEventListener("state", () => this.followMode());
     this.topic.value = window.APP.robotJointTopic || "/dsr01/sim_joint_states";
     panel.querySelector("[data-robot-connect]").addEventListener("click", () => this.connect());
     panel.querySelectorAll("[data-robot-view]").forEach((button) =>
@@ -21,7 +28,10 @@ export class RobotPanel {
       input.addEventListener("change", () => this.viewer.setDisplay({ [input.dataset.robotDisplay]: input.checked })));
     panel.querySelector("[data-robot-frame]").addEventListener("change", (event) => this.viewer.setTcpFrame(event.target.value));
     document.querySelector('[data-tab="robot"]').addEventListener("click", () => {
-      if (!this.started) { this.started = true; this.load(); this.connect(); }
+      if (!this.started) {
+        this.started = true;
+        this.load(); this.connect(); this.results.start(); this.clouds.start();
+      }
       requestAnimationFrame(() => this.viewer.resize());
     });
     setInterval(() => this.refresh(), 200);
@@ -54,6 +64,16 @@ export class RobotPanel {
     }
   }
 
+  /** Joint topic of the connected robot, unless the server sets one: simulation feedback or the real controller. */
+  followMode() {
+    const mode = robotControl.status?.mode;
+    if (window.APP.robotJointTopic || !mode || !this.started) return;
+    const topic = mode === "real" ? "/dsr01/joint_states" : "/dsr01/sim_joint_states";
+    if (topic === this.modeTopic) return;
+    this.modeTopic = topic;
+    if (this.topic.value !== topic) { this.topic.value = topic; this.connect(); }
+  }
+
   connect() {
     this.client?.close();
     this.client = new RobotRosClient({ url: this.url.value, topic: this.topic.value,
@@ -68,7 +88,7 @@ export class RobotPanel {
     const age = this.client?.lastReceived ? (performance.now() - this.client.lastReceived)/1000 : Infinity;
     const receiving = this.connection !== "disconnected" && age < 1;
     const states = { connecting: "연결 중", waiting: "연결됨 · 관절값 대기", error: "연결 오류", disconnected: "연결 끊김" };
-    this.status.textContent = receiving ? "시뮬레이션 수신 중" : (this.connection === "waiting" && Number.isFinite(age)
+    this.status.textContent = receiving ? "관절값 수신 중" : (this.connection === "waiting" && Number.isFinite(age)
       ? "관절 데이터 수신 중단" : states[this.connection] || "연결 대기");
     this.status.className = `pill ${receiving ? "on" : "off"}`;
     this.panel.querySelector("[data-robot-rate]").textContent = receiving ? `${this.client.rate.toFixed(1)} Hz` : "—";

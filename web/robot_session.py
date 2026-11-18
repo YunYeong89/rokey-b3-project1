@@ -1,19 +1,18 @@
-"""Attach the web viewer and rosbridge to an existing native simulation session.
-The viewer shows the same scene as the simulation: the robot, plus the --car scene if any
-(markers on /dsr01/sim_scene, meshes exported to static/robot/scene)."""
+"""Web viewer, rosbridge and web_control started together with a native session (--web; virtual or real robot).
+Without --web, ./run_web.sh start attaches the same web to a session that is already running.
+The viewer shows the robot (joint states of `joint_topic`), the --car scene of a simulation if any (markers on
+/dsr01/sim_scene, meshes served from the session's cache by robot_files.py), the programs' clouds and report files."""
 from pathlib import Path
 import os
 import shlex
-import shutil
 import sys
-from urllib.parse import unquote, urlparse
 
 from robot_model import RobotModelAssets
 
 
 class SimulationWeb:
-    def __init__(self, directory, port=5050):
-        self.directory, self.port = Path(directory), port
+    def __init__(self, directory, port=5050, joint_topic='/dsr01/sim_joint_states'):
+        self.directory, self.port, self.joint_topic = Path(directory), port, joint_topic
 
     def export_vehicles(self, root):
         """static/models/<type>.glb for the 3D car viewer, from the rokey vehicle models at their current scale."""
@@ -25,6 +24,14 @@ class SimulationWeb:
         for kind in load('vehicles')['types']:
             VehicleModel(kind).export_glb(models/f'{kind}.glb')
 
+    @staticmethod
+    def environment(root, port):
+        """Flask settings shared with run_web.sh: result folders and scene meshes of the workspace."""
+        return {'PORT': str(port), 'ROKEY_DIR': str(root/'ws_cobot_pjt/src/rokey'),
+                'SESSION_DIR': str(root/'ws_cobot_pjt/session'),
+                'SCENE_DIRS': os.pathsep.join([str(root/'native/.cache/scene'),
+                                               str(root/'ws_cobot_pjt/src/rokey/meshes')])}
+
     def start(self, session, model):
         python = self.directory/'.venv/bin/python'
         if not python.is_file():
@@ -33,14 +40,6 @@ class SimulationWeb:
         root = model.urdf.parents[2]
         RobotModelAssets(self.directory).export(model.urdf, root/'ws_cobot_pjt/src',
                                                 getattr(model, 'tcp_link', 'tool0'))
-        scene, scene_dir = getattr(model, 'scene_map', None), self.directory/'static/robot/scene'
-        shutil.rmtree(scene_dir, ignore_errors=True)
-        if scene is not None:
-            scene_dir.mkdir(parents=True)
-            for marker in scene.markers().markers:  # every mesh the scene references, as STL
-                if marker.mesh_resource:
-                    source = Path(unquote(urlparse(marker.mesh_resource).path)).with_suffix('.stl')
-                    shutil.copy2(source, scene_dir/source.name)
         self.export_vehicles(root)
         session.start_remote(
             'source /opt/ros/jazzy/setup.bash && source /workspace/install/setup.bash && '
@@ -55,6 +54,6 @@ class SimulationWeb:
             'source /opt/ros/jazzy/setup.bash && source /workspace/install/setup.bash && '
             f'exec env {environment} python3 -u -m rokey.web_control', 'web_control')
         session.start([str(python), '-u', str(self.directory/'app.py')],
-                      env={'PORT': str(self.port), 'ROBOT_JOINT_TOPIC': '/dsr01/sim_joint_states'})
+                      env={**self.environment(root, self.port), 'ROBOT_JOINT_TOPIC': self.joint_topic})
         print(f'Web robot control: http://localhost:{self.port}/admin?tab=robot '
               '(login, then open the robot tab)', flush=True)

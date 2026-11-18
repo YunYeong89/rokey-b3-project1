@@ -7,8 +7,8 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 <script type="importmap">
 { "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    "three": "/static/vendor/three/build/three.module.js",
+    "three/addons/": "/static/vendor/three/examples/jsm/"
 } }
 </script>
 </head>
@@ -59,7 +59,7 @@
         <h3>진행 단계</h3>
         <ol id="steps" class="steps">
           <li data-stage="calibrate">차량 위치 확인</li>
-          <li data-stage="scan">표면 스캔</li>
+          <li data-stage="scan">표면 스캔(연속 접촉)</li>
           <li data-stage="detect">손상 판정</li>
           <li data-stage="stock">부품 준비</li>
           <li data-stage="replace">부품 교체</li>

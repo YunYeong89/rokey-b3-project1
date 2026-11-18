@@ -2,7 +2,8 @@
 자동차 자동 수리 로봇 - 웹 서버 (Flask + SQLite)
 
 실행:  python3 app.py            → http://<PC IP>:5050  (태블릿에서 접속)
-처음 실행 시 repair.db 를 만들고 기본 계정·부품·차량을 넣는다.
+처음 실행 시 repair.db 를 만들고 기본 계정·부품·차량 + 샘플 데이터(회원·차량·이력)를 넣는다.
+  샘플 없이: REPAIR_SAMPLE=0 python3 app.py      처음 상태로: rm repair.db 후 다시 실행
   관리자 admin / admin1234,  사용자(차주) user1 / user1234, user2 / user1234   ← 꼭 바꾸기
 
 권한
@@ -14,15 +15,18 @@ import os
 import sqlite3
 from functools import wraps
 
-from flask import Flask, abort, jsonify, redirect, render_template, request, session, url_for
+from flask import Flask, abort, jsonify, redirect, render_template, request, send_file, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import db
+from robot_files import RobotFiles
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("REPAIR_SECRET", "change-this-secret")
 API_KEY = os.environ.get("REPAIR_API_KEY", "rokey-robot-key")
-ROSBRIDGE_URL = os.environ.get("ROSBRIDGE_URL", "")   # 비우면 브라우저가 ws://<접속한 호스트>:9090 사용
+ROSBRIDGE_URL = os.environ.get("ROSBRIDGE_URL", "")   # 비우면 브라우저가 ws://<접속한 호스트>:ROSBRIDGE_PORT 사용
+ROSBRIDGE_PORT = int(os.environ.get("ROSBRIDGE_PORT", 9090))   # run_web.sh --lan: 9091 (lan_relay.py)
+ROSBRIDGE_TLS_PORT = int(os.environ.get("ROSBRIDGE_TLS_PORT", 9443))   # https 페이지의 wss (lan_relay.py TLS)
 app.teardown_appcontext(db.close_db)
 
 FINISH_STATUSES = {"done", "no_damage", "on_hold", "failed", "stopped"}
@@ -45,7 +49,7 @@ def require(*roles):
             if r is None:
                 if request.path.startswith("/api/"):
                     return jsonify(error="로그인이 필요합니다"), 401
-                return redirect(url_for("login"))
+                return redirect(url_for("login", next=request.full_path))   # 로그인 후 원래 주소(?tab=robot 등)로
             if roles and r not in roles:
                 if request.path.startswith("/api/"):
                     return jsonify(error="권한이 없습니다"), 403
@@ -53,6 +57,13 @@ def require(*roles):
             return fn(*a, **kw)
         return wrapper
     return deco
+
+
+# 로봇 프로그램 결과 파일 · 실시간 힘 그래프 · 점군 (기본 경로: 이 저장소의 ws_cobot_pjt)
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+RobotFiles(os.environ.get("ROKEY_DIR", os.path.join(REPO, "ws_cobot_pjt/src/rokey")),
+           os.environ.get("SESSION_DIR", os.path.join(REPO, "ws_cobot_pjt/session")),
+           [d for d in os.environ.get("SCENE_DIRS", "").split(os.pathsep) if d]).register(app, require("admin"))
 
 
 def can_see_vehicle(vehicle_id):
@@ -77,6 +88,38 @@ def not_found(_):
 
 
 # ================================================================ 페이지
+@app.get("/ca.crt")
+def local_ca():
+    """run_web.sh --lan 의 로컬 인증 기관. 아이패드 등에 한 번 설치·신뢰하면 https 주소가 경고 없이 열린다."""
+    path = os.environ.get("WEB_CA", "")
+    if not os.path.isfile(path):
+        abort(404)
+    return send_file(path, mimetype="application/x-x509-ca-cert", download_name="rokey-web-ca.crt")
+
+
+def ca_profile(path):
+    """같은 인증 기관을 담은 iOS/iPadOS 구성 프로파일 (.mobileconfig: Safari·AirDrop에서 설치 화면이 뜬다)."""
+    import plistlib, ssl, uuid
+    pem = open(path).read()
+    der = ssl.PEM_cert_to_DER_cert(pem)
+    ident = uuid.uuid5(uuid.NAMESPACE_URL, pem)
+    certificate = {"PayloadType": "com.apple.security.root", "PayloadVersion": 1, "PayloadContent": der,
+                   "PayloadCertificateFileName": "rokey-web-ca.cer", "PayloadDisplayName": "rokey web local CA",
+                   "PayloadIdentifier": f"rokey.web.ca.{ident}.cert", "PayloadUUID": str(uuid.uuid5(ident, "cert"))}
+    return plistlib.dumps({"PayloadType": "Configuration", "PayloadVersion": 1, "PayloadContent": [certificate],
+                           "PayloadDisplayName": "rokey web local CA", "PayloadIdentifier": f"rokey.web.ca.{ident}",
+                           "PayloadUUID": str(ident)})
+
+
+@app.get("/ca.mobileconfig")
+def local_ca_profile():
+    path = os.environ.get("WEB_CA", "")
+    if not os.path.isfile(path):
+        abort(404)
+    return ca_profile(path), 200, {"Content-Type": "application/x-apple-aspen-config",
+                                   "Content-Disposition": "attachment; filename=rokey-web-ca.mobileconfig"}
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     error = None
@@ -86,7 +129,8 @@ def login():
         if u and check_password_hash(u["pw_hash"], request.form.get("password", "")):
             session.clear()
             session.update(user_id=u["id"], user=u["username"], name=u["name"] or u["username"], role=u["role"])
-            return redirect(url_for("home"))
+            target = request.args.get("next", "")
+            return redirect(target if target.startswith("/") and not target.startswith("//") else url_for("home"))
         error = "아이디 또는 비밀번호가 맞지 않습니다."
     return render_template("login.html", error=error)
 
@@ -106,8 +150,10 @@ def home():
 @app.route("/admin")
 @require("admin")
 def admin_page():
+    # ROBOT_JOINT_TOPIC 이 없으면 화면이 연결된 로봇(가상/실기)에 맞춰 관절 토픽을 고른다
     return render_template("admin.html", name=session["name"], rosbridge_url=ROSBRIDGE_URL,
-                           robot_joint_topic=os.environ.get("ROBOT_JOINT_TOPIC", "/dsr01/sim_joint_states"))
+                           rosbridge_port=ROSBRIDGE_PORT, rosbridge_tls_port=ROSBRIDGE_TLS_PORT,
+                           robot_joint_topic=os.environ.get("ROBOT_JOINT_TOPIC", ""))
 
 
 @app.route("/my")
@@ -200,7 +246,9 @@ def set_vehicle_owner(vid):
 @app.get("/api/parts")
 @require("admin", "robot")
 def list_parts():
-    return jsonify(db.rows(db.get_db().execute("SELECT * FROM parts ORDER BY code")))
+    return jsonify(db.rows(db.get_db().execute(
+        "SELECT * FROM parts ORDER BY CASE category WHEN '외판' THEN 0 WHEN '미러' THEN 1 WHEN '램프' THEN 2 ELSE 3 END, "
+        "location, code")))
 
 
 @app.get("/api/parts/<code>/check")
@@ -209,7 +257,7 @@ def check_part(code):
     p = db.get_db().execute("SELECT * FROM parts WHERE code = ?", (code,)).fetchone()
     if not p:
         abort(404)
-    return jsonify(code=code, name=p["name"], stock=p["stock"], available=p["stock"] > 0)
+    return jsonify(code=code, name=p["name"], stock=p["stock"], available=p["stock"] > 0, robot_ok=bool(p["robot_ok"]))
 
 
 @app.post("/api/parts/<code>/consume")
@@ -227,11 +275,21 @@ def consume_part(code):
 @app.patch("/api/parts/<code>")
 @require("admin")
 def set_part(code):
-    stock = request.get_json(force=True).get("stock")
-    if not isinstance(stock, int) or stock < 0:
-        return jsonify(error="재고는 0 이상의 정수"), 400
+    """{stock: 0 이상 정수} 와/또는 {robot_ok: 0/1/true/false}"""
+    d = request.get_json(force=True)
+    sets = {}
+    if "stock" in d:
+        if not isinstance(d["stock"], int) or isinstance(d["stock"], bool) or d["stock"] < 0:
+            return jsonify(error="재고는 0 이상의 정수"), 400
+        sets["stock"] = d["stock"]
+    if "robot_ok" in d:
+        if d["robot_ok"] not in (0, 1):            # True/False 도 0/1 과 같음
+            return jsonify(error="robot_ok 는 0 또는 1"), 400
+        sets["robot_ok"] = int(d["robot_ok"])
+    if not sets:
+        return jsonify(error="stock 또는 robot_ok 를 보내세요"), 400
     con = db.get_db()
-    cur = con.execute("UPDATE parts SET stock = ? WHERE code = ?", (stock, code))
+    cur = con.execute(f"UPDATE parts SET {', '.join(k + ' = ?' for k in sets)} WHERE code = ?", (*sets.values(), code))
     con.commit()
     if cur.rowcount == 0:
         abort(404)
@@ -272,10 +330,13 @@ def create_job():
         return jsonify(error="없는 차량입니다"), 400
     parts = []
     if mode == "manual":
-        valid = {r["code"] for r in con.execute("SELECT code FROM parts")}
+        valid = {r["code"]: r for r in con.execute("SELECT code, name, robot_ok FROM parts")}
         parts = [p for p in dict.fromkeys(d.get("parts") or []) if p in valid]
         if not parts:
             return jsonify(error="수동 모드는 교체할 부품을 1개 이상 고르세요"), 400
+        no_robot = [valid[p]["name"] for p in parts if not valid[p]["robot_ok"]]
+        if no_robot:
+            return jsonify(error=f"로봇 교체 불가 부품: {', '.join(no_robot)}"), 400
     if con.execute("SELECT 1 FROM jobs WHERE status = 'running'").fetchone():
         return jsonify(error="이미 진행 중인 수리가 있습니다"), 409
     if role() == "robot":
@@ -345,8 +406,8 @@ def add_findings(job_id):
     items = items if isinstance(items, list) else [items]
     con = db.get_db()
     try:
-        con.executemany("INSERT INTO findings (job_id, part_code, x, y, depth, decision) VALUES (?, ?, ?, ?, ?, ?)",
-                        [(job_id, f["part_code"], f.get("x"), f.get("y"), f.get("depth"), f.get("decision", "dent"))
+        con.executemany("INSERT INTO findings (job_id, part_code, x, y, z, depth, decision) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        [(job_id, f["part_code"], f.get("x"), f.get("y"), f.get("z"), f.get("depth"), f.get("decision", "dent"))
                          for f in items])
         con.commit()
     except (sqlite3.IntegrityError, KeyError) as e:
@@ -390,6 +451,21 @@ def finish_job(job_id):
     return jsonify(job_detail(job_id))
 
 
+# ================================================================ 알람 (관리자)
+@app.get("/api/alarms")
+@require("admin")
+def list_alarms():
+    """events 중 warn/error 만 최신순. 작업 번호·차량 이름 포함"""
+    try:
+        limit = max(1, min(int(request.args.get("limit", 100)), 500))
+    except ValueError:
+        return jsonify(error="limit 은 정수"), 400
+    return jsonify(db.rows(db.get_db().execute(
+        """SELECT e.id, e.job_id, e.ts, e.stage, e.level, e.message, j.vehicle_id, v.name AS vehicle_name
+           FROM events e JOIN jobs j ON j.id = e.job_id JOIN vehicles v ON v.id = j.vehicle_id
+           WHERE e.level IN ('warn', 'error') ORDER BY e.id DESC LIMIT ?""", (limit,))))
+
+
 if __name__ == "__main__":
     db.init_db()
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5050)), debug=False)
+    app.run(host=os.environ.get("HOST", "0.0.0.0"), port=int(os.environ.get("PORT", 5050)), debug=False, threaded=True)

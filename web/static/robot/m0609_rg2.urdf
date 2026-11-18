@@ -451,6 +451,6 @@
   <joint name="probe_tip_joint" type="fixed">
     <parent link="link_6" />
     <child link="probe_tip" />
-    <origin xyz="0 0 0.27213067747531805" rpy="0 0 0" />
+    <origin xyz="0 0 0.2927333815596635" rpy="0 0 0" />
   </joint>
 </robot>

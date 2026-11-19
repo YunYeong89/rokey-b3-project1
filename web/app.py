@@ -15,6 +15,8 @@
   SMTP_USER=보내는Gmail  SMTP_PASS=Gmail앱비밀번호  SITE_URL=http://<PC IP>:5000  python3 app.py
   네이버로 보낼 때: SMTP_HOST=smtp.naver.com 추가 (네이버 메일 환경설정에서 POP3/SMTP 사용 켜기)
   MAIL_DRY_RUN=1 이면 실제로 보내지 않고 터미널에 메일 내용만 출력
+  위 값들은 web/.env 에 KEY='값' 줄로 적어 두면 python3 app.py 만으로 읽힌다 (.env 는 git 제외).
+  터미널에서 직접 준 (빈 값이 아닌) 환경변수가 .env 보다 우선.
 """
 import logging
 import os
@@ -28,7 +30,28 @@ from functools import wraps
 from flask import Flask, abort, jsonify, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
-import db
+
+def load_env_file(path=os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")):
+    """web/.env 의 KEY=값 줄을 환경변수로. 터미널에서 값을 준 변수는 그대로 두고, 없거나 빈 값이면 .env 값 사용"""
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, val = line.removeprefix("export ").split("=", 1)
+                key, val = key.strip(), val.strip()
+                if len(val) >= 2 and val[0] == val[-1] and val[0] in "'\"":
+                    val = val[1:-1]
+                if not os.environ.get(key):
+                    os.environ[key] = val
+    except FileNotFoundError:
+        pass
+
+
+load_env_file()          # import db 보다 먼저 (db 도 REPAIR_DB 등 환경변수를 읽음)
+
+import db  # noqa: E402
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("REPAIR_SECRET", "change-this-secret")

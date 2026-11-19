@@ -154,13 +154,15 @@
     <div class="two">
       <div class="card">
         <h2>회원</h2>
-        <table class="tbl"><thead><tr><th>아이디</th><th>이름</th><th>권한</th></tr></thead><tbody id="usersBody"></tbody></table>
+        <p class="form-msg" id="emailMsg"></p>
+        <table class="tbl"><thead><tr><th>아이디</th><th>이름</th><th>권한</th><th>이메일 <small>(수리 알림)</small></th></tr></thead><tbody id="usersBody"></tbody></table>
         <h3>회원 등록</h3>
         <form id="userForm" class="form-grid">
           <input name="username" placeholder="아이디" required>
           <input name="name" placeholder="이름 (예: 홍길동)">
           <input name="password" type="password" placeholder="비밀번호 (4자 이상)" required>
           <select name="role"><option value="user">사용자 (차주)</option><option value="admin">관리자</option></select>
+          <input name="email" type="email" placeholder="이메일 (수리 시작·종료 알림, 선택)" style="grid-column: 1 / -1">
           <button class="btn primary" type="submit">등록</button>
           <p class="form-msg" id="userMsg"></p>
         </form>

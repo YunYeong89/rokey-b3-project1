@@ -251,3 +251,11 @@ hr.sep { border: 0; border-top: 1px solid var(--line); margin: 16px 0 14px; }
   body.my-page .status-card-my .result { margin-top: 10px; }
   body.my-page .logcard-my h2 { margin-bottom: 8px; }
 }
+
+/* ---- 고객 화면: 폰 · 작은 태블릿 (960px 이하) ---- */
+@media (max-width: 960px) {
+  /* 3D 캔버스가 예전 폭을 붙잡아 페이지가 화면보다 넓어지던 것 막기 (회전 · 첫 로드) */
+  body.my-page .grid-my { grid-template-columns: minmax(0, 1fr); }
+  body.my-page .grid-my > .card { min-width: 0; }
+  body.my-page { overflow-x: hidden; }
+}

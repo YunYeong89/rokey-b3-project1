@@ -13,6 +13,7 @@
 
 차주 알림 메일 (수리 시작 · 종료). 차주 이메일은 관리자 화면 '회원' 탭에서 입력
   SMTP_USER=보내는Gmail  SMTP_PASS=Gmail앱비밀번호  SITE_URL=http://<PC IP>:5000  python3 app.py
+  네이버로 보낼 때: SMTP_HOST=smtp.naver.com 추가 (네이버 메일 환경설정에서 POP3/SMTP 사용 켜기)
   MAIL_DRY_RUN=1 이면 실제로 보내지 않고 터미널에 메일 내용만 출력
 """
 import logging
@@ -42,6 +43,8 @@ MODES = {"auto", "manual"}
 # ================================================================ 차주 알림 메일
 SMTP_USER = os.environ.get("SMTP_USER", "")
 SMTP_PASS = os.environ.get("SMTP_PASS", "")        # 로그에 절대 찍지 않음
+SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.gmail.com")   # 네이버: smtp.naver.com
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "465"))         # SSL
 SITE_URL = os.environ.get("SITE_URL", "").rstrip("/")
 MAIL_DRY_RUN = os.environ.get("MAIL_DRY_RUN") == "1"
 
@@ -148,13 +151,13 @@ def _send_mail(job_id, kind, msg):
                           job_id, label, to, msg["Subject"], msg.get_content())
             _notify_event(job_id, "info", f"메일 발송(시험 모드): {label}")
             return
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=10) as s:
+        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=10) as s:
             s.login(SMTP_USER, SMTP_PASS)
             s.send_message(msg)
         mail_log.info("작업 #%s 메일 발송: %s → %s", job_id, label, to)
         _notify_event(job_id, "info", f"메일 발송: {label}")
     except Exception as e:
-        hint = " (Gmail 앱 비밀번호 확인)" if isinstance(e, smtplib.SMTPAuthenticationError) else ""
+        hint = f" ({SMTP_HOST} 아이디·비밀번호 / SMTP 사용 설정 확인)" if isinstance(e, smtplib.SMTPAuthenticationError) else ""
         code = getattr(e, "smtp_code", "")
         mail_log.warning("작업 #%s 메일 실패: %s → %s: %s %s%s", job_id, label, to, type(e).__name__, code, hint)
         _notify_event(job_id, "warn", f"메일 발송 실패: {label} ({type(e).__name__})")

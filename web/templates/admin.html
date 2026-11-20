@@ -32,93 +32,90 @@
     <span class="user">{{ name }}</span>
     <a href="{{ url_for('logout') }}" class="btn ghost small">로그아웃</a>
   </div>
-  <button id="estopBtn" class="estop" disabled title="진행 중인 수리를 정지 (소프트웨어 정지)">■ 정지</button>
 </header>
 
 <main>
   <section id="tab-robot" class="panel active">
-    <section class="card inspection-card" data-inspection>
-      <div class="cardhead"><h2>부품 탐색</h2><span class="note" data-inspection-probe></span></div>
-      <div class="inspection-fields">
-        <label>로봇<select data-inspection-robot><option value="dsr01">DSR01</option></select></label>
-        <label>보고서 차량<select data-inspection-vehicle required><option value="">차량 선택</option></select></label>
-        <label>부품<select data-inspection-part>
-          <option value="bonnet">보닛</option><option value="left_door">왼쪽 도어</option>
-          <option value="right_door">오른쪽 도어</option>
-        </select></label>
-      </div>
-      <div class="inspection-layout">
-        <div class="inspection-selection">
-          <p class="note" data-inspection-draw-note>CAD 위에서 검사할 부분을 그리세요.</p>
-          <canvas data-inspection-draw aria-label="부품 CAD와 부분 탐색 영역"></canvas>
-          <ol class="inspection-regions" data-inspection-regions aria-label="선택한 영역"></ol>
-          <div class="robot-task-buttons">
-            <button type="button" class="btn primary small" data-inspection-full disabled>전체 탐색</button>
-            <button type="button" class="btn ghost-dark small" data-inspection-partial disabled>부분 탐색</button>
-            <label class="robot-check"><input type="checkbox" data-inspection-plan-only>계획만 확인</label>
-          </div>
-        </div>
-        <div class="inspection-order">
-          <h3>부품별 탐색 트리</h3>
-          <ol data-inspection-order></ol>
-          <div class="robot-task-buttons">
-            <button type="button" class="btn ghost-dark small" data-inspection-save disabled>순서 저장</button>
-            <button type="button" class="btn primary small" data-inspection-run disabled>전체 명령 내보내기</button>
-          </div>
-        </div>
-      </div>
-      <div class="inspection-state">
-        <span class="note" data-inspection-status role="status">로봇 연결 대기</span>
-        <button type="button" class="btn primary small" data-inspection-continue hidden>배치 확인 후 계속</button>
-        <button type="button" class="btn danger small" data-task-stop disabled>로봇 정지</button>
-      </div>
-      <p class="form-msg err" data-inspection-error role="alert"></p>
-    </section>
     <div class="robot-layout">
-      <div class="card robot-scene-card">
-        <div class="cardhead"><h2>M0609 + RG2</h2><span data-robot-status class="pill off">연결 대기</span></div>
-        <div class="robot-meta"><span>Fixed frame: base_link</span><span>길이: m · 관절: deg</span>
-          <span class="robot-axis"><b>X</b><b>Y</b><b>Z</b></span></div>
-        <div class="robot-canvas" data-robot-viewer><div class="robot-message" data-robot-message>로봇 탭에서 모델과 관절값을 불러옵니다.</div></div>
-        <div class="robot-tools">
-          <button class="btn ghost-dark small" data-robot-fit>전체 보기</button>
-          <button class="btn ghost-dark small" data-robot-view="iso">기본</button>
-          <button class="btn ghost-dark small" data-robot-view="front">정면</button>
-          <button class="btn ghost-dark small" data-robot-view="side">측면</button>
-          <button class="btn ghost-dark small" data-robot-view="top">위에서</button>
-          <span class="note">드래그: 회전 · 우클릭: 이동 · 휠: 확대</span>
-        </div>
-        <div class="stats robot-stats">
-          <div><b id="statPts">0</b><span>측정 점</span></div>
-          <div><b id="statFz">–</b><span>현재 Fz [N]</span></div>
-          <div><b id="statDepth">–</b><span>최대 깊이 [mm]</span></div>
-          <div><b id="statFlush">–</b><span>재검사 단차 [mm]</span></div>
-        </div>
-      </div>
-      <div class="card viewer-card robot-car-card">
-        <div class="cardhead">
-          <h2 id="viewerTitle">차량</h2><span class="note">수리 결과 · 데모 · 수동 부품 선택</span>
-          <div class="legend">
-            <span><i class="lg ok"></i>정상</span>
-            <span><i class="lg sus"></i>의심</span>
-            <span><i class="lg dent"></i>손상</span>
-            <span><i class="lg miss"></i>부품 없음</span>
-            <span><i class="lg req"></i>교체 지정</span>
-            <span><i class="lg done"></i>교체 완료</span>
+      <div class="robot-main">  <!-- 왼쪽: 로봇 3D → 부품 탐색(수동) → 힘 그래프·결과 → 진행 로그, 간격 없이 이어짐 -->
+        <div class="card robot-scene-card">
+          <div class="cardhead"><h2>M0609 + RG2</h2><span data-robot-status class="pill off">연결 대기</span></div>
+          <div class="robot-meta"><span>Fixed frame: base_link</span><span>길이: m · 관절: deg</span>
+            <span class="robot-axis"><b>X</b><b>Y</b><b>Z</b></span></div>
+          <div class="robot-canvas" data-robot-viewer><div class="robot-message" data-robot-message>로봇 탭에서 모델과 관절값을 불러옵니다.</div></div>
+          <div class="robot-tools">
+            <button class="btn ghost-dark small" data-robot-fit>전체 보기</button>
+            <button class="btn ghost-dark small" data-robot-view="iso">기본</button>
+            <button class="btn ghost-dark small" data-robot-view="front">정면</button>
+            <button class="btn ghost-dark small" data-robot-view="side">측면</button>
+            <button class="btn ghost-dark small" data-robot-view="top">위에서</button>
+            <span class="note">드래그: 회전 · 우클릭: 이동 · 휠: 확대</span>
+          </div>
+          <div class="stats robot-stats">
+            <div><b id="statPts">0</b><span>측정 점</span></div>
+            <div><b id="statFz">–</b><span>현재 Fz [N]</span></div>
+            <div><b id="statDepth">–</b><span>최대 깊이 [mm]</span></div>
+            <div><b id="statFlush">–</b><span>재검사 단차 [mm]</span></div>
           </div>
         </div>
-        <div id="viewer" class="viewer"><div id="viewerMsg" class="viewer-msg">3D 모델 불러오는 중…</div></div>
-        <div class="viewer-tools">
-          <button class="btn ghost-dark small" data-view="iso">기본 시점</button>
-          <button class="btn ghost-dark small" data-view="top">위에서</button>
-          <button class="btn ghost-dark small" data-view="front">앞에서</button>
-          <button class="btn ghost-dark small" data-view="side">옆에서</button>
-          <button class="btn ghost-dark small" id="robotToggle" aria-pressed="false">로봇팔 표시</button>
-          <span class="note">드래그: 회전 · 휠/두 손가락: 확대/이동 · 수동 모드에서 부품 클릭: 선택</span>
+        <!-- 부품 탐색: 수리 카드에서 수동 모드를 고른 경우에만 표시 (admin.js) -->
+        <section class="card inspection-card" data-inspection hidden>
+          <div class="cardhead"><h2>부품 탐색</h2><span class="note" data-inspection-probe></span></div>
+          <div class="inspection-fields">
+            <label>로봇<select data-inspection-robot><option value="dsr01">DSR01</option></select></label>
+            <label>보고서 차량<select data-inspection-vehicle required><option value="">차량 선택</option></select></label>
+            <label>부품<select data-inspection-part>
+              <option value="bonnet">보닛</option><option value="left_door">왼쪽 도어</option>
+              <option value="right_door">오른쪽 도어</option>
+            </select></label>
+          </div>
+          <div class="inspection-layout">
+            <div class="inspection-selection">
+              <p class="note" data-inspection-draw-note>CAD 위에서 검사할 부분을 그리세요.</p>
+              <canvas data-inspection-draw aria-label="부품 CAD와 부분 탐색 영역"></canvas>
+              <ol class="inspection-regions" data-inspection-regions aria-label="선택한 영역"></ol>
+              <div class="robot-task-buttons">
+                <button type="button" class="btn primary small" data-inspection-full disabled>전체 탐색</button>
+                <button type="button" class="btn ghost-dark small" data-inspection-partial disabled>부분 탐색</button>
+                <label class="robot-check"><input type="checkbox" data-inspection-plan-only>계획만 확인</label>
+              </div>
+            </div>
+            <div class="inspection-order">
+              <h3>부품별 탐색 트리</h3>
+              <ol data-inspection-order></ol>
+              <div class="robot-task-buttons">
+                <button type="button" class="btn ghost-dark small" data-inspection-save disabled>순서 저장</button>
+                <button type="button" class="btn primary small" data-inspection-run disabled>전체 명령 내보내기</button>
+              </div>
+            </div>
+          </div>
+          <div class="inspection-state">
+            <span class="note" data-inspection-status role="status">로봇 연결 대기</span>
+            <button type="button" class="btn primary small" data-inspection-continue hidden>배치 확인 후 계속</button>
+            <button type="button" class="btn danger small" data-task-stop disabled>로봇 정지</button>
+          </div>
+          <p class="form-msg err" data-inspection-error role="alert"></p>
+        </section>
+        <div class="card robot-results" data-robot-results>
+          <div class="robot-results-head">
+            <h3>실시간 힘 그래프</h3>
+            <button class="btn primary small" data-graph-toggle disabled>실시간 힘 그래프 시작</button>
+            <label class="robot-check"><input type="checkbox" data-graph-compensated>보정 모델 겹쳐 보기</label>
+          </div>
+          <p class="note">외력 Fx·Fy·Fz, |F|·Fn, TCP 위치, 경로별 |F| (최근 30초, 브라우저에서 연속으로 그림 · 마우스를 올리면 값 표시). 화면 확인용이며 따로 저장하지 않습니다.</p>
+          <p class="form-msg err" data-graph-error role="alert"></p>
+          <div class="force-chart" data-graph-chart hidden></div>
+          <div class="robot-results-head">
+            <h3>실행 결과</h3>
+            <select data-run-select aria-label="실행 기록"></select>
+          </div>
+          <p class="note">계획(plan)·표면·이상치·힘·ROI 그래프와 CSV·JSON·PLY. 새 실행이 끝나면 자동으로 최신 결과를 보여줍니다.</p>
+          <div class="robot-run-images" data-run-images></div>
+          <div class="robot-run-files" data-run-files></div>
         </div>
-        <div class="fz-chart">
-          <div class="fz-head"><span>힘 Fz [N] · 최근 200개</span><span id="fzRange" class="note"></span></div>
-          <canvas id="fzCanvas"></canvas>
+        <div class="card logcard-my robot-log-card">
+          <h2>진행 로그</h2>
+          <ul id="log" class="log"></ul>
         </div>
       </div>
       <aside class="robot-side">
@@ -197,28 +194,9 @@
         </div>
         <div class="card"><h3>관절각</h3><table class="tbl robot-joints"><thead><tr><th>관절</th><th>deg</th></tr></thead><tbody data-robot-joints></tbody></table></div>
       </aside>
-      <div class="card robot-results" data-robot-results>
-        <div class="robot-results-head">
-          <h3>실시간 힘 그래프</h3>
-          <button class="btn primary small" data-graph-toggle disabled>실시간 힘 그래프 시작</button>
-          <label class="robot-check"><input type="checkbox" data-graph-compensated>보정 모델 겹쳐 보기</label>
-        </div>
-        <p class="note">외력 Fx·Fy·Fz, |F|·Fn, TCP 위치, 경로별 |F| (최근 30초, 브라우저에서 연속으로 그림 · 마우스를 올리면 값 표시). 화면 확인용이며 따로 저장하지 않습니다.</p>
-        <p class="form-msg err" data-graph-error role="alert"></p>
-        <div class="force-chart" data-graph-chart hidden></div>
-        <div class="robot-results-head">
-          <h3>실행 결과</h3>
-          <select data-run-select aria-label="실행 기록"></select>
-        </div>
-        <p class="note">계획(plan)·표면·이상치·힘·ROI 그래프와 CSV·JSON·PLY. 새 실행이 끝나면 자동으로 최신 결과를 보여줍니다.</p>
-        <div class="robot-run-images" data-run-images></div>
-        <div class="robot-run-files" data-run-files></div>
-      </div>
     </div>
-      <div class="card logcard-my robot-log-card">
-        <h2>진행 로그</h2>
-        <ul id="log" class="log"></ul>
-      </div>
+      <!-- 모형 차 3D 는 화면에서 뺐지만, 데모 모드가 차 형상(스캔 구역·표면)을 계산하는 데 쓰므로 숨긴 채 둔다 -->
+      <div id="viewer" class="viewer" hidden aria-hidden="true"><div id="viewerMsg" class="viewer-msg"></div></div>
   </section>
 
   <!-- 재고 (SCR-102) -->

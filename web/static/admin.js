@@ -28,7 +28,6 @@ $$(".tab").forEach((b) => b.addEventListener("click", () => {
   $$(".tab").forEach((x) => x.classList.toggle("active", x === b));
   $$(".panel").forEach((p) => p.classList.toggle("active", p.id === "tab-" + b.dataset.tab));
   ({ stock: loadParts, history: loadJobs, members: loadMembers, alarms: openAlarms }[b.dataset.tab] || (() => {}))();
-  if (b.dataset.tab === "robot") requestAnimationFrame(() => { viewer.resize(); drawFz(); });   // 로봇·수리 탭의 차량 3D
 }));
 
 // ------------------------------------------------------------ 모드 / 부품 선택
@@ -37,6 +36,7 @@ $$("#modeSeg .seg-btn").forEach((b) => b.addEventListener("click", () => {
   state.mode = b.dataset.mode;
   $$("#modeSeg .seg-btn").forEach((x) => x.classList.toggle("active", x === b));
   $("#partPick").classList.toggle("hidden", state.mode !== "manual");
+  $("[data-inspection]").hidden = state.mode !== "manual";   // 부품 탐색 창은 수동 모드에서만 (로봇 3D 아래)
   repaint();
 }));
 $("#partPickList").addEventListener("change", () => repaint());
@@ -146,6 +146,7 @@ formHandler("#vehicleForm", "#vehicleMsg", "/api/vehicles",
   (f) => ({ name: f.name, model: f.model, owner_id: f.owner_id ? Number(f.owner_id) : null }));
 
 // ------------------------------------------------------------ 3D 차량 뷰어 (고객 화면과 공용)
+// 관리자 화면에서는 숨겨 둔다 (#viewer hidden): 데모 모드의 차 형상(스캔 구역·표면 위치) 계산용
 const viewer = createCarViewer($("#viewer"), {
   msgEl: $("#viewerMsg"),
   onPartClick: (code) => {                     // 수동 모드: 3D 화면에서 부품을 눌러 선택
@@ -161,6 +162,7 @@ const robot = createRobotArm(viewer, { msgEl: $("#viewerMsg") });
 const ROBOT_KEY = "repair.robotArm";
 async function setRobotShown(on) {
   const b = $("#robotToggle");
+  if (!b) return;                              // 모형 차 3D 를 숨긴 화면: 로봇팔 표시 없음
   b.disabled = true;
   try {
     await robot.setVisible(on);
@@ -171,7 +173,7 @@ async function setRobotShown(on) {
     console.error(e); alert("로봇팔 모델을 불러오지 못했습니다: " + e.message);
   } finally { b.disabled = false; }
 }
-$("#robotToggle").addEventListener("click", () => setRobotShown(!robot.visible));
+$("#robotToggle")?.addEventListener("click", () => setRobotShown(!robot.visible));
 
 function repaint() {
   const job = state.job;
@@ -224,7 +226,9 @@ function niceStep(range) {
   return (m < 1.5 ? 1 : m < 3 ? 2 : m < 7 ? 5 : 10) * p;
 }
 function drawFz() {
-  const cv = $("#fzCanvas"), w = cv.clientWidth, h = cv.clientHeight;
+  const cv = $("#fzCanvas");
+  if (!cv) return;                             // Fz 그래프는 로봇 탭 실시간 힘 그래프로 대체 (현재 Fz 는 요약 칸)
+  const w = cv.clientWidth, h = cv.clientHeight;
   if (!w || !h) return;                        // 다른 탭에 있으면 그리지 않음 (돌아올 때 다시 그림)
   const dpr = window.devicePixelRatio || 1;
   if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
@@ -297,7 +301,8 @@ function renderJob(j) {
 // 대기 중 차량을 바꾸면 그 차량의 진행 중/마지막 수리를 보여 줌 (고객 화면과 동일)
 async function showVehicle() {
   const sel = $("#vehicleSel");
-  $("#viewerTitle").textContent = sel.selectedOptions[0] ? sel.selectedOptions[0].textContent : "차량";
+  const title = $("#viewerTitle");
+  if (title) title.textContent = sel.selectedOptions[0] ? sel.selectedOptions[0].textContent : "차량";
   if ($("#startBtn").disabled || !sel.value) return;
   await viewer.load(sel.selectedOptions[0].dataset.model);    // 차종에 맞는 모델 (car.glb 우선)
   computeScanGeometry(viewer.layout());                       // 다른 모델이면 스캔 구역도 그 배치로
@@ -320,7 +325,7 @@ function startPolling(id) {
 function stopPolling() { if (state.pollTimer) clearInterval(state.pollTimer); state.pollTimer = null; }
 function setRunning(on) {
   state.running = on;
-  $("#startBtn").disabled = on; $("#stopBtn").disabled = !on; $("#estopBtn").disabled = !on;
+  $("#startBtn").disabled = on; $("#stopBtn").disabled = !on;
   $("#vehicleSel").disabled = on; $("#demoMode").disabled = on;
   $$("#modeSeg .seg-btn, #partPick input").forEach((x) => (x.disabled = on));
   updateRobotState();
@@ -361,7 +366,7 @@ $("#startBtn").addEventListener("click", async () => {
   }
 });
 
-// 상단 바 정지 버튼(모든 탭)과 수리 탭 정지 버튼이 같은 동작: 로봇 정지(web_control) + 진행 중 작업 정지
+// 수리 카드 정지 버튼 (부품 탐색의 로봇 정지도 같이 씀): 로봇 정지(web_control) + 진행 중 작업 정지
 async function stopJob() {
   const running = state.job && state.job.status === "running";
   if (state.demo) {
@@ -377,7 +382,6 @@ async function stopJob() {
 $("#stopBtn").addEventListener("click", stopJob);
 // 로봇 탭의 '로봇 정지' 버튼도 진행 중인 수리를 같이 멈춘다 (로봇 정지 명령은 robot_control.js 가 보냄)
 $$("[data-task-stop]").forEach((b) => b.addEventListener("click", () => { if (state.job?.status === "running") stopJob(); }));
-$("#estopBtn").addEventListener("click", stopJob);
 
 // ------------------------------------------------------------ rosbridge
 // robot_control.js 의 연결 하나를 함께 쓴다: web_control 상태·명령, /repair/status, 로봇팔 관절값 (http/https·LAN 주소 공통)
@@ -760,7 +764,8 @@ $("#alarmRefresh").addEventListener("click", openAlarms);
   const cur = await api("GET", "/api/jobs/current");   // 새로고침해도 진행 중인 작업 이어서 표시
   if (cur) {
     $("#vehicleSel").value = cur.vehicle_id;
-    $("#viewerTitle").textContent = $("#vehicleSel").selectedOptions[0]?.textContent || cur.vehicle_name;
+    const title = $("#viewerTitle");
+    if (title) title.textContent = $("#vehicleSel").selectedOptions[0]?.textContent || cur.vehicle_name;
     await viewer.load(cur.model);
     computeScanGeometry(viewer.layout());
     setRunning(true); renderJob(cur); startPolling(cur.id);

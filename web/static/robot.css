@@ -1,4 +1,6 @@
 .robot-layout { display:grid; grid-template-columns:minmax(0,1fr) 330px; gap:16px; align-items:start; }
+.robot-main { display:flex; flex-direction:column; gap:16px; min-width:0; }  /* 왼쪽 창들은 사이드바 길이와 상관없이 바로 이어짐 */
+.robot-main > .card { margin-bottom:0; }
 .robot-scene-card { min-width:0; padding:0; overflow:hidden; }
 .robot-scene-card .cardhead { padding:14px 18px; }
 .robot-canvas { height:70vh; min-height:460px; position:relative; background:#18212c; }
@@ -22,7 +24,7 @@
 .robot-side input[type=number] { width:100%; box-sizing:border-box; margin-top:4px; }
 .robot-axis { display:inline-flex; gap:8px; font-size:12px; }
 .robot-axis b:nth-child(1) { color:#eb5c5c; }.robot-axis b:nth-child(2) { color:#40bf78; }.robot-axis b:nth-child(3) { color:#619bff; }
-.robot-results { grid-column:1; min-width:0; margin-bottom:0; }
+.robot-results { min-width:0; }
 .robot-results h3 { margin:0; }
 .robot-results-head { display:flex; flex-wrap:wrap; align-items:center; gap:10px 14px; margin-top:6px; }
 .robot-results-head select { min-width:0; max-width:100%; }
@@ -49,7 +51,7 @@
 .robot-run-files { display:flex; flex-wrap:wrap; gap:6px 16px; margin-top:12px; font-size:12px; }
 .robot-run-files a { color:var(--brand); overflow-wrap:anywhere; }
 
-.inspection-card { margin-bottom:14px; }
+.inspection-card { min-width:0; }  /* robot viewer 아래 (수동 모드만) */
 .inspection-fields, .inspection-layout { display:grid; gap:14px; }
 .inspection-fields { grid-template-columns:repeat(3,minmax(0,1fr)); margin-bottom:12px; }
 .inspection-layout { grid-template-columns:minmax(0,1.6fr) minmax(0,1fr); align-items:start; }
@@ -71,17 +73,13 @@
 @media(max-width:760px) { .inspection-layout { grid-template-columns:1fr; } }
 @media(max-width:480px) { .inspection-fields { grid-template-columns:1fr; gap:5px; } }
 
-.robot-layout > .robot-side { grid-row:span 3; }  /* robot viewer, vehicle (repair) and results cards on the left */
-@media(max-width:1000px) { .robot-results, .robot-car-card { grid-column:auto; }.robot-layout > .robot-side { grid-row:auto; } }
 
-/* 수리 (예전 수리 탭): 수리 시작 카드는 오른쪽 맨 위, 차량 3D(수리 결과·데모)는 로봇 화면 아래, 진행 로그는 맨 아래 전체 폭 */
+/* 수리 (예전 수리 탭): 수리 시작 카드는 오른쪽 맨 위, 측정 요약은 로봇 화면 아래, 진행 로그는 맨 아래 전체 폭 */
 .robot-stats { margin:0; padding:10px 14px 14px; }
-.robot-car-card { grid-column:1; min-width:0; margin-bottom:0; }
-.robot-car-card .viewer { height:380px; }
 .robot-repair-card { margin-bottom:0; }
 .robot-repair-card h2 { margin-top:0; }
 .robot-side .robot-repair-card h3 { margin:14px 0 8px; }
-.robot-log-card { margin-top:16px; }
+
 @media(max-width:1000px) { .robot-layout { grid-template-columns:1fr; }.robot-side { grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); }.robot-canvas { height:60vh; min-height:360px; } }
 
 /* Web teleop popup (robot_teleop.js): height left, BASE x-y arrows right; held keys show filled. */

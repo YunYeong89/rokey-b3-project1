@@ -138,6 +138,7 @@ export function createCarViewer(host, { msgEl = null, onPartClick = null } = {})
       const pulse = obj.userData.pulse ? 0.35 + 0.35 * Math.sin(t * 4) : 0;
       eachMesh(obj, (m) => { if (m.material.emissive) m.material.emissiveIntensity = pulse; });
     }
+    if (!host.clientWidth) return;              // 숨긴 뷰어 (관리자 화면): 계산만 쓰고 그리지 않음
     controls.update();
     renderer.render(scene, camera);
   });

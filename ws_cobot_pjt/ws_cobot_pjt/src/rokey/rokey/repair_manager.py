@@ -16,6 +16,9 @@ a part next to the vehicle).
 """
 import argparse
 import json
+import os
+import sys
+import threading
 
 from std_msgs.msg import String
 
@@ -39,6 +42,9 @@ else:
     from repair_db import RepairDB
     from replace_parts import TAUGHT, PartReplacer
     from scan_surface import scan_parts
+
+
+CLOSE_TIMEOUT_S = 5.0  # --job-id: exit anyway when the ROS shutdown hangs (the job is already recorded)
 
 
 class Stopped(Exception):
@@ -179,18 +185,30 @@ def main():
     parser.add_argument('--calibrate', action='store_true', help='calibrate at every job start')
     parser.add_argument('--job-id', type=int, help='Run one existing DB job and exit (web_control)')
     options, _ = parser.parse_known_args()
-    manager = RepairManager(options.calibrate)
+    manager, code = RepairManager(options.calibrate), 1
     try:
         if options.job_id is not None:
             job = manager.db.job(options.job_id)
             if job['status'] != 'running':
                 raise ValueError('The repair job is no longer running')
             manager.job = dict(job, job_id=options.job_id)
-            return manager.run(manager.job)
+            code = manager.run(manager.job)
+            return code
         manager.spin()
     except KeyboardInterrupt:
         pass
     finally:
+        if options.job_id is not None:
+            # On the real robot destroy_node() once never returned after a finished job (2026-11-20, job 124, after a
+            # burst of controller singularity alarms): web_control then showed the job running until a stop.
+            # The job is recorded by now, so leave anyway.
+            def leave():
+                print(f'repair_manager: ROS 종료가 {CLOSE_TIMEOUT_S:.0f}초 안에 끝나지 않아 강제 종료', flush=True)
+                sys.stdout.flush()
+                os._exit(code)
+            watchdog = threading.Timer(CLOSE_TIMEOUT_S, leave)
+            watchdog.daemon = True
+            watchdog.start()
         manager.program.close()
 
 

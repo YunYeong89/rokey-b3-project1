@@ -11,3 +11,9 @@ ws_cobot_pjt/log/
 *.log
 *.plt
 *.csv
+
+# 로봇 프로그램 실행 결과 (real_scan 보고서·점군·계획 캐시, 세션 상태)
+ws_cobot_pjt/session/
+ws_cobot_pjt/src/rokey/.cache/
+ws_cobot_pjt/src/rokey/images/
+ws_cobot_pjt/src/rokey/pointcloud/

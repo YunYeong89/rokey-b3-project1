@@ -1,7 +1,7 @@
 """SQLite 연결과 초기화
 
 repair.db 가 새로 만들어질 때(users 가 비어 있을 때) 데이터를 넣는다.
-  - 기본: 계정 admin / user1 / user2, 부품 전체, 차량 모형 A-01, A-02
+  - 기본: 계정 admin / user1 / user2, 부품 전체, 차량 2대 (쏘나타 12가 3456, 투싼 34나 5678)
   - 샘플 (기본값): 위에 더해 회원 36명 · 차량 40대 · 지난 30일 수리 이력 100건 (발표·테스트용)
   - 환경변수 REPAIR_SAMPLE=0 이면 샘플 없이 기본 데이터만 (실제 로봇 시연용)
 처음 상태로 되돌리려면 repair.db 를 지우고 다시 실행.
@@ -102,6 +102,18 @@ def migrate(con):
     if "email" not in cols:
         with con:
             con.execute("ALTER TABLE users ADD COLUMN email TEXT")
+    old = con.execute("SELECT id, name FROM vehicles WHERE name LIKE '모형 A-%' ORDER BY id").fetchall()
+    if old:     # 예전 차량 이름 '모형 A-xx' → 차종 + 번호판 (A-01, A-02 는 기본 차량, 나머지는 id 로 고정된 무작위)
+        used = {r[0].split(" ", 1)[1] for r in con.execute("SELECT name FROM vehicles WHERE name NOT LIKE '모형 A-%'")
+                if " " in r[0]} | {name.split(" ", 1)[1] for name, _ in BASE_VEHICLES}
+        base = dict(zip(("모형 A-01", "모형 A-02"), BASE_VEHICLES))
+        with con:
+            for vid, name in old:
+                new = base.get(name) or vehicle_name(random.Random(vid), used)
+                con.execute("UPDATE vehicles SET name = ?, model = ? WHERE id = ?", (*new, vid))
+    with con:   # 예전 기본 계정 이름 '차주 1/2' → 사람 이름 (관리자가 바꾼 이름은 그대로)
+        con.executemany("UPDATE users SET name = ? WHERE username = ? AND name = ?",
+                        [("김태호", "user1", "차주 1"), ("박지영", "user2", "차주 2")])
 
 
 def rows(cur):
@@ -112,8 +124,8 @@ def rows(cur):
 def insert_base(con):
     """기본 계정 (처음 실행 후 비밀번호 바꾸기), 부품 전체, 차량 2대"""
     users = [("admin", "admin1234", "정비소 관리자", "admin"),
-             ("user1", "user1234", "차주 1", "user"),
-             ("user2", "user1234", "차주 2", "user")]
+             ("user1", "user1234", "김태호", "user"),
+             ("user2", "user1234", "박지영", "user")]
     for u, pw, name, role in users:
         con.execute("INSERT INTO users (username, pw_hash, name, role) VALUES (?, ?, ?, ?)",
                     (u, generate_password_hash(pw), name, role))
@@ -122,8 +134,8 @@ def insert_base(con):
                     [(c, n, cat, ok, loc, 3 if c == "bonnet" else 2) for c, n, cat, ok, loc in PARTS])
     uid = {r[0]: r[1] for r in con.execute("SELECT username, id FROM users")}
     con.executemany("INSERT OR IGNORE INTO vehicles (name, model, owner_id) VALUES (?, ?, ?)", [
-        ("모형 A-01", "sedan_1_18", uid["user1"]),
-        ("모형 A-02", "sedan_1_18", uid["user2"]),
+        (*BASE_VEHICLES[0], uid["user1"]),
+        (*BASE_VEHICLES[1], uid["user2"]),
     ])
 
 
@@ -136,6 +148,24 @@ SAMPLE_STOCK = {
     "headlamp_l": (2, 1), "headlamp_r": (3, 1), "taillamp_l": (2, 1), "taillamp_r": (0, 1),
     "wiper": (1, 2),
 }
+# 차량 이름 = 차종 + 번호판 (real_scan 보고서의 Plate 로도 쓰임). 모델 코드 앞부분이 3D 모델 종류 (viewer3d vehicleType)
+CAR_TYPES = [("쏘나타", "sedan"), ("아반떼", "sedan"), ("그랜저", "sedan"), ("K5", "sedan"), ("K8", "sedan"),
+             ("G80", "sedan"), ("투싼", "suv"), ("싼타페", "suv"), ("쏘렌토", "suv"), ("스포티지", "suv"),
+             ("팰리세이드", "suv"), ("셀토스", "suv"), ("스팅어", "sports"), ("아반떼 N", "sports")]
+PLATE_LETTERS = "가나다라마거너더러머버서어저고노도로모보소오조구누두루무부수우주"
+BASE_VEHICLES = [("쏘나타 12가 3456", "sedan_1_18"), ("투싼 34나 5678", "suv_1_18")]   # user1, user2
+
+
+def vehicle_name(rng, used):
+    """(이름, 모델 코드): 차종 + 겹치지 않는 번호판 (예: 그랜저 157더 2481)"""
+    while True:
+        car, kind = rng.choice(CAR_TYPES)
+        plate = f"{rng.randint(10, 399)}{rng.choice(PLATE_LETTERS)} {rng.randint(1000, 9999)}"
+        if plate not in used:
+            used.add(plate)
+            return f"{car} {plate}", f"{kind}_1_18"
+
+
 SURNAMES = list("김이박최정강조윤장임한오서신권황안송류홍")
 GIVEN = ["민준", "서연", "도윤", "지우", "하준", "서윤", "시우", "하은", "지호", "수아", "예준", "지아",
          "주원", "다은", "건우", "채원", "현우", "소율", "우진", "지민", "선우", "예린", "연우", "윤서",
@@ -216,16 +246,17 @@ def _sample_users(con, rng):
 
 
 def _sample_vehicles(con, rng, uid, today):
-    """A-03 ~ A-40 (38대): 차주 없는 3대 + user3 과 2명은 2대씩, 나머지 1대씩"""
+    """샘플 차량 38대 (실제 차종 + 번호판): 차주 없는 3대 + user3 과 2명은 2대씩, 나머지 1대씩"""
     others = [f"user{i}" for i in range(3, 35)]
     owners = others + ["user3"] + rng.sample(others[1:], 2) + [None] * 3
     rng.shuffle(owners)
+    used = {name.split(" ", 1)[1] for name, _ in BASE_VEHICLES}
     con.executemany("INSERT INTO vehicles (name, model, owner_id, created_at) VALUES (?, ?, ?, ?)", [
-        (f"모형 A-{i:02d}", "sedan_1_18", uid[o] if o else None,
+        (*vehicle_name(rng, used), uid[o] if o else None,
          _fmt(today - timedelta(days=60 - i // 2, hours=rng.randint(0, 8))))
         for i, o in enumerate(owners, 3)])
-    con.execute("UPDATE vehicles SET created_at = ? WHERE name IN ('모형 A-01', '모형 A-02')",
-                (_fmt(today - timedelta(days=61)),))
+    con.execute("UPDATE vehicles SET created_at = ? WHERE name IN (?, ?)",
+                (_fmt(today - timedelta(days=61)), *(name for name, _ in BASE_VEHICLES)))
     return [tuple(r) for r in con.execute("SELECT id, owner_id FROM vehicles ORDER BY id")]
 
 

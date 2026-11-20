@@ -336,10 +336,15 @@ $("#startBtn").addEventListener("click", async () => {
   if (!state.demo && (!robotControl.ready || robotControl.status?.busy)) {
     alert("ROS 제어 노드와 로봇이 준비되어야 하며, 다른 기능 실행 중에는 수리를 시작할 수 없습니다."); return;
   }
+  const scene = robotControl.status?.scene || "";
   if (!state.demo && robotControl.status?.mode === "virtual"
-      && !["sedan", "suv", "sports"].includes(robotControl.status?.scene)) {
-    alert("수리 공정은 sedan/suv/sports 장면에서 실행하세요. 실차 모델은 로봇 탭의 부품 스캔을 사용하세요."); return;
+      && !["sedan", "suv", "sports", "real"].includes(scene) && !scene.startsWith("demo")) {
+    alert("수리 공정은 sedan/suv/sports 또는 실차(real, demo) 장면에서 실행하세요."); return;
   }
+  // 실차 자동 모드는 탐침으로 보닛을 스캔(real_scan): 그리퍼 피드백이 없으면 사람이 확인 (보닛 교체 뒤에는 탐침이 거치대에 있음)
+  const realCar = robotControl.status?.mode === "real" || scene === "real" || scene.startsWith("demo");
+  if (!state.demo && state.mode === "auto" && realCar && robotControl.status?.probe_attached !== true
+      && !confirm("그리퍼 상태를 확인할 수 없습니다.\n로봇이 탐침을 잡은 상태인지 직접 확인했나요?\n(확인을 누르면 보닛 스캔을 시작합니다)")) return;
   const parts = state.mode === "manual" ? pickedParts() : [];
   if (state.mode === "manual" && !parts.length) { alert("교체할 부품을 1개 이상 고르세요."); return; }
   resetLive();

@@ -13,7 +13,7 @@ const PART_NAMES = {
 };
 const STATUS_TEXT = { running: "진행 중", done: "수리 완료", no_damage: "손상 없음", on_hold: "수리 보류", failed: "실패", stopped: "정지됨" };
 const MODE_TEXT = { auto: "자동", manual: "수동" };
-const DECISION_TEXT = { dent: "손상(찌그러짐)", missing: "부품 없음", suspect: "의심", requested: "교체 지정(수동)" };
+const DECISION_TEXT = { dent: "손상(찌그러짐)", crack: "손상(균열)", missing: "부품 없음", suspect: "의심", requested: "교체 지정(수동)" };
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
@@ -65,7 +65,7 @@ function partStates(job) {
   const st = {};
   if (!job) return st;
   for (const f of job.findings) {
-    const rank = { requested: 1, suspect: 1, dent: 2, missing: 3 }[f.decision] || 0;
+    const rank = { requested: 1, suspect: 1, dent: 2, crack: 2, missing: 3 }[f.decision] || 0;
     if (!st[f.part_code] || rank > st[f.part_code].rank) st[f.part_code] = { state: f.decision, rank };
   }
   for (const r of job.replacements) st[r.part_code] = { state: r.success ? "replaced" : "failed", rank: 9 };
@@ -114,7 +114,7 @@ function partsListHtml(job) {
   return codes.map((c) => {
     const r = rep[c];
     const txt = r ? (r.success ? `교체 완료 · 단차 ${num(r.flush_mm, 2)} mm 합격` : `재검사 불합격 (단차 ${num(r.flush_mm, 2)} mm)`)
-                  : { dent: "찌그러짐 발견 → 교체 예정", missing: "부품 없음 → 교체 예정", requested: "교체 예정", suspect: "확인 중" }[st[c]] || "";
+                  : { dent: "찌그러짐 발견 → 교체 예정", crack: "균열 발견 → 교체 예정", missing: "부품 없음 → 교체 예정", requested: "교체 예정", suspect: "확인 중" }[st[c]] || "";
     return `<div class="part-row ${st[c]}"><b>${partName(c)}</b><span>${esc(txt)}</span></div>`;
   }).join("");
 }

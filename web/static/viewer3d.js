@@ -40,7 +40,7 @@ const MODEL_DIR = "/static/models/";            // car.glb (실제 차량), 없�
 const PART_CODES = ["bonnet", "mirror_l", "mirror_r", "door_fl", "door_fr", "door_rl", "door_rr"];
 export const COLORS = {
   body: 0x9fb3c8, part: 0xc3d0dd, glass: 0x3a4a5c, tire: 0x2a2f36,
-  ok: 0x2e9d6a, dent: 0xd64545, failed: 0xd64545, missing: 0x7c4dbd, requested: 0xe0a526, suspect: 0xe0a526, replaced: 0x2e9d6a,
+  ok: 0x2e9d6a, dent: 0xd64545, crack: 0xd64545, failed: 0xd64545, missing: 0x7c4dbd, requested: 0xe0a526, suspect: 0xe0a526, replaced: 0x2e9d6a,
 };
 const VIEWS = { iso: [260, 205, 300], top: [0, 535, 1], front: [480, 95, 0], side: [0, 115, 480] };   // 바라보는 점에서 카메라까지
 // 로봇팔을 켜면 (관리자 화면) 로봇까지 보이게 넓힘: 바라보는 점(월드), 거리 배율, 최대 줌아웃

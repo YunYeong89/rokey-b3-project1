@@ -5,7 +5,11 @@ recording every stage in the repair DB:
              (or --calibrate), the vehicle at its fixed pose (choose_car.fixed: no identification touches). A manual
              job of taught parts only (replace_parts.TAUGHT: the bonnet) skips calibration and the vehicle pose:
              those parts are replaced at pendant-taught positions.
-  scan       scan_surface over the replaceable parts (auto mode) -> detect: findings, no damage -> no_damage
+  scan       auto mode. The real vehicle (real robot, or a virtual session of the real assembly): real_scan
+             (--controller mesh-height, as the web part inspection) per REAL_SCAN_PARTS -> detect: its result.json
+             damage summary, a confirmed dent / crack ROI -> finding and replace, candidates only -> suspect.
+             The scaled model vehicles (virtual sedan/suv/sports): scan_surface over the replaceable parts.
+             No damage -> no_damage
   stock      check_db for the parts to replace (auto: dent/missing, manual: the requested parts) -> on_hold
   replace    replace_parts per part -> inspect -> replacement record, consume on success -> done / failed
 
@@ -26,7 +30,7 @@ if __package__:
     from .calibration import calibrate
     from .check_db import StockChecker
     from .choose_car import fixed
-    from .configs import read_session
+    from .configs import output_dir, read_session
     from .robot_namespace import robot_topic
     from .force_data import CalibrationRun
     from .repair_db import RepairDB
@@ -36,7 +40,7 @@ else:
     from calibration import calibrate
     from check_db import StockChecker
     from choose_car import fixed
-    from configs import read_session
+    from configs import output_dir, read_session
     from robot_namespace import robot_topic
     from force_data import CalibrationRun
     from repair_db import RepairDB
@@ -44,6 +48,7 @@ else:
     from scan_surface import scan_parts
 
 
+REAL_SCAN_PARTS = ('bonnet',)  # real vehicle: parts scanned in auto mode (only the bonnet can be replaced so far)
 CLOSE_TIMEOUT_S = 5.0  # --job-id: exit anyway when the ROS shutdown hangs (the job is already recorded)
 
 
@@ -122,9 +127,13 @@ class RepairManager:
         program, job_id = self.program, job['job_id']
         manual = job.get('mode') == 'manual'
         parts = self.db.requested_parts(job_id) if manual else None
+        real = self.real_vehicle()
         if manual and parts and all(part in TAUGHT for part in parts):
             self.event('calibrate', f'job {job_id} (manual {parts}): 티칭 좌표 교체라 보정·차량 인식 생략, 탐침 확인')
             self.hold_probe()   # the bonnet disassembly starts by putting the held probe on its holder
+        elif not manual and real:
+            self.event('calibrate', f'job {job_id} (auto, 실차): 실측 배치(real_scene.yaml)로 스캔, 보정·차량 인식 생략')
+            self.hold_probe()
         else:
             self.event('calibrate', f'job {job_id} ({job.get("mode", "auto")}): probe, calibration, fixed vehicle pose')
             self.hold_probe()
@@ -134,7 +143,15 @@ class RepairManager:
             vehicle = fixed(program)
             self.event('calibrate', f'vehicle {vehicle["type"]} at {[round(v, 1) for v in vehicle["pose_base_mm_deg"]]} '
                                     f'(고정 위치, {vehicle["source"]})')
-        if not manual:
+        if not manual and real:
+            findings, parts = self.scan_real()
+            if findings:
+                self.db.findings(job_id, findings)
+            else:
+                raise Stopped('no_damage', '손상 없음')
+            if not parts:
+                raise Stopped('done', '교체 대상 없음 (의심 판정만 있음)')
+        elif not manual:
             self.event('scan', f'parts {program.config["inspection"]["replaceable"]}')
             scan = scan_parts(program, program.config['inspection']['replaceable'])
             self.event('detect', f'findings {scan["findings"]}')
@@ -164,6 +181,42 @@ class RepairManager:
         program.home()
         self.event('done', f'replaced {[part for part in parts if part not in failed]}')
         return ('failed', f'교체 실패: {", ".join(failed)}') if failed else ('done', f'교체 완료: {", ".join(parts)}')
+
+    def real_vehicle(self):
+        """The team's real vehicle: the real robot, or a virtual session of the real assembly (--car real / demo)."""
+        truth = read_session('scene_truth.json') if self.program.mode == 'virtual' else None
+        return self.program.mode == 'real' or (truth or {}).get('model') == 'real'
+
+    def scan_real(self):
+        """real_scan per REAL_SCAN_PARTS as a child process (stopped with this process group), then its damage
+        summary (images/real_<part>_<time>/result.json). Returns (findings, parts to replace)."""
+        program, images = self.program, output_dir('images')
+        ros_args = ['--ros-args', '-r', f'__ns:={program.node.get_namespace()}']
+        findings, replace = [], []
+        for part in REAL_SCAN_PARTS:
+            self.event('scan', f'{part}: 실차 스캔 (real_scan, mesh-height) 시작')
+            before = set(images.glob(f'real_{part}_*'))
+            code = PartReplacer.run_child([sys.executable, '-u', '-m', 'rokey.real_scan', '--part', part,
+                                           '--controller', 'mesh-height',
+                                           *(['--inspection-position'] if program.mode == 'real' else []), *ros_args])
+            if code != 0:
+                raise RuntimeError(f'{part} 스캔 실패 (real_scan 종료 코드 {code})')
+            runs = sorted(path for path in set(images.glob(f'real_{part}_*')) - before if (path / 'result.json').exists())
+            if not runs:
+                raise RuntimeError(f'{part} 스캔 결과(result.json)를 찾을 수 없습니다 ({images})')
+            damage = json.loads((runs[-1] / 'result.json').read_text()).get('damage') or {}
+            regions = damage.get('regions') or {}
+            confirmed = {kind: info['confirmed'] for kind, info in regions.items() if info.get('confirmed')}
+            candidates = {kind: info['candidates'] for kind, info in regions.items() if info.get('candidates')}
+            percent = damage.get('damage_percent')
+            self.event('detect', f'{part}: 손상 {"-" if percent is None else f"{percent:.1f}%"}, 확정 {confirmed or "없음"}, '
+                                 f'후보 {candidates or "없음"} ({runs[-1].name})', 'warn' if confirmed else 'info')
+            findings += [dict(part_code=part, decision=kind) for kind in confirmed]   # dent / crack
+            if confirmed:
+                replace.append(part)
+            elif candidates:
+                findings.append(dict(part_code=part, decision='suspect'))
+        return findings, replace
 
     def hold_probe(self):
         """In the simulation, pick the probe from its rack unless the probe TCP is already active."""

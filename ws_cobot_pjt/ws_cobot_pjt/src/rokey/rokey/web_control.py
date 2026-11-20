@@ -278,8 +278,8 @@ class WebControl(Node):
                 raise ValueError('알 수 없는 수리 명령')
             if not self.robot.ready():
                 raise ValueError(f'{ROBOT_NAMES[self.robot.mode]}이 준비되지 않았습니다')
-            if self.robot.mode == 'virtual' and self.scene() not in MODEL_SCENES:
-                raise ValueError('수리 공정은 sedan/suv/sports 장면에서 실행하세요')
+            if self.robot.mode == 'virtual' and self.scene() not in MODEL_SCENES and self.scene('model') != 'real':
+                raise ValueError('수리 공정은 sedan/suv/sports 또는 실차(real, demo) 장면에서 실행하세요')
             if self.task is not None:
                 if self.job == job_id:
                     return
@@ -287,6 +287,11 @@ class WebControl(Node):
             job = self.db.job(job_id)
             if job['status'] != 'running':
                 raise ValueError('진행 중인 DB 작업만 실행할 수 있습니다')
+            if job.get('mode') == 'auto' and (self.robot.mode == 'real' or self.scene('model') == 'real'):
+                # 실차 자동 모드는 real_scan: 탐침을 잡은 채로 (보닛 교체는 탐침을 거치대에 두고 끝남).
+                # RG2 피드백이 없는 구성(DO 로만 여닫음)은 None: 웹에서 사람이 확인하고 시작한다
+                if self.robot.probe_attached() is False:
+                    raise ValueError('실차 스캔 전에 탐침을 수동으로 파지하세요 (그리퍼가 비어 있음)')
             self.launch('repair', [sys.executable, '-u', '-m', 'rokey.repair_manager',
                                   '--job-id', str(job_id)], job=job_id)
         except (ValueError, KeyError, TypeError, OSError, RuntimeError) as error:

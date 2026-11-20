@@ -6,18 +6,19 @@ import socket
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
+from rclpy.utilities import remove_ros_args
 from sensor_msgs.msg import JointState
 
 
 class JointStateRelay(Node):
     def __init__(self, stream):
-        super().__init__('cobot_native_state_relay')
+        super().__init__('cobot_native_state_relay', namespace='dsr01')
         self.stream = stream
         self.stream.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         self.positions = {}
         self.subscriptions_kept = [self.create_subscription(
             JointState, topic, self.receive, qos_profile_sensor_data)
-            for topic in ['/dsr01/joint_states', '/dsr01/gripper_joint_states']]
+            for topic in ['joint_states', 'gripper_joint_states']]
         self.create_timer(1 / 60, self.send)
 
     def receive(self, message):
@@ -33,7 +34,7 @@ def main():
     parser.add_argument('host')
     parser.add_argument('port', type=int)
     parser.add_argument('token')
-    args = parser.parse_args()
+    args = parser.parse_args(remove_ros_args()[1:])
     rclpy.init()
     with socket.create_connection((args.host, args.port), timeout=5) as stream:
         stream.settimeout(2)

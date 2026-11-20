@@ -274,7 +274,7 @@ class ModelBuilder:
         vehicle = ET.SubElement(self.world, 'body', name='scene_vehicle', **pose_attributes(base @ scene.vehicle.pose))
         for part, mesh in scene.vehicle.meshes.items():
             self.mesh_geom(vehicle, 'vehicle_' + part, mesh, [.001] * 3, [*scene.vehicle.colors[part], 1], False)
-        collision = VehicleCollision(scene.vehicle.meshes.values(), self.cache)
+        collision = VehicleCollision(scene.vehicle.collision_meshes, self.cache)
         for index, path in enumerate(collision.build()):
             name = f'vehicle_collision_{index}'
             ET.SubElement(self.assets, 'mesh', name=name, file=str(path.resolve()))
@@ -312,7 +312,12 @@ class ModelBuilder:
         # The sphere makes tip contact exact. Body and gripper are constrained rather than friction-grasped.
         # priority 1: its own friction holds in every contact (MuJoCo otherwise takes the larger one, the vehicle's
         # default 1.0, with which a fixed-axis press jams on slopes from 45 deg).
-        self.mesh_geom(body, 'probe_mesh', probe.mesh, [.001] * 3, [.15, .35, .7, 1])
+        self.mesh_geom(body, 'probe_mesh', probe.mesh, [.001] * 3, [.15, .35, .7, 1], False)
+        shaft = self.mesh_geom(body, 'probe_body_collision', probe.contact_mesh(), [.001] * 3, [0, 0, 0, 0])
+        shaft.set('group', '3')
+        shaft.set('priority', '1')
+        shaft.set('friction', values([probe.config.get('contact_friction', probe.ball['friction'] if probe.ball else .3),
+                                      .005, .0001]))
         ET.SubElement(body, 'geom', name='probe_tip_sphere', type='sphere', pos=values(probe.tip_center),
                       size=str(probe.tip_radius), friction=values([probe.ball['friction'] if probe.ball else .3, .005, .0001]),
                       priority='1', rgba='.7 .7 .75 1')

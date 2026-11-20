@@ -3,20 +3,26 @@ import numpy as np
 from scipy.interpolate import CubicSpline, PchipInterpolator
 from scipy.spatial.transform import Rotation, RotationSpline
 
+from .path_timing import PathTiming
+
 
 class PoseSpan:
-    """A smooth surface stroke; stops occur at path corners, never at normal checkpoints. `checkpoints`: dense
-    indices always kept as knots."""
-    def __init__(self, positions, rotations, settings, checkpoints=()):
+    """A smooth surface stroke; stops occur at path corners, never at normal checkpoints."""
+    def __init__(self, positions, rotations, settings):
         self.settings = settings
+        self.ball_radius = settings.get('ball_radius_mm', 0.)
+        frames = Rotation.from_matrix(rotations)
+        positions = np.asarray(positions) - self.ball_radius * np.asarray(rotations)[:, :, 2]
+        inverse = frames.inv()
         distance = np.linalg.norm(np.diff(positions, axis=0), axis=1)
-        angles = (Rotation.from_matrix(rotations[1:]) * Rotation.from_matrix(rotations[:-1]).inv()).magnitude()
+        angles = (frames[1:] * inverse[:-1]).magnitude()
         # A virtual length also parameterises rotations at a stationary TCP.
-        self.dense_s = np.r_[0., np.cumsum(np.maximum(distance, angles * 10.))]
+        steps = np.where(distance > 1e-8, distance, angles * 10.) if self.ball_radius else np.maximum(distance, angles * 10.)
+        self.dense_s = np.r_[0., np.cumsum(steps)]
         if self.dense_s[-1] < 1e-9:
             raise ValueError('Empty pose span')
         self.length = self.dense_s[-1]
-        selected = {0, len(positions) - 1, *map(int, checkpoints)}
+        selected = {0, len(positions) - 1}
         for at in np.arange(settings['checkpoint_max_mm'], self.length, settings['checkpoint_max_mm']):
             selected.add(int(np.searchsorted(self.dense_s, at)))
         selected.update(np.flatnonzero(angles > np.radians(settings['normal_step_deg'])).tolist())
@@ -24,20 +30,20 @@ class PoseSpan:
             indices = np.array(sorted(selected))
             self.knots = self.dense_s[indices]
             self.position = self.fit_position(self.knots, positions[indices], settings)
-            self.rotation = RotationSpline(self.knots, Rotation.from_matrix(rotations[indices]))
+            self.rotation = RotationSpline(self.knots, frames[indices])
             position_error = np.linalg.norm(self.position(self.dense_s) - positions, axis=1)
-            angle_error = (self.rotation(self.dense_s) * Rotation.from_matrix(rotations).inv()).magnitude()
+            angle_error = (self.rotation(self.dense_s) * inverse).magnitude()
             error = np.maximum(position_error / settings['position_interp_error_mm'],
                                angle_error / np.radians(settings['normal_interp_error_deg']))
+            turns = (frames[indices[1:]] * inverse[indices[:-1]]).magnitude()
             added = []
-            for a, b in zip(indices[:-1], indices[1:]):
+            for a, b, turn in zip(indices[:-1], indices[1:], turns):
                 if b > a + 1:
                     worst = a + 1 + np.argmax(error[a + 1:b])
                     if error[worst] > 1:
                         added.append(worst)
                     elif (self.dense_s[b] - self.dense_s[a] > settings['checkpoint_max_mm'] + 1e-8
-                          or (Rotation.from_matrix(rotations[b]) * Rotation.from_matrix(rotations[a]).inv()).magnitude()
-                          > np.radians(settings['normal_step_deg'])):
+                          or turn > np.radians(settings['normal_step_deg'])):
                         added.append((a + b) // 2)
             if not added:
                 break
@@ -64,11 +70,11 @@ class PoseSpan:
             angle = (rotations[1:] * rotations[:-1].inv()).magnitude()
             split = angle > np.radians(self.settings['validation_angle_deg'])
             if not split.any():
-                return s, self.position(s), rotations.as_matrix()
+                return s, self.tcp_position(s), rotations.as_matrix()
             s = np.unique(np.r_[s, ((s[:-1] + s[1:]) / 2)[split]])
 
     def retime(self, s, joints, speed, jacobians=None):
-        p1, p2 = self.position(s, 1), self.position(s, 2)
+        p1 = self.tcp_position(s, 1)
         w1, w2 = self.rotation(s, 1), self.rotation(s, 2)
         if jacobians is not None:
             base_rates = self.rotation(s).apply(w1)
@@ -82,6 +88,10 @@ class PoseSpan:
         self.set_duration(speed)
 
     def set_duration(self, speed):
+        if self.ball_radius:
+            self.timing = PathTiming(self, speed)
+            self.duration = self.timing.duration
+            return
         s = self.validation_s
         p1, p2 = self.position(s, 1), self.position(s, 2)
         w1, w2 = self.rotation(s, 1), self.rotation(s, 2)
@@ -100,6 +110,19 @@ class PoseSpan:
                     np.radians(c['joint_acceleration_deg_s2'])), .1)
         self.duration = 1.1 * duration
 
+    def tcp_position(self, s, derivative=0):
+        centre = self.position(s, derivative)
+        if not self.ball_radius:
+            return centre
+        frames = self.rotation(s)
+        z = frames.as_matrix()[..., :, 2]
+        if derivative:
+            omega = frames.apply(self.rotation(s, 1))
+            tangent = np.cross(omega, z)
+            z = tangent if derivative == 1 else (np.cross(frames.apply(self.rotation(s, 2)), z)
+                                                 + np.cross(omega, tangent))
+        return centre + self.ball_radius * z
+
     def cache_data(self):
         return dict(knots=self.knots.tolist(), positions=self.checkpoints.tolist(),
                     rotations=self.rotation(self.knots).as_matrix().tolist(),
@@ -111,6 +134,7 @@ class PoseSpan:
     def from_cache(cls, data, settings, speed):
         span = cls.__new__(cls)
         span.settings = settings
+        span.ball_radius = settings.get('ball_radius_mm', 0.)
         span.knots, span.checkpoints = np.asarray(data['knots']), np.asarray(data['positions'])
         span.length = float(span.knots[-1])
         span.position = cls.fit_position(span.knots, span.checkpoints, settings)
@@ -122,17 +146,20 @@ class PoseSpan:
         return span
 
     def sample(self, elapsed):
-        u = np.clip(elapsed / self.duration, 0., 1.)
-        s = self.length * (10 * u**3 - 15 * u**4 + 6 * u**5)
-        rate = self.length * (30 * u**2 - 60 * u**3 + 30 * u**4) / self.duration
+        if self.ball_radius:
+            s, rate = self.timing.sample(elapsed)
+        else:
+            u = np.clip(elapsed / self.duration, 0., 1.)
+            s = self.length * (10 * u**3 - 15 * u**4 + 6 * u**5)
+            rate = self.length * (30 * u**2 - 60 * u**3 + 30 * u**4) / self.duration
         orientation = self.rotation(s)
         # RotationSpline rates are body-frame; the native interface expects BASE angular velocity.
-        feed = np.r_[self.position(s, 1) * rate, orientation.apply(self.rotation(s, 1)) * rate]
-        return self.position(s), orientation.as_matrix(), feed
+        feed = np.r_[self.tcp_position(s, 1) * rate, orientation.apply(self.rotation(s, 1)) * rate]
+        return self.tcp_position(s), orientation.as_matrix(), feed
 
 
 class PoseTrajectory:
-    def __init__(self, positions, rotations, settings, corners=None, checkpoints=()):
+    def __init__(self, positions, rotations, settings, corners=None):
         positions, rotations = np.asarray(positions), np.asarray(rotations)
         distance = np.linalg.norm(np.diff(positions, axis=0), axis=1)
         angles = (Rotation.from_matrix(rotations[1:]) * Rotation.from_matrix(rotations[:-1]).inv()).magnitude()
@@ -146,8 +173,7 @@ class PoseTrajectory:
             mapped = np.searchsorted(original_indices, corners)
             cuts += mapped[(mapped > 0) & (mapped < len(positions) - 1)].tolist()
         cuts = np.unique(cuts)
-        forced = np.searchsorted(original_indices, np.asarray(checkpoints, int))
-        self.spans = [PoseSpan(positions[a:b + 1], rotations[a:b + 1], settings, forced[(forced > a) & (forced < b)] - a)
+        self.spans = [PoseSpan(positions[a:b + 1], rotations[a:b + 1], settings)
                       for a, b in zip(cuts[:-1], cuts[1:]) if b > a]
         self.dense_count = len(positions)
 
@@ -162,7 +188,9 @@ class PoseTrajectory:
             for position, rotation in zip(positions, rotations):
                 following = reach.pose(position, rotation, q)
                 if following is None or np.max(np.abs(following - q)) > np.radians(jump_deg):
-                    raise ValueError(f'Unreachable or discontinuous mesh pose at {position.round(2).tolist()}')
+                    error = ValueError(f'Unreachable or discontinuous mesh pose at {position.round(2).tolist()}')
+                    error.position = position
+                    raise error
                 joints.append(following)
                 jacobians.append(reach.chain.forward(following)[1])
                 q = following
@@ -200,7 +228,9 @@ class PoseTrajectory:
 
     def export(self):
         return dict(duration_s=getattr(self, 'duration', None), dense_points=self.dense_count,
-                    spans=[dict(positions_mm=span.checkpoints.tolist(),
+                    motion_reference='ball_center' if self.spans[0].ball_radius else 'tcp',
+                    ball_radius_mm=self.spans[0].ball_radius,
+                    spans=[dict(positions_mm=span.tcp_position(span.knots).tolist(),
                                 rotations=span.rotation(span.knots).as_matrix().tolist(),
                                 position_error_mm=span.max_position_error,
                                 orientation_error_deg=span.max_angle_error_deg) for span in self.spans])

@@ -1,0 +1,39 @@
+# hand_teleop (mm, deg, s). Camera axes: x right, y down, z away from the lens of the raw (not mirrored) webcam image.
+camera:
+  host: host.docker.internal        # macOS host running run_camera.sh
+  port: 5070
+service_timeout: 5.0
+rate_hz: 20.0                       # servol targets per second
+stale_s: 0.3                        # an older camera message counts as a missing hand
+reground_after_s: 1.0               # hand missing longer than this: ground again (the TCP keeps its pose)
+
+home:                               # HOME joints: rokey config/robot.yaml robot.home_joints_deg
+  joint_speed: 30.0
+  joint_acc: 60.0
+
+mapping:
+  camera_to_base:                   # columns: camera x, y, z in BASE. The operator faces the robot front (BASE +x) with
+    - [0.0, 0.0, -1.0]              # the webcam in front: image right = operator left = +y, image down = -z,
+    - [1.0, 0.0, 0.0]               # away from the lens = backward = -x
+    - [0.0, -1.0, 0.0]
+  offset_scale: [1.0, 1.0, 0.7]     # camera x, y, z (depth from the palm size is noisier)
+  deadband_mm: 30.0                 # hand offset from the grounded wrist below this: TCP still
+  full_speed_mm: 120.0              # hand offset for max speed
+  max_speed_mm_s: 60.0
+  workspace_mm:                     # target box around the HOME TCP: x, y, z [min, max]
+    - [-150.0, 250.0]
+    - [-300.0, 300.0]
+    - [-150.0, 200.0]
+  min_z_mm: 50.0                    # BASE floor of the TCP target
+  rotation_gain: 1.0                # TCP turn per wrist turn past the dead band
+  rotation_deadband_deg: 8.0
+  rotation_max_deg: 60.0
+
+servol:                             # DSR servol limits, above max_speed_mm_s so the TCP keeps up with the target
+  vel: [100.0, 60.0]                # mm/s, deg/s
+  acc: [300.0, 180.0]
+
+gripper:                            # RG2 width from the hand openness (0 fist ... 1 the grounded open palm)
+  max_width_mm: 110.0
+  step_mm: 5.0                      # send only changes of at least one step ...
+  period_s: 0.2                     # ... and at most this often

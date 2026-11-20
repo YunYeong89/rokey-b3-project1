@@ -6,6 +6,11 @@ in stock. Needs the web server (robot.yaml `db.url`, e.g. ./run_virtual.sh --web
 import argparse
 
 if __package__:
+    from .robot_namespace import program_args
+else:
+    from robot_namespace import program_args
+
+if __package__:
     from .configs import load, read_session, write_session
     from .repair_db import RepairDB
 else:
@@ -27,7 +32,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--parts', nargs='+', help='part codes (default: scan_result.json replace)')
     parser.add_argument('--replace', action='store_true', help='run replace_parts for the parts in stock')
-    options = parser.parse_args()
+    options = parser.parse_args(program_args())
     parts = options.parts
     if parts is None:
         scan = read_session('scan_result.json')

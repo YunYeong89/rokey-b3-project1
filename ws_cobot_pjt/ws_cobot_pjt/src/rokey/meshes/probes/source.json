@@ -36,8 +36,8 @@
       "sha256": "66ccfbc9c04d36fbae51505285fc4da74528838d67f61391382b9777552e3f83"
     }
   ],
-  "active_mesh": "probe_v2_2.stl",
-  "active_sha256": "34cc70248d61d4aa939630b2915872f726873605f8b20b002551484f0b4e9f6b",
+  "active_mesh": "probe_v2_1.stl",
+  "active_sha256": "83fa074fc9b189dbda035925933c07a1f7bc80d15b962ca4762546cf4a3efdbc",
   "source_to_tip_frame": [
     [
       1.0,
@@ -66,11 +66,11 @@
   ],
   "tip_sphere": {
     "centre_mm": [
-      0,
-      0,
-      -55.73738670349121
+      -0.0,
+      -0.0,
+      -55.737386
     ],
-    "radius_mm": 1
+    "radius_mm": 2.0
   },
   "holder": {
     "file": "gripper_tip_holder.stl",
@@ -91,5 +91,50 @@
       20
     ],
     "floor_clearance_mm": 0.2
+  },
+  "v3_5mm": {
+    "repository": "https://github.com/YunYeong89/rokey-b3-project1",
+    "branch": "3D-models",
+    "commit": "24c94e726711088ff1515760a086344af57b1ed8",
+    "archive": "탐침_v3.zip",
+    "archive_path": "탐침_v3_5mm.stl",
+    "file": "probes/probe_v3_5mm.stl",
+    "sha256": "e991a6c69ab0659a6b2f3e72e01b1a1f0820405390d515502bb417271a52798e",
+    "scene_file": "probe_v3_5mm.stl",
+    "scene_frame": "(x, -z, y - 30) mm: tip frame as probe_v2_*, tip at z -54.5",
+    "ball_radius_mm": 2.5,
+    "ball_centre_mm": [
+      0.0,
+      0.0,
+      -52.0
+    ]
+  },
+  "v3_2mm": {
+    "repository": "https://github.com/YunYeong89/rokey-b3-project1",
+    "branch": "3D-models",
+    "commit": "24c94e726711088ff1515760a086344af57b1ed8",
+    "archive": "탐침_v3.zip",
+    "archive_path": "탐침_v3_2mm.stl",
+    "file": "probes/probe_v3_2mm.stl",
+    "sha256": "26e1b094172c4e63e1f47806f7b7be55c9f5d726f1b41ca306b068665f73e436",
+    "scene_file": "probe_v3_2mm.stl",
+    "scene_frame": "(x, -z, y - 30) mm: tip frame, tip at z -53.0",
+    "ball_radius_mm": 1.0,
+    "ball_centre_mm": [0.0, 0.0, -52.0]
+  },
+  "probe_holder": {
+    "repository": "https://github.com/YunYeong89/rokey-b3-project1",
+    "branch": "3D-models",
+    "commit": "2def9b2c11e5c324cc457fa75d11152e9c95af58",
+    "archive": "탐침 홀더.zip",
+    "archive_path": "탐침 홀더.stl",
+    "sha256": "a77f491d4ca6dec41172ffc98bc19e65c2daf9b884388958902ba981ea44a21c",
+    "file": "probe_holder.stl",
+    "frame": "Z-up (x, -z, y) mm, base plate bottom centre at the origin",
+    "size_mm": [
+      180.0,
+      45.38,
+      65.0
+    ]
   }
 }

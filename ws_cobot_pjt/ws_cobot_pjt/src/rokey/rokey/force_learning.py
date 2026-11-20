@@ -8,6 +8,11 @@ Run inside the container with the session up and free space around the TCP:
   ros2 run rokey force_learning_calibrate             # ~30 s calibration motion + held-out check
 """
 import argparse
+
+if __package__:
+    from .robot_namespace import program_args
+else:
+    from robot_namespace import program_args
 from datetime import datetime
 import json
 
@@ -121,7 +126,7 @@ def collect_main():
     parser.add_argument('--max-tilt', type=float, default=30.0, help='random tilt limit, deg')
     parser.add_argument('--compliance', action='store_true',
                         help='move under the contact-search compliance control (default: position control)')
-    options = parser.parse_args()
+    options = parser.parse_args(program_args())
     run = CalibrationRun('force_collect')
     try:
         excitation = Excitation(run.probe, run.recorder, options.lift, options.span, options.compliance)
@@ -146,7 +151,7 @@ def train_main():
     parser.add_argument('--mode', choices=['virtual', 'real'], default='virtual')
     parser.add_argument('--epochs', type=int, default=60)
     parser.add_argument('--members', type=int, default=3)
-    options = parser.parse_args()
+    options = parser.parse_args(program_args())
     files = sorted(DATA_DIR.glob(f'{options.mode}_*.npz'))
     if not files:
         parser.error(f'{DATA_DIR}/{options.mode}_*.npz 없음: 먼저 ros2 run rokey force_collect')
@@ -175,7 +180,7 @@ def calibrate_main():
     parser.add_argument('--lift', type=float, default=50.0, help='rise above home before moving, mm')
     parser.add_argument('--compliance', action='store_true',
                         help='move under the contact-search compliance control (default: position control)')
-    options = parser.parse_args()
+    options = parser.parse_args(program_args())
     run = CalibrationRun('force_learning_calibrate')
     try:
         path = CALIBRATION_DIR / f'force_learned_{run.mode}.npz'

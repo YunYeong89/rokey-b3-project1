@@ -31,6 +31,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/SpeedlStream.msg"
   "msg/RobotDisconnection.msg"
   "msg/RobotStateRt.msg"
+  "msg/ForceTelemetry.msg"
   "msg/ServojRtStream.msg"
   "msg/ServolRtStream.msg"
   "msg/SpeedjRtStream.msg"

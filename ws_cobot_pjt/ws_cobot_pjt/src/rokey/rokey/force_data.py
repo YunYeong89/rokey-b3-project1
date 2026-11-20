@@ -3,21 +3,21 @@ samples of joint state, BASE TCP pose and the controller's wrench expressed in T
 
 The robot must have about 60 mm of free space around and below the start pose."""
 from datetime import datetime
-from pathlib import Path
 import time
 
 import numpy as np
 from sensor_msgs.msg import JointState
 
 if __package__:
+    from .configs import CALIBRATION_DIR, output_dir
     from .program import RobotProgram
     from .rotations import axis_angle, rotation_zyz
 else:
+    from configs import CALIBRATION_DIR, output_dir
     from program import RobotProgram
     from rotations import axis_angle, rotation_zyz
 
-PACKAGE = Path(__file__).resolve().parents[1]
-CALIBRATION_DIR, IMAGE_DIR = PACKAGE / 'calibration', PACKAGE / 'images'
+IMAGE_DIR = output_dir('images')
 EPSILON = 0.01  # rad/s, smoothing of the Coulomb friction sign
 
 

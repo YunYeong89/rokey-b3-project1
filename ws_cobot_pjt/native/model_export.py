@@ -1,16 +1,17 @@
 """Export the existing ROS model with Mac-local mesh paths and Gazebo plugins."""
+import os
 from pathlib import Path
 from calibration import SimulationCalibration
 import subprocess
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent.parent
-CACHE = ROOT / 'native/.cache'
+CACHE = Path(os.environ.get('COBOT_NATIVE_CACHE', ROOT / 'native/.cache'))
 
 
 class RobotModel:
     def __init__(self, calibration_file=None):
-        CACHE.mkdir(exist_ok=True)
+        CACHE.mkdir(parents=True, exist_ok=True)
         command = ('source /opt/ros/jazzy/setup.bash && source /workspace/install/setup.bash && '
                    'xacro /workspace/install/m0609_rg2_bringup/share/m0609_rg2_bringup/'
                    'xacro/my_m0609_rg2.urdf.xacro mode:=virtual model:=m0609 update_rate:=100')

@@ -6,7 +6,8 @@ CREATE TABLE IF NOT EXISTS users (
     pw_hash     TEXT NOT NULL,
     name        TEXT,                                 -- 표시 이름 (예: 홍길동)
     role        TEXT NOT NULL DEFAULT 'user'          -- admin(관리자, 정비소) / user(사용자, 차주)
-                CHECK (role IN ('admin', 'user'))
+                CHECK (role IN ('admin', 'user')),
+    email       TEXT                                  -- 수리 시작·종료 알림 메일 (차주). 비우면 안 보냄
 );
 
 -- 수리 대상 차량 (축소 모형)
@@ -80,3 +81,8 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS idx_events_job ON events(job_id);
 CREATE INDEX IF NOT EXISTS idx_findings_job ON findings(job_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_vehicle ON jobs(vehicle_id);
+
+CREATE TABLE IF NOT EXISTS inspection_plans (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    plan    TEXT NOT NULL
+);

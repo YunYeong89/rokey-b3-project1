@@ -1,16 +1,18 @@
 """Execution of the planned paths with the DSR force services, as contact_scrape scrapes the block: per path (a
-whole pass, the probe in contact throughout), from HOME or the last path's exit with the tool down across at the
-travel height, down to the standoff point off its start, turned onto the fixed axis there, in to the approach gap;
-task compliance (BASE) + desired force along -axis, contact, ramp to the force, then movel strokes through the row
-ends at the contact level while the controller keeps the force. The program only measures (TCP, force along the
-axis): nothing it commands depends on the force. Out the same way up to the travel height; HOME only after the last
-path (real_scan)."""
+whole pass) its segments (the probe in contact throughout each); from HOME or the last exit with the tool down across
+at the travel height, down to the standoff point off the segment's start, turned onto the fixed axis there, in to the
+approach gap; task compliance (BASE) + desired force along -axis, contact, ramp to the force, then movel strokes
+through the row ends at the contact level while the controller keeps the force. The program only measures (TCP,
+force along the axis): nothing it commands depends on the force. Out to the standoff; on to the next segment's
+standoff straight across where the planner found that clear, else up to the travel height the same way; HOME only
+after the last path (real_scan). Records number the segments (`path`)."""
 import time
 
 import numpy as np
 
 from ..configs import SESSION
 from ..rotations import align, angles_zyz, rotation_zyz
+from .sampling import PointSampler
 
 
 class CloudChannel:
@@ -43,22 +45,28 @@ class AxisScraper:
         self.scan, self.channel, self.motion = scan, channel, program.config['motion']
         self.threshold = program.config['scan']['touch_threshold']
         self.points, self.next_write = [], 0.  # measured [x, y, z, Fn] (BASE m, N)
+        self.point_samples = []  # [timestamp, path] corresponding to each retained point
         self.records, self.path = [], 0  # every stroke sample [t s, x y z mm, force along the axis N, axis, path]
+        self.sweeps = 0  # paths (passes) run
         self.telemetry = []  # measured pose/wrench, kept separately from the existing report columns
+        self.sampler = PointSampler(scan.get('sample_mm', 0.), scan.get('point_decimation', 1))
+        self.missed_samples = 0
         self.transport = None
-        if 'search_depth_mm' in scan:
+        if scan.get('record_pose_wrench'):
             from ..surface_follow.transport import VirtualTransport
             self.transport = VirtualTransport(program)
             self.transport.wait_ready()
             self.sequence = -1
         self.down = None  # tool orientation between paths: HOME's, read at the first path
 
-    def command(self, axis, magnitude, ramp=0.):
-        """Desired force (N) into the surface along the fixed BASE axis."""
+    def command(self, axis, magnitude, ramp=0., wait=True):
+        """Desired force (N) into the surface along the fixed BASE axis, on the tared scale: the controller regulates
+        its raw estimate, so the probe's tare (force_offset on the real robot) along the axis is added."""
+        magnitude += float(self.probe.bias[:3] @ axis)
         k = int(np.argmax(np.abs(axis)))
         force, mask = [0.] * 6, [0] * 6
         force[k], mask[k] = -magnitude * float(np.sign(axis[k])), 1
-        self.robot.set_desired_force(force, mask, time=ramp, mod=self.robot.DR_FC_MOD_ABS)
+        self.robot.set_desired_force(force, mask, time=ramp, mod=self.robot.DR_FC_MOD_ABS, wait=wait)
 
     def reaction(self, axis):
         pose, wrench = self.probe.read()
@@ -68,85 +76,158 @@ class AxisScraper:
         """movel `until` callback: record the TCP in contact, never stops the move (no force limit either: climbing a
         slope raises the reaction, which is measured, not a fault)."""
         def until(pose, wrench):
-            guard_wrench = wrench
             if self.transport:
-                state = self.transport.state()
+                try:
+                    state = self.transport.state()
+                except TimeoutError:
+                    self.missed_samples += 1
+                    return False  # Missing telemetry is not a request to stop the DSR stroke.
                 if state.sequence == self.sequence:
                     return False
                 self.sequence = state.sequence
                 pose = np.r_[state.position*1000,angles_zyz(state.rotation,pose[3:])]
                 wrench = state.fast_wrench
-                guard_wrench = state.wrench  # native filtered feedback; retain raw contact impulses in the report
             force = float(wrench[:3] @ axis)
             now = time.monotonic()
-            if 'search_depth_mm' in self.scan:
-                self.probe.guard(guard_wrench)
-                self.lost_since = (self.lost_since or now) if force < self.threshold else None
-                if (pose[:3] @ axis < self.reference_level-self.scan['search_depth_mm'] or
-                        self.lost_since is not None and now-self.lost_since > self.scan['contact_loss_s']):
-                    raise RuntimeError('Performance scan lost contact or exceeded its search depth')
+            # Contact gaps and force peaks are recorded without interrupting the stroke.
             self.records.append([now, *pose[:3], force, *axis, self.path])
-            if 'search_depth_mm' in self.scan:
+            if self.scan.get('record_pose_wrench'):
                 self.telemetry.append([now,*pose,*wrench])
-            if force > self.threshold:
-                point = np.asarray(pose[:3],float)
-                if 'search_depth_mm' in self.scan:
-                    point = point-self.program.config['probe']['tip_radius_mm']*(rotation_zyz(pose[3:])[:,2]+axis)
-                # the measured cloud at sample_mm spacing (not set: every reading)
-                if not self.points or np.linalg.norm(point - np.asarray(self.points[-1][:3]) * 1000) >= \
-                        self.scan.get('sample_mm', 0.):
-                    self.points.append([*(point / 1000), force])
+            rotation, point = rotation_zyz(pose[3:]), np.asarray(pose[:3], float)
+            if self.scan.get('record_pose_wrench'):
+                point = point - self.program.config['probe']['tip_radius_mm'] * (rotation[:, 2] + axis)
+            if force > self.threshold and self.sampler.keep(point):
+                self.points.append([*(point / 1000), force])
+                self.point_samples.append([now, self.path])
+            self.program.topics.sample(now, 'stroke', axis, pose[:3], rotation, wrench, force,
+                                       force > self.threshold, point, len(self.points))
             if time.monotonic() >= self.next_write:
                 self.next_write = time.monotonic() + 1.
                 self.channel.write('measured', self.points)
             return False
         return until
 
-    def press(self, axis):
-        """Static reading as the contact reference, approach force until contact, ramp to the scan force."""
-        s, static, still = self.scan, [], time.monotonic() + .5
+    def drift(self, position, direction, axis):
+        """Change of the reading along `axis` from the press's still one, at `position` moving along `direction`:
+        none here (part_scan/height_dsr.py: the motion_offset calibration)."""
+        return 0.
+
+    def tare_at_gap(self, axis):
+        """Measure the unloaded reaction at the current approach gap."""
+        static, still = [], time.monotonic() + .5
         while time.monotonic() < still:
-            static.append(self.reaction(axis)[1])
+            pose, value = self.reaction(axis)
+            static.append(value)
         offset = float(np.mean(static))
-        self.probe.enable(self.robot.DR_BASE, s['stiffness'])
-        self.command(axis, s['approach_force_n'])
-        self.probe.forcing = True
-        hits, deadline = 0, time.monotonic() + s['timeout_s']
-        while hits < 3:
-            if 'search_depth_mm' in s and self.reaction(axis)[0][:3] @ axis < self.reference_level-s['search_depth_mm']:
-                raise RuntimeError('Performance approach exceeded its contact search depth')
-            hits = hits + 1 if self.reaction(axis)[1] - offset > self.threshold else 0
-            if time.monotonic() > deadline:
-                raise RuntimeError(f'{s["timeout_s"]:.0f} s 안에 접촉이 없습니다')
+        # Tared reaction at rest off the surface here (the estimate's offset depends on the pose), and where.
+        self.static, self.static_at = offset, pose[:3]
+        return offset
+
+    def search_contact(self, axis, surface):
+        """Find contact and confirm the reaction at rest while still in position control."""
+        d, hits, offset = self.scan['default_scan'], 0, self.static
+        rise = d['real_contact_offset_n']
+
+        def touched(pose, wrench):
+            nonlocal hits
+            hits = hits + 1 if float(wrench[:3] @ axis) - offset - self.drift(pose[:3], -axis, axis) > rise else 0
+            return hits >= 2
+
+        pose, _ = self.probe.read()
+        self.program.log(f'접촉 탐색: 위치 제어 하강 {d["real_search_speed_mm_s"]:g} mm/s, '
+                         f'접촉 판정 +{rise:g} N (정지 반력 {offset:.3f} N)')
+        while True:
+            if not self.probe.move(surface - d['real_search_depth_mm'] * axis, rotation_zyz(pose[3:]),
+                                   d['real_search_speed_mm_s'], until=touched, acc=self.motion['approach_acc']):
+                pose, force = self.reaction(axis)
+                raise RuntimeError(f'계획 표면 {d["real_search_depth_mm"]:g} mm 아래까지 접촉이 없습니다: 반력 '
+                                   f'{force:.2f} N (정지 {offset:.2f} N), real_scene.yaml 차량 위치를 확인하세요')
+            # Confirmed at rest: while moving, the estimate's offset (travel direction, pose) can pass the rise
+            # (a stop 5.7 mm above the bonnet at +0.5 N); at rest its noise is 0.01-0.07 N.
+            time.sleep(.2)
+            readings = [self.reaction(axis) for _ in range(10)]
+            rest = float(np.mean([value for _, value in readings])) - offset
+            if rest > rise:
+                return readings[-1][0]
+            hits = 0
+            self.program.log(f'접촉 후보: 정지 반력 +{rest:.2f} N < +{rise:g} N, 공중으로 판정하고 탐색을 계속합니다')
+
+    def press(self, axis, surface):
+        """Find contact, then engage the survey force."""
+        s, offset = self.scan, self.tare_at_gap(axis)
+        if self.program.mode == 'real':
+            self.contact = self.search_contact(axis, surface)[:3]
+            self.probe.enable(self.robot.DR_BASE, s['stiffness'])
+            self.probe.forcing = True
+        else:
+            self.probe.enable(self.robot.DR_BASE, s['stiffness'])
+            self.command(axis, s['approach_force_n'])
+            self.probe.forcing = True
+            self.program.log(f'접촉 탐색: 누름 {-s["approach_force_n"]:g} N (정지 반력 {offset:.3f} N)')
+            hits, deadline = 0, time.monotonic() + s['timeout_s']
+            while hits < 3:
+                pose, force = self.reaction(axis)
+                hits = hits + 1 if force - offset > self.threshold else 0
+                if time.monotonic() > deadline:
+                    raise RuntimeError(f'{s["timeout_s"]:.0f} s 안에 접촉이 없습니다: TCP가 계획 표면에서 '
+                                       f'{float((pose[:3] - surface) @ axis):+.1f} mm, 반력 {force:.2f} N')
         self.command(axis, s['force_n'], s['ramp_s'])
         time.sleep(s['ramp_s'] + s['hold_s'])
+        pose, force = self.reaction(axis)
+        self.program.log(f'접촉 확인: 반력 {force:.3f} N, TCP {pose[:3].round(2).tolist()} mm '
+                         f'(계획 표면 {float((pose[:3] - surface) @ axis):+.2f} mm); 계획 경로 진행')
 
-    def run(self, positions, axis):
+    def run(self, segments, axis, straight):
+        """One path (pass): `segments` (BASE mm points) in order, `straight[k]`: lift from segment k to k + 1 straight
+        across at the standoff."""
         p, probe, s, m = self.program, self.probe, self.scan, self.motion
-        self.reference_level, self.lost_since = float(positions[0] @ axis), None
-        out, pre = positions[0] + s['standoff_mm'] * axis, positions[0] + s['gap_mm'] * axis
-        self.path += 1
+        self.sweeps += 1
+        p.topics.stage(p.topics.MOVING, path=self.sweeps)
         pose, _ = probe.read()
         if self.down is None:
             self.down = rotation_zyz(pose[3:])
         down = self.down
-        turned = align(down, axis, np.pi)
-        travel = max(p.safe_z(), out[2], pose[2])
-        probe.move([*pose[:2], travel], down, m['approach_speed'], acc=m['approach_acc'])
-        probe.move([*out[:2], travel], down, m['linear_speed'], acc=m['linear_acc'])
-        probe.move(out, down, m['approach_speed'], acc=m['approach_acc'])
-        probe.move(out, turned, m['approach_speed'])
-        probe.move(pre, turned, m['approach_speed'], acc=m['approach_acc'])
-        self.press(axis)
-        level = probe.read()[0][:3] @ axis  # strokes keep the contact level: the force controller owns the axis
-        for point in turning_points(positions, axis):
-            probe.move(point + (level - point @ axis) * axis, turned, s['speed_mm_s'], until=self.measure(axis),
-                       acc=p.config['scan']['acc'])
+        turned = self.tool(down, axis)
+        for k, positions in enumerate(segments):
+            out = positions[0] + s['standoff_mm'] * axis
+            if k and straight[k - 1]:
+                probe.move(out, turned, m['linear_speed'], acc=m['linear_acc'])
+            else:
+                pose, _ = probe.read()
+                travel = max(p.safe_z(), out[2], pose[2])
+                probe.move([*pose[:2], travel], down, m['approach_speed'], acc=m['approach_acc'])
+                probe.move([*out[:2], travel], down, m['linear_speed'], acc=m['linear_acc'])
+                probe.move(out, down, m['approach_speed'], acc=m['approach_acc'])
+                probe.move(out, turned, m['approach_speed'])
+            away = self.segment(positions, axis, turned) + s['standoff_mm'] * axis
+            probe.move(away, turned, m['approach_speed'], acc=m['approach_acc'])
+            if k == len(segments) - 1 or not straight[k]:
+                probe.move(away, down, m['approach_speed'])
+                probe.move([*away[:2], max(p.safe_z(), away[2])], down, m['approach_speed'], acc=m['approach_acc'])
+
+    def tool(self, down, axis):
+        """Tool orientation along a path: TOOL +Z straight into the surface (`axis` outward)."""
+        return align(down, axis, np.pi)
+
+    def segment(self, positions, axis, turned):
+        """In to the approach gap, press, the strokes in contact, out to the gap. -> the last contact point (BASE mm)"""
+        p, probe, s, m = self.program, self.probe, self.scan, self.motion
+        self.path += 1
+        probe.move(positions[0] + s['gap_mm'] * axis, turned, m['approach_speed'], acc=m['approach_acc'])
+        self.press(axis, positions[0])
+        p.topics.stage(p.topics.SCANNING, segment=self.path)
+        self.strokes(positions, axis, turned)
+        p.topics.advance(np.linalg.norm(np.diff(positions, axis=0), axis=1).sum())
+        p.topics.stage(p.topics.MOVING)
         probe.release()
         pose, _ = probe.read()
         probe.move(pose[:3] + s['gap_mm'] * axis, turned, m['approach_speed'], acc=m['approach_acc'])
         probe.close()
-        away = pose[:3] + s['standoff_mm'] * axis
-        probe.move(away, turned, m['approach_speed'], acc=m['approach_acc'])
-        probe.move(away, down, m['approach_speed'])
-        probe.move([*away[:2], max(p.safe_z(), away[2])], down, m['approach_speed'], acc=m['approach_acc'])
+        return pose[:3]
+
+    def strokes(self, positions, axis, turned):
+        """Movel through the row ends at the contact level: the force controller owns the axis."""
+        level = self.probe.read()[0][:3] @ axis
+        for point in turning_points(positions, axis):
+            self.probe.move(point + (level - point @ axis) * axis, turned, self.scan['speed_mm_s'],
+                            until=self.measure(axis), acc=self.program.config['scan']['acc'])

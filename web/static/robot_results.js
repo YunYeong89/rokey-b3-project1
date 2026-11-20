@@ -1,7 +1,8 @@
 import { robotControl } from "./robot_control.js";
+import { ForceChart } from "./robot_graph.js";
 
 /** Report files of the robot programs by run (/api/robot/runs: plan, surface, force and ROI graphs, CSV / JSON / PLY)
- * and the live force graph (draw_graph started beside any program, images/force_live.png redrawn every second). */
+ * and the live force graph (draw_graph started beside any program, drawn in the browser from its stream). */
 export class RobotResults {
   constructor(card) {
     this.select = card.querySelector("[data-run-select]");
@@ -9,7 +10,8 @@ export class RobotResults {
     this.files = card.querySelector("[data-run-files]");
     this.graphButton = card.querySelector("[data-graph-toggle]");
     this.compensated = card.querySelector("[data-graph-compensated]");
-    this.live = card.querySelector("[data-graph-live]");
+    this.chartRoot = card.querySelector("[data-graph-chart]");
+    this.chart = new ForceChart(this.chartRoot);
     this.graphError = card.querySelector("[data-graph-error]");
     this.select.addEventListener("change", () => {
       this.pinned = this.select.value !== this.runs?.[0]?.run;  // the newest run is followed unless another is chosen
@@ -21,6 +23,12 @@ export class RobotResults {
       catch (error) { this.graphError.textContent = error.message; }
     });
     robotControl.addEventListener("state", () => this.refreshGraph());
+    robotControl.addEventListener("robot", () => {
+      this.runs = []; this.key = null; this.pinned = false;
+      this.select.replaceChildren();
+      this.render();
+      if (this.timer) this.load();
+    });
   }
 
   start() {
@@ -30,9 +38,11 @@ export class RobotResults {
   }
 
   async load() {
-    const response = await fetch("/api/robot/runs");
+    const robot = robotControl.selected;
+    const response = await fetch(`/api/robot/runs?robot=${encodeURIComponent(robot)}`);
     if (!response.ok) return;
     const runs = await response.json();
+    if (robot !== robotControl.selected) return;
     const key = runs.map((run) => `${run.run}:${run.mtime}`).join();
     if (key === this.key) return;
     Object.assign(this, { key, runs });
@@ -45,7 +55,7 @@ export class RobotResults {
   render() {
     const run = this.runs?.find((item) => item.run === this.select.value);
     const files = run?.files || [];
-    const url = (file) => `/api/robot/files/${file.path}?v=${file.mtime}`;
+    const url = (file) => `/api/robot/files/${file.path}?v=${file.mtime}&robot=${encodeURIComponent(robotControl.selected)}`;
     const label = (file) => file.name.replace(run.run, "").replace(/^[_/]+/, "") || file.name;
     this.images.replaceChildren(...files.filter((file) => file.kind === "image").map((file) => {
       const link = Object.assign(document.createElement("a"), { href: url(file), target: "_blank", title: file.name });
@@ -65,11 +75,7 @@ export class RobotResults {
     this.graphButton.textContent = on ? "힘 그래프 종료 (PNG·CSV 저장)" : "실시간 힘 그래프 시작";
     this.graphButton.disabled = !robotControl.live;
     this.compensated.disabled = on;
-    this.live.hidden = !on;
-    if (on && performance.now() - (this.drawn || 0) > 1000) {
-      this.drawn = performance.now();
-      this.live.src = `/api/robot/files/images/force_live.png?t=${Date.now()}`;
-    }
+    this.chartRoot.hidden = !on && !this.chart.fresh;  // also a draw_graph started from a terminal
     if (!on && status?.graph_log) this.graphError.textContent = status.graph_log;
   }
 }

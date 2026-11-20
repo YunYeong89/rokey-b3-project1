@@ -21,6 +21,7 @@ if __package__:
     from .check_db import StockChecker
     from .choose_car import identify
     from .configs import read_session
+    from .robot_namespace import robot_topic
     from .force_data import CalibrationRun
     from .repair_db import RepairDB
     from .replace_parts import PartReplacer
@@ -30,6 +31,7 @@ else:
     from check_db import StockChecker
     from choose_car import identify
     from configs import read_session
+    from robot_namespace import robot_topic
     from force_data import CalibrationRun
     from repair_db import RepairDB
     from replace_parts import PartReplacer
@@ -49,7 +51,7 @@ class RepairManager:
         self.program = CalibrationRun('repair_manager')
         self.db = RepairDB(**self.program.config['db'])
         self.always_calibrate, self.pending, self.job, self.stage = always_calibrate, None, None, None
-        self.program.node.create_subscription(String, '/repair/command', self.command, 10)
+        self.program.node.create_subscription(String, robot_topic(self.program.node, '/repair/command'), self.command, 10)
         self.program.log(f'repair_manager ready ({self.program.mode}); waiting for /repair/command')
 
     def command(self, message):

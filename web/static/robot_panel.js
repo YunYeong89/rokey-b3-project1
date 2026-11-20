@@ -1,26 +1,32 @@
 import { RobotViewer } from "./robot_viewer.js";
 import { RobotRosClient } from "./robot_ros.js";
 import { RobotTaskPanel, robotControl, rosbridgeUrl } from "./robot_control.js";
+import { RobotTeleop } from "./robot_teleop.js";
 import { RobotResults } from "./robot_results.js";
 import { CloudFeed } from "./robot_clouds.js";
+import { RobotInspection } from "./robot_inspection.js";
 
 export class RobotPanel {
   constructor(panel) {
     this.panel = panel;
     this.tasks = new RobotTaskPanel(panel);
+    this.inspection = new RobotInspection(panel.querySelector("[data-inspection]"));
+    this.teleop = new RobotTeleop(panel);
     this.status = panel.querySelector("[data-robot-status]");
     this.message = panel.querySelector("[data-robot-message]");
     this.viewer = new RobotViewer(panel.querySelector("[data-robot-viewer]"));
     this.results = new RobotResults(panel.querySelector("[data-robot-results]"));
     this.clouds = new CloudFeed(this.viewer);
+    panel.querySelector("[data-robot-objects]").addEventListener("change", (event) =>
+      this.viewer.setObjectsVisible(event.target.checked));
     panel.querySelectorAll("[data-robot-cloud]").forEach((input) =>
       input.addEventListener("change", () => this.viewer.setCloudVisible(input.dataset.robotCloud, input.checked)));
-    this.url = panel.querySelector("[data-robot-url]");
-    this.topic = panel.querySelector("[data-robot-topic]");
-    this.url.value = rosbridgeUrl();
+    this.rosStatus = panel.querySelector("[data-ros-connection]");
     robotControl.addEventListener("state", () => this.followMode());
-    this.topic.value = window.APP.robotJointTopic || "/dsr01/sim_joint_states";
-    panel.querySelector("[data-robot-connect]").addEventListener("click", () => this.connect());
+    panel.querySelector("[data-robot-connect]").addEventListener("click", () => {
+      robotControl.reconnect();
+      this.connect();
+    });
     panel.querySelectorAll("[data-robot-view]").forEach((button) =>
       button.addEventListener("click", () => this.viewer.view(button.dataset.robotView)));
     panel.querySelector("[data-robot-fit]").addEventListener("click", () => this.viewer.fit());
@@ -32,6 +38,7 @@ export class RobotPanel {
         this.started = true;
         this.load(); this.connect(); this.results.start(); this.clouds.start();
       }
+      this.inspection.load();
       requestAnimationFrame(() => this.viewer.resize());
     });
     setInterval(() => this.refresh(), 200);
@@ -64,20 +71,15 @@ export class RobotPanel {
     }
   }
 
-  /** Joint topic of the connected robot, unless the server sets one: simulation feedback or the real controller. */
   followMode() {
-    const mode = robotControl.status?.mode;
-    if (window.APP.robotJointTopic || !mode || !this.started) return;
-    const topic = mode === "real" ? "/dsr01/joint_states" : "/dsr01/sim_joint_states";
-    if (topic === this.modeTopic) return;
-    this.modeTopic = topic;
-    if (this.topic.value !== topic) { this.topic.value = topic; this.connect(); }
+    if (this.started && this.client?.topic !== robotControl.jointTopic()) this.connect();
+    this.refresh();
   }
 
   connect() {
     this.client?.close();
-    this.client = new RobotRosClient({ url: this.url.value, topic: this.topic.value,
-      sceneTopic: window.APP.robotSceneTopic || "/dsr01/sim_scene",
+    this.client = new RobotRosClient({ url: rosbridgeUrl(), topic: robotControl.jointTopic(),
+      sceneTopic: (robotControl.selected === "dsr01" && window.APP.robotSceneTopic) || `/${robotControl.selected}/sim_scene`,
       onScene: (message) => this.viewer.applyScene(message),
       onState: (state) => { this.connection = state; this.refresh(); },
       onMessage: (message) => { this.viewer.applyJointState(message); this.refresh(); } });
@@ -91,8 +93,8 @@ export class RobotPanel {
     this.status.textContent = receiving ? "관절값 수신 중" : (this.connection === "waiting" && Number.isFinite(age)
       ? "관절 데이터 수신 중단" : states[this.connection] || "연결 대기");
     this.status.className = `pill ${receiving ? "on" : "off"}`;
-    this.panel.querySelector("[data-robot-rate]").textContent = receiving ? `${this.client.rate.toFixed(1)} Hz` : "—";
-    this.panel.querySelector("[data-robot-age]").textContent = Number.isFinite(age) ? `${age.toFixed(1)} s` : "—";
+    this.rosStatus.textContent = robotControl.live ? "연결됨" : robotControl.connected ? "로봇 응답 대기" : "연결 대기";
+    this.rosStatus.className = `pill ${robotControl.live ? "on" : "off"}`;
     if (!this.viewer.tcpFrame) return;
     for (const cell of this.panel.querySelectorAll("[data-joint]")) {
       const value = this.viewer.robot.joints[cell.dataset.joint].angle;

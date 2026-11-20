@@ -12,11 +12,13 @@ if __package__:
     from .configs import Config, load
     from .contact_probe import ContactProbe
     from .robot_services import RobotServices
+    from .robot_namespace import robot_topic
     from .rotations import rotation_zyz
 else:
     from configs import Config, load
     from contact_probe import ContactProbe
     from robot_services import RobotServices
+    from robot_namespace import robot_topic
     from rotations import rotation_zyz
 
 
@@ -29,10 +31,11 @@ class RobotProgram:
         self.config = Config(self.mode)
         scan = self.config['scan']
         self.probe = ContactProbe(self.robot, scan['press_force'], scan['touch_threshold'])
-        self.status = self.node.create_publisher(String, '/repair/status', 10)
+        self.status = self.node.create_publisher(String, robot_topic(self.node, '/repair/status'), 10)
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
-        self.vehicle = self.node.create_publisher(String, '/repair/vehicle', latched)  # choose_car result
+        self.vehicle = self.node.create_publisher(String, robot_topic(self.node, '/repair/vehicle'), latched)  # choose_car result
         self.top_mm = 0.0  # tallest obstacle a program adds to the travel height (safe_z)
+        self.topics = None  # real_scan: part_scan.scan_topics.ScanTopics (/scan/* samples, progress, ROI, result)
 
     def reload(self):
         """Re-read the configuration (a new calibration result or session plan)."""
@@ -51,12 +54,13 @@ class RobotProgram:
         zone = self.config['vehicle_zone']
         return max(zone['table_z_mm'] + zone['max_height_mm'], self.top_mm) + self.config['scan']['clearance_mm']
 
-    def home(self):
+    def home(self, joints=None):
         """movej home in position control (force and compliance released first). From the work area (up to
         50 mm above the travel height) the probe first goes straight up to the travel height and across to
         above the home TCP: a joint-space move from above the vehicle would cut down over it."""
         self.probe.close()
-        motion, joints = self.config['motion'], self.config['robot']['home_joints_deg']
+        motion = self.config['motion']
+        joints = self.config['robot']['home_joints_deg'] if joints is None else joints  # teleop: any pose
         pose, _ = self.probe.read()
         target, rotation = self.robot.fkin(joints), rotation_zyz(pose[3:])
         offset = np.linalg.norm(np.subtract(pose[:3], target[:3]))

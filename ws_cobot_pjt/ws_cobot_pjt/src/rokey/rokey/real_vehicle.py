@@ -30,16 +30,19 @@ def unit(vector):
 
 def clip(triangles, axis, value):
     """Split the triangles crossing the plane (coordinate `axis` = value) so that none crosses it; winding kept."""
-    side = triangles[:, :, axis] > value
-    cross = (side.sum(1) == 1) | (side.sum(1) == 2)
+    coordinates = triangles[:, :, axis]
+    side = coordinates > value
+    cross = (coordinates.min(1) < value - 1e-8) & (coordinates.max(1) > value + 1e-8)
     t, s = triangles[cross], side[cross]
     lone = np.where(s.sum(1) == 1, np.argmax(s, 1), np.argmin(s, 1))  # the vertex alone on its side
     row = np.arange(len(t))
     a, b, c = t[row, lone], t[row, (lone + 1) % 3], t[row, (lone + 2) % 3]
     cut = lambda p, q: p + ((value - p[:, axis]) / (q[:, axis] - p[:, axis]))[:, None] * (q - p)
     ab, ac = cut(a, b), cut(a, c)
-    return np.concatenate([triangles[~cross], np.stack([a, ab, ac], 1), np.stack([ab, b, c], 1),
-                           np.stack([ab, c, ac], 1)])
+    ab[:, axis] = ac[:, axis] = value
+    pieces = np.concatenate([np.stack([a, ab, ac], 1), np.stack([ab, b, c], 1), np.stack([ab, c, ac], 1)])
+    area = np.linalg.norm(np.cross(pieces[:, 1] - pieces[:, 0], pieces[:, 2] - pieces[:, 0]), axis=1)
+    return np.concatenate([triangles[~cross], pieces[area > 1e-10]])
 
 
 def connected(pairs, count):
@@ -58,7 +61,7 @@ def connected(pairs, count):
 class RealVehicle:
     kind = 'real'
 
-    def __init__(self):
+    def __init__(self, prepared=True, clip_parts=True):
         self.spec = load('vehicles')['real']
         front = unit(self.spec['front'])
         up = unit(np.cross(front, self.spec['left']))
@@ -67,11 +70,36 @@ class RealVehicle:
         scale = self.spec['length_mm'] / (high[0] - low[0])
         self.triangles = (triangles - [(low[0] + high[0]) / 2, (low[1] + high[1]) / 2, low[2]]) * scale
         self.size = (high - low) * scale
+        if prepared and 'surface_mesh' in self.spec:
+            # Prepared mesh: the vehicle frame in mm with the original footprint, at surface_mesh_length_mm.
+            with np.load(PACKAGE / self.spec['surface_mesh']) as surface:
+                self.triangles = surface['triangles'] * (self.spec['length_mm'] / self.spec['surface_mesh_length_mm'])
+        self.surface_triangles = self.triangles
         x0, x1, z0, z1, _ = self.spec['door']  # CAD panels are long triangles: cut them at the door box
-        for axis, value in ((0, x0), (0, x1), (2, z0), (2, z1)):
+        for axis, value in (((0, x0), (0, x1), (2, z0), (2, z1)) if clip_parts else ()):
             self.triangles = clip(self.triangles, axis, value)
         self.damage = []
         self.parts = self.split()
+
+    def export_collision(self, directory):
+        """One welded surface across visual part boundaries; OBJ retains shared vertex indices."""
+        path = Path(directory) / 'real_surface.obj'
+        vertices, inverse = np.unique(self.surface_triangles.reshape(-1, 3).round(8), axis=0, return_inverse=True)
+        faces = inverse.reshape(-1, 3)
+        t = vertices[faces]
+        face_normals = np.cross(t[:, 1] - t[:, 0], t[:, 2] - t[:, 0])
+        keep = np.linalg.norm(face_normals, axis=1) > 1e-9
+        normals = np.zeros_like(vertices)
+        np.add.at(normals, faces[keep].ravel(), np.repeat(face_normals[keep], 3, axis=0))
+        normals /= np.maximum(np.linalg.norm(normals, axis=1, keepdims=True), 1e-12)
+        with path.open('w') as stream:
+            for vertex in vertices:
+                stream.write('v %.10f %.10f %.10f\n' % tuple(vertex))
+            for normal in normals:
+                stream.write('vn %.10f %.10f %.10f\n' % tuple(normal))
+            for face in faces[keep] + 1:
+                stream.write('f ' + ' '.join(f'{index}//{index}' for index in face) + '\n')
+        return path
 
     def placement(self):
         """[x, y, yaw] in BASE (mm, deg): on the robot's front axis, the front bumper at nose_x_mm, facing the robot."""

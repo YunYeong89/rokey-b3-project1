@@ -2,14 +2,20 @@
 import threading
 import time
 
+import numpy as np
 from dsr_msgs2 import srv
 from dsr_msgs2.msg import RobotError
 from rclpy.executors import SingleThreadedExecutor
+from std_msgs.msg import Float64MultiArray
 
 if __package__:
     from .configs import load
+    from .robot_namespace import robot_topic
+    from .rotations import angles_zyz, rotation_zyz
 else:
     from configs import load
+    from robot_namespace import robot_topic
+    from rotations import angles_zyz, rotation_zyz
 
 
 class RobotServices:
@@ -24,6 +30,7 @@ class RobotServices:
         self.executor = SingleThreadedExecutor(context=node.context)
         self.executor.add_node(node)
         self.reference = self.DR_BASE
+        self.sent = self.queued = None  # send(): the request in flight and the one waiting for it
         self.motion_active = False
         self.rejection_count = 0
         self.rejection_message = ''
@@ -67,7 +74,8 @@ class RobotServices:
             raise RuntimeError('작업 정지 요청으로 중단했습니다')
         with self.lock:
             rejection_before = self.rejection_count
-            path = service_path if service_path.startswith('/') else self.prefix + service_path
+            path = robot_topic(self.node, service_path) if service_path.startswith('/onrobot/') else (
+                service_path if service_path.startswith('/') else self.prefix + service_path)
             if service_path not in self.clients:
                 self.clients[service_path] = self.node.create_client(service_type, path)
             client = self.clients[service_path]
@@ -92,6 +100,27 @@ class RobotServices:
                 if not future.done():
                     future.cancel()
 
+    def send(self, service_path, service_type, **values):
+        """Request without waiting: the response is taken on a later call's spin and not checked. For commands
+        sent during a motion (set_desired_force took 0.08-0.18 s, the samples stopped meanwhile). One in flight: a
+        newer request waits in its place and goes on flush() (072408: the queued commands held get_tool_force past
+        its 3 x 3 s timeout and ended the scan)."""
+        if self.cancelled:
+            raise RuntimeError('작업 정지 요청으로 중단했습니다')
+        self.queued = service_path, service_type, values
+        self.flush()
+
+    def flush(self):
+        """Send the waiting request once the one in flight is answered."""
+        if self.queued is None or self.sent is not None and not self.sent.done():
+            return
+        service_path, service_type, values = self.queued
+        self.queued = None
+        with self.lock:
+            if service_path not in self.clients:
+                self.clients[service_path] = self.node.create_client(service_type, self.prefix + service_path)
+            self.sent = self.clients[service_path].call_async(service_type.Request(**values))
+
     def get_robot_system(self):
         """0: real, 1: virtual."""
         return self.request('system/get_robot_system', srv.GetRobotSystem).robot_system
@@ -99,19 +128,28 @@ class RobotServices:
     def get_robot_mode(self):
         return self.request('system/get_robot_mode', srv.GetRobotMode).robot_mode
 
+    def get_control_mode(self):
+        """3: position control, 4: torque control (compliance / force control)."""
+        return self.request('aux_control/get_control_mode', srv.GetControlMode).control_mode
+
     def get_tool(self):
         return self.request('tool/get_current_tool', srv.GetCurrentTool).info
 
     def get_tcp(self):
         return self.request('tcp/get_current_tcp', srv.GetCurrentTcp).info
 
-    def verify_profiles(self, tool, tcp):
-        active_tool, active_tcp = self.get_tool(), self.get_tcp()
+    def verify_profiles(self, tool, tcp=None):
+        active_tool = self.get_tool()
+        active, expected = f'Tool={active_tool}', f'Tool={tool}'
+        active_tcp = None
+        if tcp is not None:
+            active_tcp = self.get_tcp()
+            active += f', TCP={active_tcp}'
+            expected += f', TCP={tcp}'
         if (active_tool, active_tcp) != (tool, tcp):
             raise RuntimeError(
-                f'Tool/TCP 불일치: 현재 Tool={active_tool}, TCP={active_tcp}; '
-                f'필요 Tool={tool}, TCP={tcp}. 수동 모드에서 선택한 뒤 자동 모드로 실행하세요.')
-        self.node.get_logger().info(f'기존 설정 사용: Tool={active_tool}, TCP={active_tcp} (변경 없음)')
+                f'프로파일 불일치: 현재 {active}; 필요 {expected}. 수동 모드에서 선택한 뒤 자동 모드로 실행하세요.')
+        self.node.get_logger().info(f'기존 설정 사용: {active}')
 
     def set_tool(self, name):
         self.request('tool/set_current_tool', srv.SetCurrentTool, name=name)
@@ -125,6 +163,23 @@ class RobotServices:
         result = self.request('aux_control/get_current_posx', srv.GetCurrentPosx, ref=ref)
         values = result.task_pos_info[0].data
         return list(values[:6]), int(round(values[6]))
+
+    def get_current_posj(self):
+        return list(self.request('aux_control/get_current_posj', srv.GetCurrentPosj).pos)
+
+    def get_active_tcp_profile(self):
+        """Flange-to-active-TCP transform [mm, deg ZYZ] from the controller's two BASE poses, while stationary."""
+        flange = self.request('aux_control/get_current_tool_flange_posx', srv.GetCurrentToolFlangePosx,
+                              ref=self.DR_BASE).pos
+        tcp, _ = self.get_current_posx(self.DR_BASE)
+        if not np.isfinite([flange, tcp]).all() or not np.any(flange):
+            raise RuntimeError('플랜지 또는 TCP 자세를 읽을 수 없습니다.')
+        base_to_flange = rotation_zyz(flange[3:]).T
+        offset = base_to_flange @ np.subtract(tcp[:3], flange[:3])
+        if np.linalg.norm(offset) < .001:
+            raise RuntimeError('활성 TCP에 탐침 오프셋이 없습니다.')
+        angles = angles_zyz(base_to_flange @ rotation_zyz(tcp[3:]), [0., 0., 0.])
+        return [*offset.tolist(), *angles]
 
     def fkin(self, joints_deg, ref=0):
         """BASE task pose (mm, deg) of the active TCP at joint angles `joints_deg`."""
@@ -156,9 +211,11 @@ class RobotServices:
                      stx=stx, ref=self.reference, time=0.0)
         return 0
 
-    def set_desired_force(self, fd, direction, time=0.0, mod=0):
-        self.request('force/set_desired_force', srv.SetDesiredForce,
-                     fd=fd, dir=direction, ref=self.reference, time=time, mod=mod)
+    def set_desired_force(self, fd, direction, time=0.0, mod=0, wait=True):
+        if wait:
+            self.queued = None  # a waiting unanswered command would override this one later
+        (self.request if wait else self.send)('force/set_desired_force', srv.SetDesiredForce,
+                                              fd=fd, dir=direction, ref=self.reference, time=time, mod=mod)
         return 0
 
     def release_force(self, time=0.0):
@@ -174,6 +231,21 @@ class RobotServices:
         self.request('motion/move_line', srv.MoveLine, pos=pose, vel=vel, acc=acc,
                      ref=ref, mode=mod, sync_type=1)
         return 0
+
+    def amovesx(self, poses, vel, acc, ref=0, mod=0, opt=1):
+        """Asynchronous spline from the TCP through up to 100 task poses (mm, deg); opt 1: constant speed."""
+        self.motion_active = True
+        self.request('motion/move_spline_task', srv.MoveSplineTask,
+                     pos=[Float64MultiArray(data=[float(value) for value in pose]) for pose in poses],
+                     pos_cnt=len(poses), vel=vel, acc=acc, time=0.0, ref=ref, mode=mod, opt=opt, sync_type=1)
+        return 0
+
+    def jog_multi(self, axis, speed, ref=0):
+        """Velocity jog along the unit task-space `axis` [x y z rx ry rz] at `speed` % of 250 x 1.73 mm/s; end it with
+        stop() only (jog_multi again while jogging hung the controller's service on the emulator)."""
+        self.motion_active = True
+        self.request('motion/jog_multi', srv.JogMulti, jog_axis=[float(value) for value in axis],
+                     move_reference=ref, speed=float(speed))
 
     def movej(self, pose, vel, acc):
         # Start asynchronously, then wait through interruptible, bounded state queries.

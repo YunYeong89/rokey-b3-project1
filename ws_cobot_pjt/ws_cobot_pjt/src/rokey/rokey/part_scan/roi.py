@@ -81,8 +81,11 @@ class ScanRoi:
             slope = (np.interp(s + FORCE_SLOPE_MM / 2, s, h) - np.interp(s - FORCE_SLOPE_MM / 2, s, h)) / FORCE_SLOPE_MM
             i = np.arange(len(own))
             low, high = np.maximum(i - SPEED_SAMPLES, 0), np.minimum(i + SPEED_SAMPLES, len(own) - 1)
-            speed = slope * (s[high] - s[low]) / (t[high] - t[low]) / 1000  # m/s along the axis on the reference
-            expected = force_n + FORCE_DAMPING_NS_M * speed + FORCE_MASS_KG * np.gradient(speed, t)
+            dt = t[high] - t[low]
+            speed = slope * np.divide(s[high] - s[low], dt, out=np.zeros(len(own)), where=dt > 0) / 1000
+            expected = force_n + FORCE_DAMPING_NS_M * speed
+            if FORCE_MASS_KG:
+                expected += FORCE_MASS_KG * np.gradient(speed, t)
             residual[own] = moving_average(records[own, 4], FORCE_WINDOW) - expected
         return residual
 

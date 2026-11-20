@@ -42,7 +42,7 @@ class Chain:
         return pose, np.eye(6)
 
 
-def stream(force):
+def stream(force, pd=None):
     chain = Chain()
     q = dict.fromkeys(chain.names, 0.)
     now = time.monotonic()
@@ -56,7 +56,7 @@ def stream(force):
     result = CartesianStream(backend, chain)
     pose, jacobian = chain.pose_jacobian(q)
     result.observe(q, pose, jacobian, now)
-    result.begin('position')
+    result.begin('position', pd)
     return result
 
 
@@ -191,6 +191,9 @@ class MeshNormalContracts(unittest.TestCase):
             faster_load = MeshPlanCache(Path(directory), surface, [[0., 0., 1.]], reach, scan, 200.)
             self.assertEqual(cache.key, faster_load.key)
             self.assertEqual(len(faster_load.load().paths), 1)
+            scan['mesh_normal']['pd']['position_kd_s'] = .08
+            tuning = MeshPlanCache(Path(directory), surface, [[0., 0., 1.]], reach, scan, 200.)
+            self.assertEqual(cache.key, tuning.key)
             surface.triangles = surface.triangles + [0., 0., 1.]
             changed = MeshPlanCache(Path(directory), surface, [[0., 0., 1.]], reach, scan, 200.)
             self.assertNotEqual(cache.key, changed.key)

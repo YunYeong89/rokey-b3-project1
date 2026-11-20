@@ -4,6 +4,8 @@ import { STLLoader } from "three/addons/loaders/STLLoader.js";
 import URDFLoader from "./vendor/urdf-loader/URDFLoader.js";
 
 const CLOUD_COLORS = { reference: 0x5a96ff, measured: 0xff6e1e };
+// 장면 마커 중 "차량·시편 메시" 표시로 숨길 것 (native/scene.py). 탐침·거치대·바닥은 위치 확인용으로 그대로 둔다
+const OBJECT_MESHES = new Set(["vehicle", "holder", "contact_block", "hemisphere"]);
 
 /** RViz-style robot display. All model transforms use ROS meters/radians and Z-up. */
 export class RobotViewer {
@@ -61,11 +63,14 @@ export class RobotViewer {
     this.robot = await loader.loadAsync(`${this.metadata.model_url}?v=${this.metadata.version}`);
     await assetsLoaded;
     this.scene.add(this.robot);
+    const extras = [];  // the DSR DAE meshes carry Blender lamps and cameras: ~20 point lights lit the whole scene
     this.robot.traverse((object) => {
+      if (object.isLight || object.isCamera) extras.push(object);
       if (object.isURDFCollider) object.traverse((child) => {
         if (child.isMesh) child.material = this.collisionMaterial;
       });
     });
+    extras.forEach((object) => object.removeFromParent());
     for (const joint of Object.values(this.robot.joints)) joint.ignoreLimits = true;
     for (const link of Object.values(this.robot.links)) {
       const axes = new THREE.AxesHelper(.045);
@@ -102,6 +107,8 @@ export class RobotViewer {
       const key = `${marker.ns}/${marker.id}`;
       if (!this.sceneObjects.has(key)) {
         const object = this.createMarker(marker);
+        object.userData.ns = marker.ns;
+        object.visible = !OBJECT_MESHES.has(marker.ns) || this.showObjects !== false;
         this.sceneObjects.set(key, object);
         this.scene.add(object);
       }
@@ -124,6 +131,13 @@ export class RobotViewer {
     }
     points.geometry.dispose();
     points.geometry = new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  }
+
+  /** Vehicle / coupon meshes of the scene on or off, to see the measured cloud on its own. */
+  setObjectsVisible(visible) {
+    this.showObjects = visible;
+    for (const object of this.sceneObjects?.values() || [])
+      if (OBJECT_MESHES.has(object.userData.ns)) object.visible = visible;
   }
 
   setCloudVisible(name, visible) {

@@ -35,3 +35,14 @@ class ScanTransfers:
         self.probe.move(out, self.down, m['approach_speed'], acc=m['approach_acc'])
         self.probe.move([*out[:2], max(self.program.safe_z(), out[2])], self.down,
                         m['approach_speed'], acc=m['approach_acc'])
+
+    def resume(self, trajectory, elapsed, lift):
+        """After an interrupted stroke: lift mm off along the tool axis, then back down onto the stroke pose at
+        `elapsed` (trajectory time, s), where detection starts again."""
+        pose, _ = self.probe.read()
+        rotation = rotation_zyz(pose[3:])
+        speed, acc = self.scan['mesh_normal']['approach_speed_mm_s'], self.motion['approach_acc']
+        self.probe.move(pose[:3] - lift * rotation[:, 2], rotation, speed, acc=acc)
+        target, rotation, _ = trajectory.sample(elapsed)
+        self.probe.move(target - lift * rotation[:, 2], rotation, speed, acc=acc)
+        self.probe.move(target, rotation, speed, acc=acc)

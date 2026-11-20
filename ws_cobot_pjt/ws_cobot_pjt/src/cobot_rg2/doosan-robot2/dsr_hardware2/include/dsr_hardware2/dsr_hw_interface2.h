@@ -26,6 +26,7 @@
 #include <array>
 #include <algorithm>  // std::copy
 #include <chrono>
+#include <memory>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -44,6 +45,9 @@ using CallbackReturn = rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface
 
 namespace dsr_hardware2{
 
+class ForceTelemetryPublisher;
+class JointServo;
+
 class DRHWInterface : public hardware_interface::SystemInterface
 {
 public:
@@ -51,6 +55,7 @@ public:
     bool m_bCommand_;
     std::array<float, NUM_JOINT> m_fCmd_;
     CallbackReturn on_init(const hardware_interface::HardwareInfo & info) override;
+    CallbackReturn on_configure(const rclcpp_lifecycle::State & previous_state) override;
     std::vector<hardware_interface::StateInterface> export_state_interfaces() override;
     std::vector<hardware_interface::CommandInterface> export_command_interfaces() override;
     return_type read(const rclcpp::Time & time, const rclcpp::Duration & period) override;
@@ -90,5 +95,7 @@ private:
     int drcf_port_;
     int update_rate_;
     std::unordered_set<size_t> ignored_joints_;
+    std::unique_ptr<ForceTelemetryPublisher> force_telemetry_;
+    std::unique_ptr<JointServo> joint_servo_;
 };
 }

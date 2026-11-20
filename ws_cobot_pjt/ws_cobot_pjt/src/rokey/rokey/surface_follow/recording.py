@@ -10,7 +10,7 @@ from rclpy.qos import DurabilityPolicy, QoSProfile
 from sensor_msgs.msg import PointCloud2, PointField
 from std_msgs.msg import Header, String
 
-from ..configs import PACKAGE
+from ..configs import output_dir
 from .pointcloud_file import PointCloudFile
 from .samples import PointSpacing, measurement
 
@@ -55,14 +55,14 @@ class Recording:
                                    for index, axis in enumerate('xyz')])
 
     def save(self, outcome, reason, stop_confirmed, native_state=None):
-        directory = PACKAGE / 'surface_runs' / self.name
+        directory = output_dir('surface_runs') / self.name
         directory.mkdir(parents=True, exist_ok=True)
         if self.rows:
             with (directory / 'signals.csv').open('w', newline='') as file:
                 writer = csv.DictWriter(file, fieldnames=list(self.rows[0]))
                 writer.writeheader()
                 writer.writerows(self.rows)
-        clouds = PACKAGE / 'pointcloud'
+        clouds = output_dir('pointcloud')
         clouds.mkdir(exist_ok=True)
         cloud = PointCloudFile.save(clouds / f'{self.name}.{self.s.pointcloud_format}', self.points)
         summary = dict(outcome=outcome, reason=reason, stop_motion_confirmed=stop_confirmed,

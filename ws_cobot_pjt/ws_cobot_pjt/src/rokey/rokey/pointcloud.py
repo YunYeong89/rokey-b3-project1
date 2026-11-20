@@ -19,9 +19,11 @@ from std_msgs.msg import Header, String
 
 if __package__:
     from .configs import load, read_session
+    from .robot_namespace import robot_topic
     from .vehicle_model import VehicleModel, pose_matrix, transform
 else:
     from configs import load, read_session
+    from robot_namespace import robot_topic
     from vehicle_model import VehicleModel, pose_matrix, transform
 
 PARTS = {'body': (150, 155, 165), 'bonnet': (90, 140, 200), 'mirror_l': (60, 170, 170), 'mirror_r': (60, 170, 170),
@@ -76,10 +78,10 @@ class PointCloudNode:
         self.node = rclpy.create_node('repair_pointcloud')
         self.spacing, self.vehicle, self.dirty = spacing, None, False
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
-        self.reference = self.node.create_publisher(PointCloud2, '/repair/pointcloud', latched)
-        self.scan = self.node.create_publisher(PointCloud2, '/repair/scan_points', latched)
-        self.node.create_subscription(String, '/repair/vehicle', self.on_vehicle, latched)
-        self.node.create_subscription(String, '/repair/status', self.on_status, 100)
+        self.reference = self.node.create_publisher(PointCloud2, robot_topic(self.node, '/repair/pointcloud'), latched)
+        self.scan = self.node.create_publisher(PointCloud2, robot_topic(self.node, '/repair/scan_points'), latched)
+        self.node.create_subscription(String, robot_topic(self.node, '/repair/vehicle'), self.on_vehicle, latched)
+        self.node.create_subscription(String, robot_topic(self.node, '/repair/status'), self.on_status, 100)
         self.node.create_timer(0.5, self.publish)
         saved = read_session('vehicle.json')
         if saved:

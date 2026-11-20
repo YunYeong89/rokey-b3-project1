@@ -231,9 +231,9 @@
   </joint>
   <link name="rg2_base_link">
     <inertial>
-      <origin rpy="0 0 0" xyz="-0.0301801001747173 0.005260100106872713 -0.016016929679836495" />
-      <mass value="0.895999979" />
-      <inertia ixx="0.00127999997" ixy="1.27999997e-06" ixz="1.27999997e-06" iyy="0.00127999997" iyz="1.27999997e-06" izz="0.00127999997" />
+      <origin rpy="0 0 0" xyz="0.0 0.0 0.0" />
+      <mass value="0.7" />
+      <inertia ixx="1.0E-03" ixy="1.0E-06" ixz="1.0E-06" iyy="1.0E-03" iyz="1.0E-06" izz="1.0E-03" />
     </inertial>
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0" />
@@ -258,9 +258,9 @@
   </joint>
   <link name="rg2_left_outer_knuckle">
     <inertial>
-      <origin rpy="0 0 0" xyz="-0.0301801001747173 0.005260100106872713 -0.016016929679836495" />
-      <mass value="0.0639999985" />
-      <inertia ixx="0.00127999997" ixy="1.27999997e-06" ixz="1.27999997e-06" iyy="0.00127999997" iyz="1.27999997e-06" izz="0.00127999997" />
+      <origin rpy="0 0 0" xyz="0.0 0.0 0.0" />
+      <mass value="0.05" />
+      <inertia ixx="1.0E-03" ixy="1.0E-06" ixz="1.0E-06" iyy="1.0E-03" iyz="1.0E-06" izz="1.0E-03" />
     </inertial>
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0" />
@@ -281,9 +281,9 @@
   </link>
   <link name="rg2_left_inner_knuckle">
     <inertial>
-      <origin rpy="0 0 0" xyz="-0.0301801001747173 0.005260100106872713 -0.016016929679836495" />
-      <mass value="0.0639999985" />
-      <inertia ixx="0.00127999997" ixy="1.27999997e-06" ixz="1.27999997e-06" iyy="0.00127999997" iyz="1.27999997e-06" izz="0.00127999997" />
+      <origin rpy="0 0 0" xyz="0.0 0.0 0.0" />
+      <mass value="0.05" />
+      <inertia ixx="1.0E-03" ixy="1.0E-06" ixz="1.0E-06" iyy="1.0E-03" iyz="1.0E-06" izz="1.0E-03" />
     </inertial>
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0" />
@@ -304,9 +304,9 @@
   </link>
   <link name="rg2_left_inner_finger">
     <inertial>
-      <origin rpy="0 0 0" xyz="-0.0301801001747173 0.005260100106872713 -0.016016929679836495" />
-      <mass value="0.0639999985" />
-      <inertia ixx="0.00127999997" ixy="1.27999997e-06" ixz="1.27999997e-06" iyy="0.00127999997" iyz="1.27999997e-06" izz="0.00127999997" />
+      <origin rpy="0 0 0" xyz="0.0 0.0 0.0" />
+      <mass value="0.05" />
+      <inertia ixx="1.0E-03" ixy="1.0E-06" ixz="1.0E-06" iyy="1.0E-03" iyz="1.0E-06" izz="1.0E-03" />
     </inertial>
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0" />
@@ -327,9 +327,9 @@
   </link>
   <link name="rg2_right_outer_knuckle">
     <inertial>
-      <origin rpy="0 0 0" xyz="0.0301801001747173 -0.00526010010687271 -0.016016929679836495" />
-      <mass value="0.0639999985" />
-      <inertia ixx="0.00127999997" ixy="1.27999997e-06" ixz="1.27999997e-06" iyy="0.00127999997" iyz="1.27999997e-06" izz="0.00127999997" />
+      <origin rpy="0 0 0" xyz="0.0 0.0 0.0" />
+      <mass value="0.05" />
+      <inertia ixx="1.0E-03" ixy="1.0E-06" ixz="1.0E-06" iyy="1.0E-03" iyz="1.0E-06" izz="1.0E-03" />
     </inertial>
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0" />
@@ -350,9 +350,9 @@
   </link>
   <link name="rg2_right_inner_knuckle">
     <inertial>
-      <origin rpy="0 0 0" xyz="0.0301801001747173 -0.0052601001068727175 -0.016016929679836495" />
-      <mass value="0.0639999985" />
-      <inertia ixx="0.00127999997" ixy="1.27999997e-06" ixz="1.27999997e-06" iyy="0.00127999997" iyz="1.27999997e-06" izz="0.00127999997" />
+      <origin rpy="0 0 0" xyz="0.0 0.0 0.0" />
+      <mass value="0.05" />
+      <inertia ixx="1.0E-03" ixy="1.0E-06" ixz="1.0E-06" iyy="1.0E-03" iyz="1.0E-06" izz="1.0E-03" />
     </inertial>
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0" />
@@ -373,9 +373,9 @@
   </link>
   <link name="rg2_right_inner_finger">
     <inertial>
-      <origin rpy="0 0 0" xyz="0.0301801001747173 -0.00526010010687271 -0.016016929679836495" />
-      <mass value="0.0639999985" />
-      <inertia ixx="0.00127999997" ixy="1.27999997e-06" ixz="1.27999997e-06" iyy="0.00127999997" iyz="1.27999997e-06" izz="0.00127999997" />
+      <origin rpy="0 0 0" xyz="0.0 0.0 0.0" />
+      <mass value="0.05" />
+      <inertia ixx="1.0E-03" ixy="1.0E-06" ixz="1.0E-06" iyy="1.0E-03" iyz="1.0E-06" izz="1.0E-03" />
     </inertial>
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0" />
@@ -440,17 +440,5 @@
     <axis xyz="1 0 0" />
     <limit effort="1000" lower="-0.872665" upper="0.872665" velocity="100.0" />
     <mimic joint="rg2_finger_joint" multiplier="1" offset="0" />
-  </joint>
-  <link name="calibrated_tcp" />
-  <joint name="calibrated_tcp_joint" type="fixed">
-    <parent link="link_6" />
-    <child link="calibrated_tcp" />
-    <origin xyz="0.0 0.0 0.24" rpy="0.0 -0.0 0.0" />
-  </joint>
-  <link name="probe_tip" />
-  <joint name="probe_tip_joint" type="fixed">
-    <parent link="link_6" />
-    <child link="probe_tip" />
-    <origin xyz="0 0 0.2927333815596635" rpy="0 0 0" />
   </joint>
 </robot>

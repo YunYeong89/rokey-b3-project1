@@ -223,3 +223,39 @@ hr.sep { border: 0; border-top: 1px solid var(--line); margin: 16px 0 14px; }
 .switch input:focus-visible + span { outline: 2px solid var(--brand); outline-offset: 2px; }
 .switch input:disabled + span { opacity: .5; }
 #partPickList { display: grid; grid-template-columns: 1fr 1fr; column-gap: 8px; }
+
+/* ---- 고객 화면: 큰 화면(961px 이상)은 스크롤 없이 한 화면 (body.my-page 만) ---- */
+@media (min-width: 961px) {
+  body.my-page { height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+  body.my-page > .top { flex: none; }
+  body.my-page > main { flex: 1; min-height: 0; padding-bottom: 16px; }
+  body.my-page .panel.active { height: 100%; }
+  body.my-page #tab-history { overflow-y: auto; }          /* 이력 탭: 탭 안에서 스크롤 */
+  body.my-page .grid-my { height: 100%;
+    grid-template-columns: minmax(0, 1fr) 340px;
+    grid-template-rows: minmax(0, max-content) minmax(140px, 1fr);
+    grid-template-areas: "view side" "view log"; }
+  body.my-page .grid-my > .card { min-height: 0; }
+  body.my-page .status-card-my { grid-area: side; overflow-y: auto; }   /* 내용 많으면 카드 안 스크롤 */
+  body.my-page .viewer-card { display: flex; flex-direction: column; }
+  body.my-page .viewer-card .viewer { flex: 1; height: auto; min-height: 0; }
+  body.my-page .logcard-my { display: flex; flex-direction: column; }
+  body.my-page .logcard-my .log { flex: 1; min-height: 0; max-height: none; }
+  /* 오른쪽 칸 살짝 촘촘하게 (768px 높이에서도 단계·결과·부품이 다 보이게) */
+  body.my-page > main { padding-top: 12px; padding-bottom: 12px; }
+  body.my-page .grid-my { gap: 12px; }
+  body.my-page .status-card-my, body.my-page .logcard-my { padding: 14px 16px; }
+  body.my-page .status-card-my h3 { margin: 12px 0 8px; }
+  body.my-page .status-card-my .steps li { padding-top: 5px; padding-bottom: 5px; }
+  body.my-page .status-card-my .steps li::before { top: 4px; }
+  body.my-page .status-card-my .result { margin-top: 10px; }
+  body.my-page .logcard-my h2 { margin-bottom: 8px; }
+}
+
+/* ---- 고객 화면: 폰 · 작은 태블릿 (960px 이하) ---- */
+@media (max-width: 960px) {
+  /* 3D 캔버스가 예전 폭을 붙잡아 페이지가 화면보다 넓어지던 것 막기 (회전 · 첫 로드) */
+  body.my-page .grid-my { grid-template-columns: minmax(0, 1fr); }
+  body.my-page .grid-my > .card { min-width: 0; }
+  body.my-page { overflow-x: hidden; }
+}

@@ -17,3 +17,11 @@ float64 joint_age_s
 float64 sensor_age_s
 float64 tracking_error_m
 uint64 dropped_setpoints
+bool pd_enabled
+# Pose errors and P/D/offset contributions: [metres x/y/z, radians x/y/z], BASE frame.
+float64[6] pd_error
+float64[6] pd_p
+float64[6] pd_d
+float64[6] pd_offset
+geometry_msgs/Twist pd_velocity_error
+bool pd_saturated

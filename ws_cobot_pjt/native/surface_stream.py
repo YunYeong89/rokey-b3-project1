@@ -11,9 +11,7 @@ from kinematics import KinematicChain, rotation, rotation_error
 from normal_force import NormalForceServo
 
 
-class StaleSetpoint(ValueError):
-    """A late or out-of-order setpoint: dropped, the stream keeps running. Halting on one such packet aborted whole
-    scans after a single delivery hiccup; the watchdog still halts when no valid setpoint arrives for `timeout`."""
+from position_stream import PositionController, StaleSetpoint
 
 
 def bounded(vector, maximum):
@@ -56,8 +54,11 @@ class CartesianStream:
                           rotation=probe_pose[:3, :3].tolist(), velocity=(probe_jacobian @ qd).tolist(),
                           wrench=self.filtered_wrench.tolist(), fast_wrench=self.fast_wrench.tolist())
 
-    def begin(self, method):
+    def begin(self, method, pd=None):
         b = self.backend
+        if method == 'position':
+            from pose_pd import PDSettings
+            pd = PDSettings.parse(pd)
         self.timeout = .3 if method == 'position' else type(self).timeout
         if method not in ('hybrid', 'position'):
             raise ValueError('Unknown Cartesian stream method')
@@ -97,8 +98,8 @@ class CartesianStream:
         self.nominal = {name: b.nominal[name] for name in b.chain.names}
         self.position_controller = None
         if method == 'position':
-            from position_stream import PositionController
-            self.position_controller = PositionController(self)
+            self.position_controller = PositionController(self, pd)
+            self.control['pd_enabled'] = bool(pd.enabled)
         b.mode, b.error = 'surface_' + method, ''
         return {'success': True, 'run_id': self.run_id, 'simulation_only': True}
 

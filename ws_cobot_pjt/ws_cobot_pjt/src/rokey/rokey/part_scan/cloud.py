@@ -24,6 +24,18 @@ class PartCloud:
                                     comments=[f'real vehicle {part} reference, spacing {spacing} mm'])
         self.part, self.path, self.points = part, path, points @ pose[:3, :3].T + pose[:3, 3]
 
+    @staticmethod
+    def neighbours(directory, part, pose, bounds, margin):
+        """Existing neighbouring part clouds, cropped near the selected part; no mesh construction."""
+        pieces = []
+        for path in directory.glob('real_*_reference.ply'):
+            if path.stem == f'real_{part}_reference':
+                continue
+            points = PointCloudFile.load_ply(path) * 1000 @ pose[:3, :3].T + pose[:3, 3]
+            keep = np.all((points >= bounds[0] - margin) & (points <= bounds[1] + margin), axis=1)
+            pieces.append(points[keep])
+        return np.concatenate(pieces) if pieces else np.empty((0, 3))
+
 
 def max_filter(values, radius, outside=-np.inf):
     """Maximum over the (2 radius + 1)^2 neighbourhood of each cell (`outside` beyond the grid), one axis at a time."""

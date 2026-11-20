@@ -16,6 +16,11 @@ force and the overshoot of Fz -> rokey/images/contact_overshoot_<time>.png and .
   ros2 run rokey contact_overshoot --approach-force -1.5 --ramp 0      # previous test: full force, no ramp
 """
 import argparse
+
+if __package__:
+    from .robot_namespace import program_args
+else:
+    from robot_namespace import program_args
 import csv
 from datetime import datetime
 import time
@@ -244,7 +249,7 @@ def main():
     parser.add_argument('--ramp', type=float, help='ramp to the final force after contact, 0..1 s (default: robot.yaml)')
     parser.add_argument('--hold', type=float, help='recording after contact, s (default: robot.yaml)')
     parser.add_argument('--start-above', type=float, help='movel target above the surface, mm (default: robot.yaml)')
-    options = parser.parse_args()
+    options = parser.parse_args(program_args())
     program = RobotProgram('contact_overshoot')
     try:
         settings, probe = program.config['contact_test'], program.config['probe']

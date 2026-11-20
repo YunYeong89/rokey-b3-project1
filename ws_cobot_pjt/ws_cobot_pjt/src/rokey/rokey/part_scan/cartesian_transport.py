@@ -2,14 +2,21 @@
 import time
 
 import numpy as np
-from rokey_interfaces.msg import CartesianSetpoint, CartesianState
+from rokey_interfaces.msg import CartesianSetpoint, CartesianState, PosePdConfig
 from rokey_interfaces.srv import CartesianSession
+
+# The native controller rejects a setpoint whose ball-centre feedforward exceeds the speed sent with it. The path timing
+# cruises at 99.9 % of the detection speed on its grid, but between grid points at tight turns the feedforward reached
+# +0.13 % (bonnet front edge), and the stream stopped there. The limit sent is a safety cap well above the cruise:
+# SPEED_LIMIT_MM_S, or the detection speed plus SPEED_LIMIT_HEADROOM when that is faster (--speed).
+SPEED_LIMIT_MM_S = 10.0
+SPEED_LIMIT_HEADROOM = 1.1
 
 
 class CartesianTransport:
     def __init__(self, program, settings, detection_speed_mm_s):
         self.program, self.robot, self.node, self.settings = program, program.robot, program.node, settings
-        self.linear_speed = detection_speed_mm_s / 1000
+        self.linear_speed = max(SPEED_LIMIT_MM_S, detection_speed_mm_s * SPEED_LIMIT_HEADROOM) / 1000
         self.message, self.received = None, 0.
         self.run_id, self.sequence = '', 0
         self.publisher = self.node.create_publisher(CartesianSetpoint, 'cartesian_stream/setpoint', 1)
@@ -34,7 +41,7 @@ class CartesianTransport:
             self.spin(.02)
             if self.message is not None and time.monotonic() - self.received < .1 and self.message.ready:
                 return self.state()
-        raise TimeoutError('Cartesian stream unavailable; build rokey_interfaces and restart the virtual session')
+        raise TimeoutError('Cartesian stream unavailable: check the selected backend, feedback and probe status')
 
     def begin(self):
         self.robot.check_cancelled()
@@ -43,7 +50,9 @@ class CartesianTransport:
         deadline = time.monotonic() + .2
         while time.monotonic() < deadline:
             self.spin(.005)
-            if self.message.run_id == self.run_id and self.message.active:
+            if self.message is not None and self.message.run_id == self.run_id and self.message.active:
+                if self.message.pd_enabled != self.settings['pd']['enabled']:
+                    raise RuntimeError('Cartesian PD activation does not match the request')
                 return
         raise TimeoutError('Cartesian stream did not report the new session')
 
@@ -60,7 +69,8 @@ class CartesianTransport:
                 return state
         raise TimeoutError('TCP did not become stationary before detection')
 
-    def send(self, position, rotation, feed):
+    def send(self, position, rotation, feed, force=0.):
+        """force: contact force target along the TCP +z axis (into the surface), N; 0: position only."""
         state = self.state()
         if state.run_id != self.run_id or not state.active:
             raise RuntimeError(state.reason or 'Cartesian stream ownership changed')
@@ -76,12 +86,15 @@ class CartesianTransport:
         c = self.settings
         message.linear_speed = self.linear_speed
         message.linear_acceleration = c['linear_acceleration_mm_s2'] / 1000
+        message.ball_radius = c.get('ball_radius_mm', 0.) / 1000
         message.angular_speed = float(np.radians(c['angular_speed_deg_s']))
-        message.angular_acceleration = float(np.radians(c['angular_acceleration_deg_s2']))
+        # The command limiter carries the PD correction on top of the planned motion: more headroom than the plan.
+        message.angular_acceleration = float(np.radians(c['pd']['command_angular_acceleration_deg_s2']))
         message.joint_speed = float(np.radians(c['joint_speed_deg_s']))
-        message.joint_acceleration = float(np.radians(c['joint_acceleration_deg_s2']))
+        message.joint_acceleration = float(np.radians(c['pd']['command_joint_acceleration_deg_s2']))
         message.position_stiffness_scale = c['position_stiffness_scale']
         message.position_feedback_limit = c['position_feedback_limit_mm'] / 1000
+        message.contact_force = float(force)
         self.publisher.publish(message)
 
     def end(self):
@@ -93,7 +106,17 @@ class CartesianTransport:
     def session(self, command, run_id):
         if not self.client.wait_for_service(timeout_sec=3.):
             raise TimeoutError('Cartesian session service unavailable')
-        future = self.client.call_async(CartesianSession.Request(command=command, run_id=run_id))
+        request = CartesianSession.Request(command=command, run_id=run_id)
+        if command == CartesianSession.Request.START:
+            c = self.settings['pd']
+            request.pd = PosePdConfig(
+                enabled=c['enabled'], position_kp=c['position_kp'], position_kd_s=c['position_kd_s'],
+                orientation_kp=c['orientation_kp'], orientation_kd_s=c['orientation_kd_s'],
+                derivative_filter_s=c['derivative_filter_s'],
+                position_feedback_speed=c['position_feedback_speed_mm_s'] / 1000,
+                angular_feedback_limit=float(np.radians(c['angular_feedback_limit_deg'])),
+                angular_feedback_speed=float(np.radians(c['angular_feedback_speed_deg_s'])))
+        future = self.client.call_async(request)
         deadline = time.monotonic() + 10.
         while not future.done() and time.monotonic() < deadline:
             self.spin(.02)

@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>내 차량 · 자동차 수리 로봇</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 <script type="importmap">
@@ -12,7 +12,7 @@
 } }
 </script>
 </head>
-<body>
+<body class="my-page">
 <header class="top">
   <div class="brand"><span class="dot"></span> 자동차 자동 수리 로봇 <span class="role-tag user">고객</span></div>
   <nav class="tabs">
@@ -50,7 +50,7 @@
         </div>
       </div>
 
-      <div class="card">
+      <div class="card status-card-my">
         <div class="status-head">
           <span id="jobBadge" class="badge">수리 기록 없음</span>
           <span id="jobMode" class="badge mode hidden"></span>

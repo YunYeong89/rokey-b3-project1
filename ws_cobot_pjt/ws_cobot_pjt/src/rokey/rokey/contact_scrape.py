@@ -12,6 +12,11 @@ the two hemisphere runs. The DSR force services only: task compliance + set_desi
   ros2 run rokey contact_scrape [--runs block hemisphere_z hemisphere_normal]
 """
 import argparse
+
+if __package__:
+    from .robot_namespace import program_args
+else:
+    from robot_namespace import program_args
 import csv
 from datetime import datetime
 import time
@@ -306,7 +311,7 @@ def main():
     parser.add_argument('--runs', nargs='+', choices=RUNS, default=RUNS, help='default: all three')
     parser.add_argument('--controller', choices=['default', 'pid'], default='default')
     parser.add_argument('--speed', type=float, help='Stroke speed [mm/s]')
-    options = parser.parse_args()
+    options = parser.parse_args(program_args())
     program = RobotProgram('contact_scrape')
     try:
         probe = program.config['probe']

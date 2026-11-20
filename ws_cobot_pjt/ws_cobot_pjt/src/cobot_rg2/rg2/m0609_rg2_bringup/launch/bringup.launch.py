@@ -24,6 +24,7 @@ def generate_launch_description():
     # (virtual) ros2 launch m0609_rg2_bringup bringup.launch.py
     # (real)    ros2 launch m0609_rg2_bringup bringup.launch.py mode:=real host:=192.168.1.100
     args = [
+        DeclareLaunchArgument("robot_ns", default_value="dsr01"),
         DeclareLaunchArgument("mode", default_value="virtual",   description="Operation mode: real | virtual"),
         DeclareLaunchArgument("host", default_value="127.0.0.1", description="Robot IP (real mode)"),
         DeclareLaunchArgument("rt_host", default_value=LaunchConfiguration("host"), description="Robot RT interface IP"),
@@ -36,6 +37,8 @@ def generate_launch_description():
         ]), description="Real TCP/tool calibration applied only in virtual mode"),
     ]
 
+    namespace = LaunchConfiguration("robot_ns")
+    root = ["/", namespace]
     is_real    = PythonExpression(["'", LaunchConfiguration("mode"), "' == 'real'"])
     is_virtual = PythonExpression(["'", LaunchConfiguration("mode"), "' == 'virtual'"])
     virtual_force = PythonExpression([
@@ -43,8 +46,8 @@ def generate_launch_description():
         LaunchConfiguration("virtual_force"), "' == 'true'",
     ])
     nominal_topic = PythonExpression([
-        "'/dsr01/nominal_joint_states' if (", virtual_force,
-        ") else '/dsr01/arm_joint_states'",
+        "'/", namespace, "/nominal_joint_states' if (", virtual_force,
+        ") else '/", namespace, "/arm_joint_states'",
     ])
     is_managed_virtual = PythonExpression([
         "'", LaunchConfiguration("mode"), "' == 'virtual' and '",
@@ -57,9 +60,9 @@ def generate_launch_description():
     run_emulator_node = Node(
         package    = "dsr_bringup2",
         executable = "run_emulator",
-        namespace  = "dsr01",
+        namespace=namespace,
         parameters = [
-            {"name": "dsr01"},
+            {"name": namespace},
             {"host": LaunchConfiguration("host")},
             {"port": LaunchConfiguration("port")},
             {"mode": LaunchConfiguration("mode")},
@@ -101,7 +104,7 @@ def generate_launch_description():
 
     doosan_robot_description = Command([
         FindExecutable(name='xacro'), ' ', xacro_file,
-        ' name:=dsr01',
+        ' name:=', namespace,
         ' host:=', LaunchConfiguration('host'),
         ' rt_host:=', LaunchConfiguration('rt_host'),
         ' port:=', LaunchConfiguration('port'),
@@ -116,7 +119,7 @@ def generate_launch_description():
     control_node = Node(
         package    = "controller_manager",
         executable = "ros2_control_node",
-        namespace  = "dsr01",
+        namespace=namespace,
         additional_env={"LD_PRELOAD": os.environ["COBOT_NETWORK_SHIM"]}
                        if os.environ.get("COBOT_NETWORK_SHIM") else {},
         parameters = [
@@ -135,8 +138,8 @@ def generate_launch_description():
         'release_force', 'release_compliance_ctrl', 'check_force_condition',
     ]] + ['aux_control/get_tool_force', 'aux_control/get_current_posx']
     control_group = GroupAction([
-        *[SetRemap(src=f'/dsr01/dsr_controller2/{service}',
-                   dst=f'/dsr01/dsr_controller2/vendor/{service}',
+        *[SetRemap(src=[*root, f'/dsr_controller2/{service}'],
+                   dst=[*root, f'/dsr_controller2/vendor/{service}'],
                    condition=IfCondition(virtual_force)) for service in force_services],
         control_node,
     ])
@@ -145,17 +148,17 @@ def generate_launch_description():
     joint_state_broadcaster_spawner = Node(
         package    = "controller_manager",
         executable = "spawner",
-        namespace  = "dsr01",
+        namespace=namespace,
         arguments  = ["joint_state_broadcaster", "-c", "controller_manager",
                       "--controller-ros-args=--remap",
-                      ["--controller-ros-args=/dsr01/joint_states:=", nominal_topic]],
+                      ["--controller-ros-args=/", namespace, "/joint_states:=", nominal_topic]],
     )
 
     # ── dsr_controller2 (motion service 등록) ─────────────────────────
     robot_controller_spawner = Node(
         package    = "controller_manager",
         executable = "spawner",
-        namespace  = "dsr01",
+        namespace=namespace,
         arguments  = ["dsr_controller2", "-c", "controller_manager"],
     )
     delay_controller = RegisterEventHandler(
@@ -167,7 +170,7 @@ def generate_launch_description():
 
     virtual_profile_loader = Node(
         package="m0609_rg2_bringup", executable="virtual_profile_loader.py",
-        namespace="dsr01", condition=IfCondition(is_virtual), output="screen",
+        namespace=namespace, condition=IfCondition(is_virtual), output="screen",
         parameters=[{"profile_file": LaunchConfiguration("virtual_profile_file")}],
     )
     load_virtual_profiles = RegisterEventHandler(OnProcessExit(
@@ -185,10 +188,18 @@ def generate_launch_description():
         ["'", LaunchConfiguration("mode"), "' == 'virtual'"]
     )
 
+    is_fleet = PythonExpression(["'", namespace, "' != 'dsr01'"])
+    def gripper_group(node):
+        return GroupAction([
+            *(SetRemap(src=topic, dst=[*root, topic], condition=IfCondition(is_fleet))
+              for topic in ('/onrobot/sendCommand', '/onrobot/restartPower', '/onrobot/pose')),
+            node,
+        ])
+
     gripper_virtual_node = Node(
         package    = "m0609_rg2_bringup",
         executable = "gripper_virtual_node.py",
-        namespace  = "dsr01",                           ## 추가
+        namespace=namespace,
         name       = "gripper_virtual_node",
         condition  = IfCondition(is_virtual_gripper),
         output     = "screen",
@@ -199,7 +210,7 @@ def generate_launch_description():
     onrobot_driver = Node(
         package    = "onrobot_rg_control",
         executable = "OnRobotRGControllerServer",
-        namespace  = "dsr01",                       ## 추가
+        namespace=namespace,
         name       = "OnRobotRGControllerServer",
         output     = "screen",
         parameters = [
@@ -221,7 +232,7 @@ def generate_launch_description():
     gripper_joint_state_publisher = Node(
         package    = "m0609_rg2_bringup",
         executable = "gripper_joint_state_publisher.py",
-        namespace  = "dsr01",                              ## 추가
+        namespace=namespace,
         name       = "gripper_joint_state_publisher",
         condition  = IfCondition(is_real),
         output     = "screen",
@@ -233,7 +244,7 @@ def generate_launch_description():
     joint_state_publisher_node = Node(
         package    = "joint_state_publisher",
         executable = "joint_state_publisher",
-        namespace  = "dsr01",                                                       ## 추가
+        namespace=namespace,
         name       = "joint_state_publisher",
         parameters = [{"source_list": ["arm_joint_states", "gripper_joint_states"],
                        "rate": 60.0}],
@@ -241,7 +252,7 @@ def generate_launch_description():
     )
     virtual_joint_state_publisher = Node(
         package="joint_state_publisher", executable="joint_state_publisher",
-        namespace="dsr01", name="joint_state_publisher",
+        namespace=namespace, name="joint_state_publisher",
         parameters=[{"source_list": ["virtual_control/joint_states", "gripper_joint_states"],
                      "rate": 60.0}],
         condition=IfCondition(virtual_force),
@@ -251,7 +262,7 @@ def generate_launch_description():
     robot_state_publisher = Node(
         package    = "robot_state_publisher",
         executable = "robot_state_publisher",
-        namespace  = "dsr01",                   ## 추가
+        namespace=namespace,
         name       = "robot_state_publisher",
         output     = "both",
         parameters = [
@@ -265,7 +276,7 @@ def generate_launch_description():
     static_tf = Node(
         package    = "tf2_ros",
         executable = "static_transform_publisher",
-        namespace='dsr01',  ## 추가
+        namespace=namespace,
         name      = "static_transform_publisher",
         output    = "log",
         arguments = ["0.0", "0.0", "0.0", "0.0", "0.0", "0.0", "world", "base_link"],
@@ -275,28 +286,29 @@ def generate_launch_description():
     rviz_node = Node(
         package    = "rviz2",
         executable = "rviz2",
-        namespace  = "dsr01",                    ## 추가
+        namespace=namespace,
         name       = "rviz2",
         output     = "log",
         arguments  = ["-d", rviz_config_file],
         condition  = IfCondition(LaunchConfiguration("gui")),
     )
 
+    tf_remaps = [SetRemap(src=topic, dst=[*root, topic], condition=IfCondition(is_fleet))
+                 for topic in ('/tf', '/tf_static')]
     return LaunchDescription(args + [
             emulator_cleanup,
             start_emulator,
-            gripper_virtual_node,
+            gripper_group(gripper_virtual_node),
             control_group,
             joint_state_broadcaster_spawner,
             delay_controller,
             load_virtual_profiles,
             profile_failure,
-            onrobot_driver,
+            gripper_group(onrobot_driver),
             gripper_joint_state_publisher,
             joint_state_publisher_node,
             virtual_joint_state_publisher,
-            robot_state_publisher,
-            static_tf,
+            GroupAction([*tf_remaps, robot_state_publisher, static_tf]),
             rviz_node,
         ]
     )

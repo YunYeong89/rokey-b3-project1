@@ -64,7 +64,7 @@ NEW_COLUMNS = {"parts": [("category", "TEXT"), ("robot_ok", "INTEGER NOT NULL DE
                "findings": [("z", "REAL")]}
 
 
-def migrate(con):
+def migrate_parts(con):
     """빠진 열 추가 + 부품 목록(PARTS) 채우기. 이미 있던 부품의 재고와 작업 기록은 그대로."""
     added = False
     for table, columns in NEW_COLUMNS.items():
@@ -85,14 +85,23 @@ def init_db(seed=True):
     con.execute("PRAGMA foreign_keys = ON")
     with open(os.path.join(BASE, "schema.sql"), encoding="utf-8") as f:
         con.executescript(f.read())
+    migrate(con)
     with con:
-        migrate(con)
+        migrate_parts(con)
     if seed and con.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0:
         with con:
             insert_base(con)
             if os.environ.get("REPAIR_SAMPLE", "1") != "0":
                 insert_sample(con)
     con.close()
+
+
+def migrate(con):
+    """예전에 만든 repair.db 에 새 칸 추가 (여러 번 실행해도 안전)"""
+    cols = {r[1] for r in con.execute("PRAGMA table_info(users)")}
+    if "email" not in cols:
+        with con:
+            con.execute("ALTER TABLE users ADD COLUMN email TEXT")
 
 
 def rows(cur):

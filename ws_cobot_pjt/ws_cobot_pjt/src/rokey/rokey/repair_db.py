@@ -28,6 +28,12 @@ class RepairDB:
     def job(self, job_id):
         return self.request('GET', f'/api/jobs/{job_id}')
 
+    def vehicle(self, vehicle_id):
+        for vehicle in self.request('GET', '/api/vehicles'):
+            if vehicle['id'] == vehicle_id:
+                return vehicle
+        raise ValueError('등록된 차량을 선택하세요')
+
     def requested_parts(self, job_id):
         return self.job(job_id)['requested']
 

@@ -13,6 +13,11 @@ Run after `pick_probe` (and `calibration`); the result goes to
   ros2 run rokey choose_car --simulate 50
 """
 import argparse
+
+if __package__:
+    from .robot_namespace import program_args
+else:
+    from robot_namespace import program_args
 import json
 import time
 
@@ -294,7 +299,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--simulate', type=int, metavar='TRIALS', help='offline trials without the robot')
     parser.add_argument('--sigma', type=float, default=0.2, help='simulated height noise, mm (default: 0.2)')
-    options = parser.parse_args()
+    options = parser.parse_args(program_args())
     simulate(options.simulate, options.sigma) if options.simulate else run()
 
 

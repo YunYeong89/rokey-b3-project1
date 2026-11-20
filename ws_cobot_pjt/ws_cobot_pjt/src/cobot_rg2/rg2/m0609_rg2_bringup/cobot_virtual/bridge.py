@@ -12,6 +12,7 @@ from rclpy.executors import MultiThreadedExecutor, ExternalShutdownException
 from rclpy.experimental import EventsExecutor
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, qos_profile_sensor_data
+from rclpy.utilities import remove_ros_args
 from dsr_msgs2.srv import (TaskComplianceCtrl, SetStiffnessx, SetDesiredForce,
                           ReleaseForce, ReleaseComplianceCtrl, GetToolForce,
                           CheckForceCondition, GetCurrentPosx, MoveJoint)
@@ -121,7 +122,7 @@ class VirtualForceBridge(Node):
         # the MultiThreadedExecutor rebuilt the wait set of all ~30 entities in Python for every message, one core
         # (531 s of CPU in 11 min) holding the GIL from the surface state / setpoint threads (state gaps up to
         # 197 ms, watchdog / stale aborts). Services stay here, where they block on native responses.
-        self.stream_node = rclpy.create_node('virtual_force_stream', namespace='dsr01',
+        self.stream_node = rclpy.create_node('virtual_force_stream', namespace=self.get_namespace(),
                                              start_parameter_services=False)
         self.subscribers = [self.stream_node.create_subscription(JointState, topic, self.receive_joints,
                                                                  qos_profile_sensor_data)
@@ -324,7 +325,7 @@ class VirtualForceBridge(Node):
         return response
 
     def get_posx(self, request, response):
-        # The emulator reports the commanded TCP; add Gazebo's compliance/contact deviation.
+        # Keep the vendor solution-space field; BASE pose comes directly from the physical TCP model.
         future = self.posx_client.call_async(GetCurrentPosx.Request(ref=request.ref))
         done = threading.Event()
         future.add_done_callback(lambda _: done.set())
@@ -332,7 +333,10 @@ class VirtualForceBridge(Node):
         response.success = bool(result and result.success)
         if response.success:
             data = list(result.task_pos_info[0].data)
-            data[:3] = [value + delta for value, delta in zip(data[:3], self.state.get('tcp_offset_mm', [0.0] * 3))]
+            if request.ref == 0:
+                data[:6] = self.state['tcp_pose_base_mm_deg']
+            else:
+                data[:3] = [value + delta for value, delta in zip(data[:3], self.state.get('tcp_offset_mm', [0.0] * 3))]
             result.task_pos_info[0].data = data
             response.task_pos_info = result.task_pos_info
         return response
@@ -354,7 +358,7 @@ def main(bridge=VirtualForceBridge):
     parser.add_argument('host')
     parser.add_argument('port', type=int)
     parser.add_argument('token')
-    args = parser.parse_args()
+    args = parser.parse_args(remove_ros_args()[1:])
     rclpy.init()
     stream = socket.create_connection((args.host, args.port), timeout=5)
     stream.settimeout(2)

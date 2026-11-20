@@ -9,6 +9,11 @@ The result goes to /workspace/session/calibration_result.json; choose_car and sc
 """
 import argparse
 
+if __package__:
+    from .robot_namespace import program_args
+else:
+    from robot_namespace import program_args
+
 import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
 
@@ -142,7 +147,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--skip-force', action='store_true', help='keep the existing force model (steps 2-3 only)')
     parser.add_argument('--touches', type=int, help='reference touches (default: robot.yaml)')
-    options = parser.parse_args()
+    options = parser.parse_args(program_args())
     run = CalibrationRun('calibration')
     try:
         calibrate(run, options.touches, options.skip_force)

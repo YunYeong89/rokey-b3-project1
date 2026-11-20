@@ -7,21 +7,25 @@ from .kinematics import RobotChain
 from ..rotations import align
 
 
-def scene_points(vehicle, pose, spacing, rack):
-    """Obstacle points: the whole vehicle at `pose` and the probe rack plate (28 x 60 mm, 13-16 mm below the docked
-    tip pose `rack`: x, y, z, yaw)."""
+def scene_points(vehicle, pose, spacing, rack, box):
+    """Obstacle points: the whole vehicle at `pose` and the surface of the probe rack box `box` ([low, high] mm in the
+    rack frame: the real holder's extents about its base-plate centre, the simulated rack's plate below the docked tip)
+    at `rack` (x, y, z, yaw), every `spacing`."""
     points, _ = vehicle.sample(spacing)
-    x, y, z = np.meshgrid(np.arange(-14, 15, spacing), np.arange(-30, 31, spacing), (-16, -13))
+    low, high = np.asarray(box, float)
+    grid = np.stack(np.meshgrid(*[np.unique(np.r_[np.arange(a, b, spacing), b]) for a, b in zip(low, high)],
+                                indexing='ij'), -1).reshape(-1, 3)
+    surface = grid[np.any(np.isclose(grid, low) | np.isclose(grid, high), axis=1)]
     c, s = np.cos(np.radians(rack[3])), np.sin(np.radians(rack[3]))
-    plate = np.c_[x.ravel() * c - y.ravel() * s + rack[0], x.ravel() * s + y.ravel() * c + rack[1], z.ravel() + rack[2]]
-    return np.concatenate([points @ pose[:3, :3].T + pose[:3, 3], plate])
+    turn = np.array([[c, -s, 0.], [s, c, 0.], [0., 0., 1.]])
+    return np.concatenate([points @ pose[:3, :3].T + pose[:3, 3], surface @ turn.T + np.asarray(rack[:3], float)])
 
 
 def robot_chain(robot, tcp_profile, settings):
     """RobotChain of the running robot_state_publisher's URDF and the session's ProbeTCP; spun on the
     RobotServices executor that owns the program node."""
     node = robot.node
-    client = node.create_client(GetParameters, '/dsr01/robot_state_publisher/get_parameters')
+    client = node.create_client(GetParameters, 'robot_state_publisher/get_parameters')
     try:
         if not client.wait_for_service(timeout_sec=5.):
             raise TimeoutError('robot_state_publisher parameter service unavailable')
@@ -74,8 +78,11 @@ class Reach:
         self.frame = chain.forward(home)[0][:3, :3]
         self.failures = dict(tool_collision=0, ik=0, arm_collision=0)
 
-    def reachable(self, tip, normal):
-        q = self.chain.solve(tip / 1000, align(self.frame, normal, np.pi), self.home)
+    def within_outer_reach(self, tips, axis, margin_mm):
+        return self.chain.within_outer_reach(tips / 1000, align(self.frame, axis, np.pi), margin_mm / 1000)
+
+    def reachable(self, tip, normal, *, transfer=False):
+        q = self.chain.solve(tip / 1000, align(self.frame, normal, np.pi), self.home, transfer=transfer)
         if q is None:
             return False
         joints = self.chain.forward(q)[2] * 1000

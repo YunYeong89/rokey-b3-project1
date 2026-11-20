@@ -11,10 +11,11 @@ import time
 
 import numpy as np
 
-from .configs import PACKAGE
+from .configs import output_dir
+from .robot_namespace import program_args
 from .rotations import align, angles_zyz, axis_angle, unit
 
-RESULTS = PACKAGE / 'images'
+RESULTS = output_dir('images')
 REFERENCE = RESULTS / 'pid_force_reference.json'
 STIFFNESS = [3000., 3000., 100., 200., 200., 200.]
 
@@ -222,9 +223,13 @@ class PIDScan:
                           c.get('tip_tracking_error_mm', 0.),
                           c.get('feed_speed_mm_s', float(np.linalg.norm(feed) * 1000)),
                           *c.get('desired_euler_deg', angles)])
+        point = state.position - self.program.config['probe']['tip_radius_mm'] / 1000 * (state.rotation[:, 2] + normal)
         if phase == 'stroke' and fn > .3:
-            point = state.position - self.program.config['probe']['tip_radius_mm'] / 1000 * (state.rotation[:, 2] + normal)
             self.points.append([*point, fn])
+        if self.program.topics:
+            self.program.topics.sample(state.sampled_at, phase, normal, state.position * 1000, state.rotation,
+                                       state.fast_wrench, fn, phase == 'stroke' and fn > .3, point * 1000,
+                                       len(self.points), state.sequence)
 
     def send(self, point, rotation, force=1.5):
         state = self.transport.state()
@@ -454,7 +459,7 @@ def main():
     from .program import RobotProgram
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--baseline', action='store_true')
-    options = parser.parse_args()
+    options = parser.parse_args(program_args())
     program = RobotProgram('pid_surface')
     try:
         program.home()

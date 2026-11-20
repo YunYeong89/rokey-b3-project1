@@ -11,6 +11,7 @@ set(HW_IF_INCLUDE_DEPENDS
   rcpputils
   hardware_interface
   dsr_msgs2
+  rokey_interfaces
   moveit_msgs
   sensor_msgs
   controller_manager

@@ -38,6 +38,43 @@
 
 <main>
   <section id="tab-robot" class="panel">
+    <section class="card inspection-card" data-inspection>
+      <div class="cardhead"><h2>부품 탐색</h2><span class="note" data-inspection-probe></span></div>
+      <div class="inspection-fields">
+        <label>로봇<select data-inspection-robot><option value="dsr01">DSR01</option></select></label>
+        <label>보고서 차량<select data-inspection-vehicle required><option value="">차량 선택</option></select></label>
+        <label>부품<select data-inspection-part>
+          <option value="bonnet">보닛</option><option value="left_door">왼쪽 도어</option>
+          <option value="right_door">오른쪽 도어</option>
+        </select></label>
+      </div>
+      <div class="inspection-layout">
+        <div class="inspection-selection">
+          <p class="note" data-inspection-draw-note>CAD 위에서 검사할 부분을 그리세요.</p>
+          <canvas data-inspection-draw aria-label="부품 CAD와 부분 탐색 영역"></canvas>
+          <ol class="inspection-regions" data-inspection-regions aria-label="선택한 영역"></ol>
+          <div class="robot-task-buttons">
+            <button type="button" class="btn primary small" data-inspection-full disabled>전체 탐색</button>
+            <button type="button" class="btn ghost-dark small" data-inspection-partial disabled>부분 탐색</button>
+            <label class="robot-check"><input type="checkbox" data-inspection-plan-only>계획만 확인</label>
+          </div>
+        </div>
+        <div class="inspection-order">
+          <h3>부품별 탐색 트리</h3>
+          <ol data-inspection-order></ol>
+          <div class="robot-task-buttons">
+            <button type="button" class="btn ghost-dark small" data-inspection-save disabled>순서 저장</button>
+            <button type="button" class="btn primary small" data-inspection-run disabled>전체 명령 내보내기</button>
+          </div>
+        </div>
+      </div>
+      <div class="inspection-state">
+        <span class="note" data-inspection-status role="status">로봇 연결 대기</span>
+        <button type="button" class="btn primary small" data-inspection-continue hidden>배치 확인 후 계속</button>
+        <button type="button" class="btn danger small" data-task-stop disabled>로봇 정지</button>
+      </div>
+      <p class="form-msg err" data-inspection-error role="alert"></p>
+    </section>
     <div class="robot-layout">
       <div class="card robot-scene-card">
         <div class="cardhead"><h2>M0609 + RG2</h2><span data-robot-status class="pill off">연결 대기</span></div>
@@ -61,21 +98,15 @@
           <div data-task-fields></div>
           <div class="robot-task-buttons">
             <button class="btn primary small" data-task-start disabled>실행</button>
-            <button class="btn danger small" data-task-stop disabled>로봇 정지</button>
           </div>
           <p class="form-msg err" data-task-error role="alert"></p>
-          <p class="note">가상 세션과 실제 로봇 모두 한 기능씩 실행합니다. 로봇 정지는 웹에서 시작한 작업을 중지하고,
-            작업이 없어도 로봇 동작을 멈춥니다 (소프트웨어 정지 · 비상 시 티치 펜던트 비상정지).
-            시뮬레이션: 탐침 파지 후 측정, 실차 모델 스캔은 --car real 장면. 실제 로봇: 펜던트에서 탐침 TCP를 선택하고,
-            실차 모델 스캔은 config/real_scene.yaml 실측값이 필요합니다. "계획만 확인"은 로봇을 움직이지 않습니다.</p>
+          <p class="note">로봇 정지는 선택한 로봇의 동작과 대기 중인 검사 순서를 중지합니다.</p>
           <details><summary>실행 로그</summary><pre class="robot-task-log" data-task-log></pre></details>
         </div>
         <div class="card">
           <h3>ROS 연결</h3>
-          <label>WebSocket<input type="text" data-robot-url></label>
-          <label>JointState topic<input type="text" data-robot-topic></label>
+          <span data-ros-connection class="pill off" role="status">연결 대기</span>
           <button class="btn primary small" data-robot-connect>다시 연결</button>
-          <p class="note">수신 <b data-robot-rate>—</b> · 마지막 갱신 <b data-robot-age>—</b></p>
         </div>
         <div class="card">
           <h3>표시</h3>
@@ -83,6 +114,7 @@
           <label class="robot-check"><input type="checkbox" data-robot-display="collision">충돌 형상</label>
           <label class="robot-check"><input type="checkbox" data-robot-display="frames">링크 좌표축</label>
           <label class="robot-check"><input type="checkbox" checked data-robot-display="grid">격자 (0.1 m)</label>
+          <label class="robot-check"><input type="checkbox" checked data-robot-objects>차량 메시</label>
           <label class="robot-check"><input type="checkbox" checked data-robot-cloud="reference">기준 점군 (계획 후: 측정 가능 영역)</label>
           <label class="robot-check"><input type="checkbox" checked data-robot-cloud="measured">측정 점군 (접촉점)</label>
           <label>확인할 링크<select data-robot-frame><option>tool0</option></select></label>
@@ -97,9 +129,9 @@
           <button class="btn primary small" data-graph-toggle disabled>실시간 힘 그래프 시작</button>
           <label class="robot-check"><input type="checkbox" data-graph-compensated>보정 모델 겹쳐 보기</label>
         </div>
-        <p class="note">외력 Fx·Fy·Fz, |F|·Fn, TCP 위치, 경로별 |F| (최근 30초, 1초마다 갱신). 종료하면 전체 그래프와 CSV를 결과에 저장합니다.</p>
+        <p class="note">외력 Fx·Fy·Fz, |F|·Fn, TCP 위치, 경로별 |F| (최근 30초, 브라우저에서 연속으로 그림 · 마우스를 올리면 값 표시). 화면 확인용이며 따로 저장하지 않습니다.</p>
         <p class="form-msg err" data-graph-error role="alert"></p>
-        <img class="robot-graph-live" data-graph-live hidden alt="힘 그래프 준비 중">
+        <div class="force-chart" data-graph-chart hidden></div>
         <div class="robot-results-head">
           <h3>실행 결과</h3>
           <select data-run-select aria-label="실행 기록"></select>
@@ -230,13 +262,15 @@
     <div class="two">
       <div class="card">
         <h2>회원</h2>
-        <table class="tbl"><thead><tr><th>아이디</th><th>이름</th><th>권한</th></tr></thead><tbody id="usersBody"></tbody></table>
+        <p class="form-msg" id="emailMsg"></p>
+        <table class="tbl"><thead><tr><th>아이디</th><th>이름</th><th>권한</th><th>이메일 <small>(수리 알림)</small></th></tr></thead><tbody id="usersBody"></tbody></table>
         <h3>회원 등록</h3>
         <form id="userForm" class="form-grid">
           <input name="username" placeholder="아이디" required>
           <input name="name" placeholder="이름 (예: 홍길동)">
           <input name="password" type="password" placeholder="비밀번호 (4자 이상)" required>
           <select name="role"><option value="user">사용자 (차주)</option><option value="admin">관리자</option></select>
+          <input name="email" type="email" placeholder="이메일 (수리 시작·종료 알림, 선택)" style="grid-column: 1 / -1">
           <button class="btn primary" type="submit">등록</button>
           <p class="form-msg" id="userMsg"></p>
         </form>

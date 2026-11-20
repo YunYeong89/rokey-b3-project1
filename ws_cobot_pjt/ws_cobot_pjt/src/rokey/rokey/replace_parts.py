@@ -8,6 +8,11 @@ logged, the result is a success and the reference cloud marks the part as replac
 import argparse
 
 if __package__:
+    from .robot_namespace import program_args
+else:
+    from robot_namespace import program_args
+
+if __package__:
     from .program import RobotProgram
 else:
     from program import RobotProgram
@@ -43,7 +48,7 @@ def run(parts):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--parts', nargs='+', required=True, help='part codes, e.g. bonnet mirror_r')
-    run(parser.parse_args().parts)
+    run(parser.parse_args(program_args()).parts)
 
 
 if __name__ == '__main__':

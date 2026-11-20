@@ -10,16 +10,51 @@
   admin : 수리 실행(자동/수동), 재고, 회원·차량 관리, 전체 이력
   user  : 본인 차량의 수리 현황(3D)과 이력만 조회
   robot : ROS 노드. HTTP 헤더 X-API-Key (환경변수 REPAIR_API_KEY, 기본 'rokey-robot-key')
+
+차주 알림 메일 (수리 시작 · 종료). 차주 이메일은 관리자 화면 '회원' 탭에서 입력
+  SMTP_USER=보내는Gmail  SMTP_PASS=Gmail앱비밀번호  SITE_URL=http://<PC IP>:5000  python3 app.py
+  네이버로 보낼 때: SMTP_HOST=smtp.naver.com 추가 (네이버 메일 환경설정에서 POP3/SMTP 사용 켜기)
+  MAIL_DRY_RUN=1 이면 실제로 보내지 않고 터미널에 메일 내용만 출력
+  위 값들은 web/.env 에 KEY='값' 줄로 적어 두면 python3 app.py 만으로 읽힌다 (.env 는 git 제외).
+  터미널에서 직접 준 (빈 값이 아닌) 환경변수가 .env 보다 우선.
 """
+import json
+import logging
+import math
 import os
+import smtplib
 import sqlite3
+import threading
+from email.message import EmailMessage
+from email.utils import formataddr
 from functools import wraps
 
 from flask import Flask, abort, jsonify, redirect, render_template, request, send_file, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
-import db
-from robot_files import RobotFiles
+
+def load_env_file(path=os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")):
+    """web/.env 의 KEY=값 줄을 환경변수로. 터미널에서 값을 준 변수는 그대로 두고, 없거나 빈 값이면 .env 값 사용"""
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, val = line.removeprefix("export ").split("=", 1)
+                key, val = key.strip(), val.strip()
+                if len(val) >= 2 and val[0] == val[-1] and val[0] in "'\"":
+                    val = val[1:-1]
+                if not os.environ.get(key):
+                    os.environ[key] = val
+    except FileNotFoundError:
+        pass
+
+
+load_env_file()          # import db 보다 먼저 (db 도 REPAIR_DB 등 환경변수를 읽음)
+
+import db  # noqa: E402
+from robot_files import RobotFiles  # noqa: E402
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("REPAIR_SECRET", "change-this-secret")
@@ -31,6 +66,142 @@ app.teardown_appcontext(db.close_db)
 
 FINISH_STATUSES = {"done", "no_damage", "on_hold", "failed", "stopped"}
 MODES = {"auto", "manual"}
+INSPECTION_PARTS = ("bonnet", "left_door", "right_door")
+
+
+# ================================================================ 차주 알림 메일
+SMTP_USER = os.environ.get("SMTP_USER", "")
+SMTP_PASS = os.environ.get("SMTP_PASS", "")        # 로그에 절대 찍지 않음
+SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.gmail.com")   # 네이버: smtp.naver.com
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "465"))         # SSL
+SITE_URL = os.environ.get("SITE_URL", "").rstrip("/")
+MAIL_DRY_RUN = os.environ.get("MAIL_DRY_RUN") == "1"
+
+mail_log = logging.getLogger("repair.mail")
+mail_log.setLevel(logging.INFO)
+if not mail_log.handlers:
+    _h = logging.StreamHandler()
+    _h.setFormatter(logging.Formatter("[메일 %(asctime)s] %(message)s", "%H:%M:%S"))
+    mail_log.addHandler(_h)
+    mail_log.propagate = False
+
+FINISH_TEXT = {
+    "done": "수리가 완료되었습니다",
+    "no_damage": "점검 결과 손상이 없습니다",
+    "on_hold": "부품 재고 부족으로 수리가 보류되었습니다",
+    "failed": "수리가 중단되었습니다. 담당자가 확인 중입니다",
+    "stopped": "관리자가 수리를 중지했습니다",
+}
+
+
+def valid_email(s):
+    """간단 형식 검사: 공백 없음, @ 앞뒤에 글자, 뒤쪽에 점"""
+    local, at, domain = s.partition("@")
+    return bool(at and local and "." in domain.strip(".") and " " not in s and len(s) <= 254)
+
+
+def mask_email(s):
+    """로그용: ab***@gmail.com"""
+    local, _, domain = (s or "").partition("@")
+    return f"{local[:2]}***@{domain}" if domain else "(없음)"
+
+
+def notify_owner(con, job_id, kind):
+    """kind = 'start' 또는 끝 상태(done, stopped …). 요청 안에서 내용을 만들고 보내기는 스레드로.
+    실패해도 예외를 밖으로 던지지 않는다 (수리 진행에 영향 없게)"""
+    try:
+        msg = _build_mail(con, job_id, kind)
+    except Exception as e:                                   # 메일 때문에 수리 API 가 실패하면 안 됨
+        mail_log.warning("작업 #%s 메일 만들기 실패: %s", job_id, type(e).__name__)
+        return
+    if msg is None:
+        return
+    if not MAIL_DRY_RUN and not (SMTP_USER and SMTP_PASS):
+        mail_log.info("작업 #%s 메일 건너뜀: SMTP_USER / SMTP_PASS 설정 없음", job_id)
+        return
+    threading.Thread(target=_send_mail, args=(job_id, kind, msg), daemon=True).start()
+
+
+def _build_mail(con, job_id, kind):
+    j = con.execute("""SELECT j.mode, j.status, j.summary, j.started_at, j.finished_at, v.name AS vehicle,
+                              v.owner_id, u.name AS owner_name, u.email
+                       FROM jobs j JOIN vehicles v ON v.id = j.vehicle_id LEFT JOIN users u ON u.id = v.owner_id
+                       WHERE j.id = ?""", (job_id,)).fetchone()
+    if j is None or j["owner_id"] is None:
+        mail_log.info("작업 #%s 메일 건너뜀: 차주 없는 차량", job_id)
+        return None
+    if not j["email"]:
+        mail_log.info("작업 #%s 메일 건너뜀: 차주 이메일 없음", job_id)
+        return None
+
+    names = lambda sql: [r[0] for r in con.execute(sql, (job_id,))]
+    hello = f"{j['owner_name'] or '차주'} 님, 차량 {j['vehicle']}"
+    if kind == "start":
+        subject = f"[자동차 수리] {j['vehicle']} 수리를 시작했습니다"
+        if j["mode"] == "manual":
+            parts = names("""SELECT p.name FROM findings f JOIN parts p ON p.code = f.part_code
+                             WHERE f.job_id = ? AND f.decision = 'requested' ORDER BY f.id""")
+            mode = f"수동 (교체 부품: {', '.join(parts)})"
+        else:
+            mode = "자동 (표면 스캔으로 손상 부위를 찾아 교체)"
+        lines = [f"{hello} 수리를 시작했습니다.", "", f"시작 시각: {j['started_at']}", f"모드: {mode}", "",
+                 "진행 상황은 아래 링크에서 실시간으로 볼 수 있습니다."]
+    else:
+        text = FINISH_TEXT[kind]
+        subject = f"[자동차 수리] {j['vehicle']} {text.split('.')[0]}"
+        lines = [f"{hello}: {text}.", "", f"종료 시각: {j['finished_at']}"]
+        if kind == "done":
+            parts = names("""SELECT p.name FROM replacements r JOIN parts p ON p.code = r.part_code
+                             WHERE r.job_id = ? AND r.success = 1 ORDER BY r.id""")
+            lines.append(f"교체한 부품: {', '.join(dict.fromkeys(parts))}" if parts else f"내용: {j['summary'] or '-'}")
+        elif kind == "on_hold" and j["summary"]:
+            lines.append(f"사유: {j['summary']}")
+    if SITE_URL:
+        lines += ["", f"결과 보기: {SITE_URL}/my"]
+
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = formataddr(("자동차 수리 로봇", SMTP_USER or "dry-run@localhost"))
+    msg["To"] = j["email"]
+    msg.set_content("\n".join(lines))
+    return msg
+
+
+MAIL_LABEL = {"start": "수리 시작 알림"}
+
+
+def _send_mail(job_id, kind, msg):
+    """스레드에서 실행. 결과는 터미널 로그와 events(stage 'notify') 에"""
+    label = MAIL_LABEL.get(kind, f"수리 종료 알림({kind})")
+    to = mask_email(msg["To"])
+    try:
+        if MAIL_DRY_RUN:
+            mail_log.info("작업 #%s [시험 모드, 실제로 안 보냄] %s\n----\nTo: %s\nSubject: %s\n\n%s----",
+                          job_id, label, to, msg["Subject"], msg.get_content())
+            _notify_event(job_id, "info", f"메일 발송(시험 모드): {label}")
+            return
+        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=10) as s:
+            s.login(SMTP_USER, SMTP_PASS)
+            s.send_message(msg)
+        mail_log.info("작업 #%s 메일 발송: %s → %s", job_id, label, to)
+        _notify_event(job_id, "info", f"메일 발송: {label}")
+    except Exception as e:
+        hint = f" ({SMTP_HOST} 아이디·비밀번호 / SMTP 사용 설정 확인)" if isinstance(e, smtplib.SMTPAuthenticationError) else ""
+        code = getattr(e, "smtp_code", "")
+        mail_log.warning("작업 #%s 메일 실패: %s → %s: %s %s%s", job_id, label, to, type(e).__name__, code, hint)
+        _notify_event(job_id, "warn", f"메일 발송 실패: {label} ({type(e).__name__})")
+
+
+def _notify_event(job_id, level, message):
+    """스레드 전용 연결 (Flask g 의 연결은 요청 스레드 것이라 쓰지 않음)"""
+    try:
+        con = sqlite3.connect(db.DB_PATH, timeout=10)
+        with con:
+            con.execute("INSERT INTO events (job_id, stage, level, message) VALUES (?, 'notify', ?, ?)",
+                        (job_id, level, message))
+        con.close()
+    except sqlite3.Error as e:
+        mail_log.warning("작업 #%s 메일 기록 실패: %s", job_id, e)
 
 
 # ================================================================ 인증 / 권한
@@ -162,6 +333,33 @@ def my_page():
     return render_template("my.html", name=session["name"])
 
 
+@app.route("/api/robot/inspection-plan", methods=("GET", "PUT"))
+@require("admin")
+def inspection_plan():
+    con, user = db.get_db(), session["user_id"]
+    if request.method == "GET":
+        row = con.execute("SELECT plan FROM inspection_plans WHERE user_id = ?", (user,)).fetchone()
+        return jsonify(json.loads(row["plan"]) if row else [
+            dict(part=part, enabled=True, mode="full", regions=[]) for part in INSPECTION_PARTS])
+    plan = request.get_json(silent=True)
+    if (not isinstance(plan, list) or len(plan) != len(INSPECTION_PARTS) or
+            not all(isinstance(item, dict) and set(item) == {"part", "enabled", "mode", "regions"} and
+                    item["part"] in INSPECTION_PARTS and type(item["enabled"]) is bool and
+                    item["mode"] in ("full", "partial") and isinstance(item["regions"], list) for item in plan) or
+            len({item["part"] for item in plan}) != len(INSPECTION_PARTS)):
+        return jsonify(error="검사 부품과 순서를 확인하세요"), 400
+    for item in plan:
+        for box in item["regions"]:
+            if (not isinstance(box, list) or len(box) != 4 or
+                    not all(type(v) in (int, float) and math.isfinite(v) for v in box) or
+                    box[2] <= box[0] or box[3] <= box[1]):
+                return jsonify(error="부분 탐색 좌표를 확인하세요"), 400
+    with con:
+        con.execute("INSERT INTO inspection_plans (user_id, plan) VALUES (?, ?) "
+                    "ON CONFLICT (user_id) DO UPDATE SET plan = excluded.plan", (user, json.dumps(plan)))
+    return jsonify(plan)
+
+
 # ================================================================ 회원 (관리자)
 @app.get("/api/me")
 @require()
@@ -173,7 +371,7 @@ def me():
 @require("admin")
 def list_users():
     return jsonify(db.rows(db.get_db().execute(
-        "SELECT id, username, name, role FROM users ORDER BY role, id")))
+        "SELECT id, username, name, role, email FROM users ORDER BY role, id")))
 
 
 @app.post("/api/users")
@@ -184,14 +382,34 @@ def add_user():
     r = d.get("role", "user")
     if not username or len(pw) < 4 or r not in ("admin", "user"):
         return jsonify(error="아이디, 4자 이상 비밀번호, 권한(admin/user)을 확인하세요"), 400
+    email = (d.get("email") or "").strip() or None
+    if email and not valid_email(email):
+        return jsonify(error="이메일 형식을 확인하세요 (예: name@example.com)"), 400
     con = db.get_db()
     try:
-        cur = con.execute("INSERT INTO users (username, pw_hash, name, role) VALUES (?, ?, ?, ?)",
-                          (username, generate_password_hash(pw), (d.get("name") or username).strip(), r))
+        cur = con.execute("INSERT INTO users (username, pw_hash, name, role, email) VALUES (?, ?, ?, ?, ?)",
+                          (username, generate_password_hash(pw), (d.get("name") or username).strip(), r, email))
         con.commit()
     except sqlite3.IntegrityError:
         return jsonify(error="이미 있는 아이디입니다"), 409
-    return jsonify(id=cur.lastrowid, username=username, role=r), 201
+    return jsonify(id=cur.lastrowid, username=username, role=r, email=email), 201
+
+
+@app.patch("/api/users/<int:user_id>")
+@require("admin")
+def update_user(user_id):
+    """{email} 수정. 빈 값이면 이메일 지움 (알림 안 보냄)"""
+    d = request.get_json(force=True)
+    if "email" not in d:
+        return jsonify(error="바꿀 값(email)이 없습니다"), 400
+    email = (d.get("email") or "").strip() or None
+    if email and not valid_email(email):
+        return jsonify(error="이메일 형식을 확인하세요 (예: name@example.com)"), 400
+    con = db.get_db()
+    if con.execute("UPDATE users SET email = ? WHERE id = ?", (email, user_id)).rowcount == 0:
+        return jsonify(error="없는 회원입니다"), 404
+    con.commit()
+    return jsonify(id=user_id, email=email)
 
 
 # ================================================================ 차량
@@ -350,6 +568,7 @@ def create_job():
     msg = "수리 시작 (자동 모드)" if mode == "auto" else f"수리 시작 (수동 모드: {', '.join(parts)})"
     con.execute("INSERT INTO events (job_id, stage, message) VALUES (?, 'start', ?)", (jid, msg))
     con.commit()
+    notify_owner(con, jid, "start")
     return jsonify(job_detail(jid)), 201
 
 
@@ -443,11 +662,15 @@ def finish_job(job_id):
     if j["status"] != "running":
         return jsonify(job_detail(job_id))   # 이미 끝난 작업은 그대로 (정지 버튼과 로봇 종료가 겹칠 때)
     con = db.get_db()
-    con.execute("UPDATE jobs SET status = ?, summary = ?, finished_at = datetime('now','localtime') WHERE id = ?",
-                (status, d.get("summary"), job_id))
+    # status = 'running' 조건을 UPDATE 에 넣어, 두 요청이 거의 동시에 와도 한 번만 바뀌게 (메일도 한 번)
+    changed = con.execute("UPDATE jobs SET status = ?, summary = ?, finished_at = datetime('now','localtime') "
+                          "WHERE id = ? AND status = 'running'", (status, d.get("summary"), job_id)).rowcount
+    if not changed:
+        return jsonify(job_detail(job_id))
     con.execute("INSERT INTO events (job_id, stage, level, message) VALUES (?, 'finish', ?, ?)",
                 (job_id, "info" if status in ("done", "no_damage") else "warn", d.get("summary") or status))
     con.commit()
+    notify_owner(con, job_id, status)
     return jsonify(job_detail(job_id))
 
 

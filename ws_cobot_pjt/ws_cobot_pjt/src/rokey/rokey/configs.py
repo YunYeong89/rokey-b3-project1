@@ -5,8 +5,23 @@ from pathlib import Path
 
 import yaml
 
+if __package__:
+    from .robot_namespace import fleet_id, namespace_args
+else:
+    from robot_namespace import fleet_id, namespace_args
+
 PACKAGE = Path(__file__).resolve().parents[1]
+CALIBRATION_DIR = PACKAGE / 'calibration'
+ROBOT_ID = fleet_id(namespace_args())
 SESSION = PACKAGE.parents[1] / 'session'
+if ROBOT_ID:
+    SESSION /= ROBOT_ID
+
+
+def output_dir(name):
+    path = SESSION / name if ROBOT_ID else PACKAGE / name
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def load(name):
@@ -19,7 +34,7 @@ def read_session(name):
 
 
 def write_session(name, data):
-    SESSION.mkdir(exist_ok=True)
+    SESSION.mkdir(parents=True, exist_ok=True)
     path = SESSION / name
     path.write_text(json.dumps({**data, 'created': datetime.now().isoformat(timespec='seconds')}, indent=2))
     return path

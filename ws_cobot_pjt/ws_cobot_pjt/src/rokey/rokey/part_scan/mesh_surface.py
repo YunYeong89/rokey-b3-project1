@@ -107,10 +107,12 @@ class TriangleTree:
 
 
 class MeshSurface:
-    def __init__(self, vehicle, part, pose, crease_deg):
+    def __init__(self, vehicle, part, pose, crease_deg, side=None):
         self.triangles = vehicle.triangles @ pose[:3, :3].T + pose[:3, 3]
         self.target = vehicle.parts == part
-        self.part = part
+        if part == 'door' and side:
+            self.target &= vehicle.triangles[:, :, 1].mean(1) * (1 if side == 'left' else -1) > 0
+        self.part, self.pose = part, pose
         cross = np.cross(self.triangles[:, 1] - self.triangles[:, 0],
                          self.triangles[:, 2] - self.triangles[:, 0])
         self.area = np.linalg.norm(cross, axis=1)
@@ -132,6 +134,10 @@ class MeshSurface:
                           self.area[neighbours[keep], None]).sum(0)
                 self.vertex_normals[face, corner] = normal / max(np.linalg.norm(normal), 1e-12)
         self.tree = TriangleTree(self.triangles[self.area > 1e-10])
+
+    def roi_coordinates(self, points):
+        local = (points - self.pose[:3, 3]) @ self.pose[:3, :3]
+        return local[:, (0, 2) if self.part == 'door' else (0, 1)]
 
 
 class MeshGrid:
@@ -167,7 +173,8 @@ class MeshGrid:
         self.faces = faces.reshape(shape)
         inside = (self.faces >= 0)
         padded = np.pad(inside, 1)
-        self.inner = inside & (distance_transform_edt(padded)[1:-1, 1:-1] * step > margin)
+        self.edge_distance = distance_transform_edt(padded)[1:-1, 1:-1] * step
+        self.inner = inside & (self.edge_distance > margin)
 
     def sample(self, cells):
         uv = self.origin + (np.asarray(cells) + .5) * self.step

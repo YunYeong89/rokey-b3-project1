@@ -22,14 +22,25 @@ class MeshPlanCache:
         if scene is None:
             clearance = reach.clearance
             scene = dict(table=clearance.table, rack=clearance.rack.tolist(),
-                         rack_rotation=clearance.rack_rotation.tolist(), ball_radius=clearance.ball_radius)
-        recipe = dict(part=surface.part, axes=np.asarray(axes).tolist(),
-                      scan={key: value for key, value in scan.items() if key != 'speed_mm_s'},
+                         rack_rotation=clearance.rack_rotation.tolist(), rack_box=clearance.rack_box.tolist(),
+                         ball_radius=clearance.ball_radius)
+        # Runtime-only settings (stroke speed, measured-cloud sampling, PD, resume, forces and contact thresholds) leave
+        # the plan as it is. mesh_height: merged into mesh_normal (MeshHeightPlan.configure), compared there.
+        planning_scan = {key: value for key, value in scan.items()
+                         if key not in ('speed_mm_s', 'sample_mm', 'point_decimation', 'default_scan', 'mesh_height')}
+        planning_scan['mesh_normal'] = {key: value for key, value in scan['mesh_normal'].items()
+                                       if key not in ('pd', 'resume', 'point_decimation', 'position_stiffness_scale',
+                                                      'position_feedback_limit_mm', 'force_n', 'contact_threshold_n',
+                                                      'stiffness', 'press_settle_s', 'record_threshold_n',
+                                                      'ground_s', 'extra_depth_mm', 'extra_depth_speed_mm_s',
+                                                      'force_trim', 'cloud_threshold_n', 'lift_push',
+                                                      'telemetry_average', 'rescan', 'press_limit_n')}
+        recipe = dict(part=surface.part, axes=np.asarray(axes).tolist(), scan=planning_scan,
                       urdf=chain.description, tcp=chain.tcp.tolist(), home=reach.home.tolist(),
                       scene=scene, plan_class=plan_class.__name__, travel_z=travel_z)
         digest.update(json.dumps(recipe, sort_keys=True).encode())
-        sources = ('mesh_cache.py', 'mesh_plan.py', 'mesh_surface.py', 'cloud_plan.py',
-                   'trajectory.py', 'tool.py', 'kinematics.py', 'planner.py')
+        sources = ('mesh_cache.py', 'mesh_plan.py', 'height_plan.py', 'mesh_surface.py', 'cloud_plan.py', 'cloud_path.py', 'cloud_clearance.py',
+                   'trajectory.py', 'path_timing.py', 'tool.py', 'kinematics.py', 'planner.py')
         for name in sources:
             digest.update(Path(__file__).with_name(name).read_bytes())
         digest.update(Path(__file__).parents[1].joinpath('rotations.py').read_bytes())

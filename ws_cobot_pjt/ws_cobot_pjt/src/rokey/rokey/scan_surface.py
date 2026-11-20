@@ -13,6 +13,11 @@ replace) to /workspace/session/scan_result.json.
   ros2 run rokey scan_surface --simulate          # offline: the simulation scene damage, no robot
 """
 import argparse
+
+if __package__:
+    from .robot_namespace import program_args
+else:
+    from robot_namespace import program_args
 import json
 
 import numpy as np
@@ -281,7 +286,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--parts', nargs='+', help='part codes (default: robot.yaml inspection.replaceable)')
     parser.add_argument('--simulate', action='store_true', help='offline, without the robot')
-    options = parser.parse_args()
+    options = parser.parse_args(program_args())
     parts = options.parts or load('robot')['inspection']['replaceable']
     simulate(parts) if options.simulate else run(parts)
 

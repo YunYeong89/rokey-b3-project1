@@ -1,4 +1,6 @@
-"""Repository probe mesh and the existing two-rod holder from the STL designs in the rokey package,
+"""Repository probe mesh and its holder from the STL designs in the rokey package: the two-rod holder (sharing the
+probe frame at `pose_base_mm_deg`) or a placed holder (`holder_pose` real_scene: real_scene.yaml's measured probe
+holder, the probe seated in its slot `holder_slot_mm`),
 fitted to the RG2 finger collision meshes. STL designs are in mm, in the tip frame: +z toward the top
 face, the probe point at -z. The RG2 closes on the tip faces normal to `grip_axis`; the robot takes its
 grasp orientation from the docked tip pose given in BASE (`pose_base_mm_deg`). The optional `ball` settings
@@ -50,14 +52,12 @@ class ProbeTool:
         self.ball = config.get('ball')
         if self.ball:  # the probe point is the bottom of the ball, below the body mesh
             low[2] = min(low[2], self.ball['centre_mm'][2] / 1000 - config['tip_radius_mm'] / 1000)
-        a, b, c = triangles[:, 0], triangles[:, 1], triangles[:, 2]
-        volume = np.einsum('ij,ij->i', a, np.cross(b, c)) / 6
-        self.com = (volume[:, None] * (a + b + c) / 4).sum(0) / volume.sum()  # tip frame
         self.mass = float(config['mass_kg'])
         self.tip_radius = config['tip_radius_mm'] / 1000
         self.grip_axis = config['grip_axis']
         self.tcp_name = 'ProbeTCP'
         self.attached = False
+        self.session_plan_path = None
         self.current = None
         chain = KinematicChain(self.robot)
         home = dict(zip(chain.names, np.deg2rad(home_joints())))
@@ -96,17 +96,32 @@ class ProbeTool:
         # Tip frame in link_6: probe point (-z) along TOOL +Z, grip band (grip_from_top_mm below the top
         # face) centred on the finger pads, grip axis on the finger closing axis.
         depth = self.grip_z + high[2] - config['grip_from_top_mm'] / 1000
+        self.tip_z = self.fit_shaft_length(triangles, depth, low[2])
         self.flange_body = np.eye(4)
         self.flange_body[:3, :3] = self.GRIP[self.grip_axis]
         self.flange_body[2, 3] = depth
-        self.tip_z = float(depth - low[2])  # ProbeTCP: bottom point of the tip sphere
-        self.tip_center = [0.0, 0.0, low[2] + self.tip_radius]
+        tip_bottom = depth - self.tip_z
+        self.tip_center = [0., 0., tip_bottom + self.tip_radius]
+        if self.ball:
+            self.tip_center[:2] = (np.asarray(self.ball['centre_mm'][:2]) / 1000).tolist()
+            self.ball = {**self.ball, 'centre_mm': [value * 1000 for value in self.tip_center]}
+        self.body_tcp = np.eye(4)
+        self.body_tcp[:3, :3] = self.GRIP[self.grip_axis].T
+        self.body_tcp[:3, 3] = [*self.tip_center[:2], tip_bottom]
+        a, b, c = triangles[:, 0], triangles[:, 1], triangles[:, 2]
+        volume = np.einsum('ij,ij->i', a, np.cross(b, c)) / 6
+        self.com = (volume[:, None] * (a + b + c) / 4).sum(0) / volume.sum()  # tip frame
         self.com_flange = (self.flange_body @ np.r_[self.com, 1])[:3]
-        x, y, z, yaw = config['pose_base_mm_deg']  # docked tip, upright; the holder shares this frame
+        x, y, z, yaw = self.dock = self.docked_pose(config, triangles)
         self.park_body = np.eye(4)
         self.park_body[:3, :3] = rotation(np.array([0.0, 0.0, np.deg2rad(yaw)]))
         self.park_body[:3, 3] = np.array([x, y, z]) / 1000
         self.park_flange = self.park_body @ np.linalg.inv(self.flange_body)
+        self.holder_body = self.park_body
+        if self.holder_pose is not None:
+            self.holder_body = np.eye(4)
+            self.holder_body[:3, :3] = rotation(np.array([0.0, 0.0, np.deg2rad(self.holder_pose[3])]))
+            self.holder_body[:3, 3] = np.asarray(self.holder_pose[:3]) / 1000
         # Only a TCP frame is present on the robot before pickup, not an attached probe.
         ET.SubElement(self.robot, 'link', name='probe_tip')
         joint = ET.SubElement(self.robot, 'joint', name='probe_tip_joint', type='fixed')
@@ -115,6 +130,70 @@ class ProbeTool:
         # The robot model's TCP stays as without a car scene; probe_tip only places the scene.
         self.chain = KinematicChain(self.robot, tcp_link='tool0')
         self.write_plan()
+
+    def docked_pose(self, config, triangles):
+        """The docked probe frame [x, y, z, yaw] (BASE mm, deg), upright. Two-rod holder: pose_base_mm_deg, the holder
+        in the same frame. Placed holder (holder_pose real_scene): its slot holder_slot_mm (holder frame) with the
+        probe's head (its full section's underside) on the highest holder point under the head, turned as
+        pose_base_mm_deg's yaw; holder_body its own frame."""
+        if 'holder_pose' not in config:
+            self.holder_pose = None
+            return list(config['pose_base_mm_deg'])
+        from configs import load
+        hx, hy, hz, hyaw = self.holder_pose = load('real_scene')['probe']['holder_pose_base_mm_deg']
+        holder = read_stl(self.holder).reshape(-1, 3)
+        self.rack_box = [holder.min(0).tolist(), holder.max(0).tolist()]
+        body = triangles.reshape(-1, 3) * 1000
+        half = np.abs(body[:, :2]).max()  # the head's half width (the full section)
+        head = body[np.abs(body[:, :2]).max(1) >= half - .5, 2].min()
+        sx, sy = config['holder_slot_mm']
+        under = holder[(np.abs(holder[:, 0] - sx) < half - .1) & (np.abs(holder[:, 1] - sy) < half - .1), 2]
+        c, s = np.cos(np.radians(hyaw)), np.sin(np.radians(hyaw))
+        self.seat_mm = float(under.max())
+        return [float(v) for v in (hx + c * sx - s * sy, hy + s * sx + c * sy, hz + self.seat_mm - head,
+                                   config['pose_base_mm_deg'][3])]
+
+    def fit_shaft_length(self, triangles, depth, original_bottom):
+        """Shorten the shaft between the grip body and the tip assembly, both of which keep their shape."""
+        from configs import load
+        from vehicle_model import write_stl
+
+        length_mm = self.config.get('tcp_length_mm')
+        if length_mm is None:
+            length_mm = load('real_scene')['probe']['tcp_mm_deg'][2]
+        length = length_mm / 1000
+        shift = depth - length - original_bottom
+        z = triangles[:, :, 2]
+        # The body ends at -14 mm. Below -40 mm the tip assembly translates as a unit.
+        z += shift * np.clip((-.014 - z) / .026, 0., 1.)
+        self.mesh = self.cache / self.mesh.name
+        write_stl(self.mesh, triangles, scale=1000.)
+        return length
+
+    def set_mount(self, flange_body):
+        """Use the physical fixed grasp for TCP kinematics, gravity compensation and scene markers."""
+        from rokey_pose import zyz
+        from scipy.spatial.transform import Rotation
+        self.flange_body = flange_body
+        tcp = flange_body @ self.body_tcp
+        self.com_flange = (flange_body @ np.r_[self.com, 1])[:3]
+        origin = self.robot.find("joint[@name='probe_tip_joint']/origin")
+        origin.set('xyz', text(tcp[:3, 3]))
+        origin.set('rpy', text(Rotation.from_matrix(tcp[:3, :3]).as_euler('xyz')))
+        self.chain = KinematicChain(self.robot, tcp_link='tool0')
+        self.plan.update(tcp_mm_deg=[*(tcp[:2, 3] * 1000), self.tip_z * 1000, *zyz(tcp[:3, :3])],
+                         mount_source='Gazebo fixed grasp', flange_body=flange_body.tolist())
+        base = self.plan['base_tool_profile']
+        weight = base['weight'] + self.mass
+        self.plan['tool_profile'] = dict(weight=weight, cog=(
+            (base['weight'] * np.asarray(base['cog']) + self.mass * self.com_flange * 1000) / weight).tolist(),
+            inertia=[0.] * 6)
+        ET.ElementTree(self.robot).write(self.cache.parent / 'robot.urdf', encoding='unicode')
+        for path in (self.cache / 'probe_plan.json', self.session_plan_path):
+            if path is not None:
+                temporary = path.with_suffix('.tmp')
+                temporary.write_text(json.dumps(self.plan, indent=2) + '\n')
+                temporary.replace(path)
 
     def grip_width(self, triangles, centre_z, height, lateral, step=0.001):
         """Extent (m) of the tip mesh along the grip axis over the pad footprint: rays along the grip axis on a
@@ -188,7 +267,7 @@ class ProbeTool:
             'tcp_name': self.tcp_name, 'tcp_mm_deg': [0., 0., self.tip_z*1000, 0., 0., 0.],
             'tool_name': 'ProbeToolWeight',
             'grasp_pose_mm_deg': [*(grasp[:3, 3]*1000), *zyz(grasp[:3, :3])],
-            'tip_pose_base_mm_deg': list(self.config['pose_base_mm_deg']), 'grip_axis': self.grip_axis,
+            'tip_pose_base_mm_deg': self.dock, 'grip_axis': self.grip_axis,
             'open_angle_rad': -0.558505, 'close_angle_rad': self.close_angle,
             'handle_width_mm': self.width*1000, 'pocket_height_mm': self.pocket_height*1000,
             'grip_from_top_mm': self.config['grip_from_top_mm'],
@@ -198,8 +277,11 @@ class ProbeTool:
             'finger_clearance_mm': self.clearance*1000, 'mass_kg': self.mass,
             'probe_radius_mm': self.tip_radius*1000, 'tip_mesh': self.mesh.name, 'holder_mesh': self.holder.name,
             'tip_ball': self.ball,
-            'note': 'STL tip on a two-rod holder; fixed grasp constraint after pose/closure verification.',
+            'note': 'STL tip on its holder; fixed grasp constraint after pose/closure verification.',
         }
+        if self.holder_pose is not None:  # the scanners' rack obstacle: the placed holder's extents about its frame
+            self.plan.update(rack_pose_base_mm_deg=list(self.holder_pose), rack_box_mm=self.rack_box,
+                             holder_seat_mm=self.seat_mm)
         path = self.cache/'probe_plan.json'
         path.write_text(json.dumps(self.plan, indent=2))
 
@@ -224,35 +306,42 @@ class ProbeTool:
                            'detach_topic':prefix+'/detach', 'attach_topic':prefix+'/attach',
                            'output_topic':prefix+'/state'}.items(): ET.SubElement(plugin, key).text=value
 
+    def contact_mesh(self):
+        """Retain shaft and grip collisions; the exact sphere replaces the faceted ball."""
+        from vehicle_model import write_stl
+        triangles = read_stl(self.mesh)
+        centre = np.asarray(self.tip_center) * 1000
+        radius = self.tip_radius * 1000
+        on_ball = np.abs(np.linalg.norm(triangles - centre, axis=2) - radius) < .0001
+        path = self.cache / 'probe_contact_body.stl'
+        write_stl(path, triangles[~on_ball.all(1)])
+        return path
+
     def add_to_world(self, world, robot_model):
         from scene import rpy
         placed = self.world_base @ self.park_body
         pose = text([*placed[:3, 3], *rpy(placed[:3, :3])])
         rack = ET.SubElement(world, 'model', name='probe_rack')
         ET.SubElement(rack, 'static').text = 'true'
-        ET.SubElement(rack, 'pose').text = pose
+        stand = self.world_base @ self.holder_body
+        ET.SubElement(rack, 'pose').text = text([*stand[:3, 3], *rpy(stand[:3, :3])])
         self.mesh_link(rack, 'stand', self.holder, '0.55 0.55 0.6 1')
         self.coupling(rack, 'stand', 'docked_probe', '/cobot/probe/dock')
         probe = ET.SubElement(world, 'model', name='docked_probe')
         ET.SubElement(probe, 'pose').text = pose
         link = self.mesh_link(probe, 'body', self.mesh, '0.15 0.35 0.7 1')
-        if self.config.get('sphere_contact_only'):
-            from vehicle_model import write_stl
-            triangles = read_stl(self.mesh)
-            above = triangles[:,:,2].min(1) >= (self.tip_center[2]+.9*self.tip_radius)*1000
-            contact_body = self.cache/'probe_contact_body.stl'
-            write_stl(contact_body,triangles[above])
-            link.find('collision/geometry/mesh/uri').text = contact_body.resolve().as_uri()
-        if 'contact_friction' in self.config:
+        link.find('collision/geometry/mesh/uri').text = self.contact_mesh().resolve().as_uri()
+        if 'contact_friction' in self.config or self.ball:
             from scene import friction
-            friction(link.find('collision'),self.config['contact_friction'])
+            mu = self.config.get('contact_friction', self.ball['friction'] if self.ball else .3)
+            friction(link.find('collision'), mu)
         inertial = ET.SubElement(link, 'inertial')
         ET.SubElement(inertial, 'pose').text = text([*self.com, 0, 0, 0])
         ET.SubElement(inertial, 'mass').text = str(self.mass)
         inertia = ET.SubElement(inertial, 'inertia')
         for key in ['ixx', 'iyy', 'izz']: ET.SubElement(inertia, key).text = '0.00001'
         for key in ['ixy', 'ixz', 'iyz']: ET.SubElement(inertia, key).text = '0'
-        # Exact sphere for surface contact (on top of the faceted mesh tip, or the metal ball itself).
+        # The exact sphere is the only contact geometry at the ball end.
         tip = ET.SubElement(link, 'collision', name='tip_sphere')
         ET.SubElement(tip, 'pose').text = text([*self.tip_center, 0, 0, 0])
         ET.SubElement(ET.SubElement(ET.SubElement(tip, 'geometry'), 'sphere'), 'radius').text = str(self.tip_radius)
@@ -280,7 +369,7 @@ class ProbeTool:
         tip = self.current if self.attached and self.current is not None else self.park_body
         result = []
         for index, (namespace, mesh, matrix, color) in enumerate([
-                ('probe_tool', self.mesh, tip, (.15, .35, .7)), ('probe_rack', self.holder, self.park_body, (.55, .55, .6))]):
+                ('probe_tool', self.mesh, tip, (.15, .35, .7)), ('probe_rack', self.holder, self.holder_body, (.55, .55, .6))]):
             marker = Marker(); marker.header.frame_id = 'base_link'; marker.ns = namespace; marker.id = index
             marker.type, marker.mesh_resource = Marker.MESH_RESOURCE, mesh.resolve().as_uri()
             marker.pose.position.x, marker.pose.position.y, marker.pose.position.z = map(float, matrix[:3, 3])

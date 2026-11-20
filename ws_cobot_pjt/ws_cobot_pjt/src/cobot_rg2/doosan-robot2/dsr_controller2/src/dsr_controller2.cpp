@@ -26,6 +26,7 @@
 #include <stddef.h>
 #include <algorithm>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 #include <yaml-cpp/yaml.h>
@@ -41,6 +42,8 @@ using config_type = controller_interface::interface_configuration_type;
 using namespace DRAFramework;
 
 extern void* get_drfl(const char* robot_name);
+extern bool lock_direct_motion(CDRFLEx * drfl, std::unique_lock<std::mutex> & guard);
+extern bool stop_with_joint_servo(CDRFLEx * drfl, STOP_TYPE type);
 // Note: Drfl is now a per-instance member of RobotController (defined in header)
 // This allows each controller instance (left/right) to have its own DRFL connection
 
@@ -436,6 +439,8 @@ auto set_safety_mode_cb = [this](const std::shared_ptr<dsr_msgs2::srv::SetSafety
 //----- MOTION Service Call-back functions ------------------------------------------------------------
 auto movej_cb = [this](const std::shared_ptr<dsr_msgs2::srv::MoveJoint::Request> req, std::shared_ptr<dsr_msgs2::srv::MoveJoint::Response> res)-> void
 {   
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     RCLCPP_INFO(rclcpp::get_logger("dsr_controller2"),"movej_cb() %p", (void*) Drfl);
     res->success = false;
     std::array<float, NUM_JOINT> target_pos;
@@ -453,6 +458,8 @@ auto movej_cb = [this](const std::shared_ptr<dsr_msgs2::srv::MoveJoint::Request>
 
 auto movel_cb = [this](const std::shared_ptr<dsr_msgs2::srv::MoveLine::Request> req, std::shared_ptr<dsr_msgs2::srv::MoveLine::Response> res)-> void
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     res->success = false;
     std::array<float, NUM_JOINT> target_pos;
     std::array<float, 2> target_vel;
@@ -473,6 +480,8 @@ auto movel_cb = [this](const std::shared_ptr<dsr_msgs2::srv::MoveLine::Request> 
 
 auto movejx_cb = [this](const std::shared_ptr<dsr_msgs2::srv::MoveJointx::Request> req, std::shared_ptr<dsr_msgs2::srv::MoveJointx::Response> res)-> void            
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     std::array<float, NUM_TASK> target_pos;
     std::copy(req->pos.cbegin(), req->pos.cend(), target_pos.begin());
     check_dsr_model(target_pos);
@@ -488,6 +497,8 @@ auto movejx_cb = [this](const std::shared_ptr<dsr_msgs2::srv::MoveJointx::Reques
 
 auto movec_cb = [this](const std::shared_ptr<dsr_msgs2::srv::MoveCircle::Request> req, std::shared_ptr<dsr_msgs2::srv::MoveCircle::Response> res)-> void    
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     float fTargetPos[2][NUM_TASK];
     float fTargetVel[2];
     float fTargetAcc[2];
@@ -519,6 +530,8 @@ auto movec_cb = [this](const std::shared_ptr<dsr_msgs2::srv::MoveCircle::Request
 
 auto movesj_cb = [this](const std::shared_ptr<dsr_msgs2::srv::MoveSplineJoint::Request> req, std::shared_ptr<dsr_msgs2::srv::MoveSplineJoint::Response> res)-> void     
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     res->success = false;
     float fTargetPos[MAX_SPLINE_POINT][NUM_JOINT];
     float fTargetVel[NUM_JOINT]= {0.0, };
@@ -562,6 +575,8 @@ auto movesj_cb = [this](const std::shared_ptr<dsr_msgs2::srv::MoveSplineJoint::R
 
 auto movesx_cb = [this](const std::shared_ptr<dsr_msgs2::srv::MoveSplineTask::Request> req, std::shared_ptr<dsr_msgs2::srv::MoveSplineTask::Response> res)-> void       
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     res->success = false;
     float fTargetPos[MAX_SPLINE_POINT][NUM_TASK];
     float fTargetVel[2];
@@ -591,6 +606,8 @@ auto movesx_cb = [this](const std::shared_ptr<dsr_msgs2::srv::MoveSplineTask::Re
 
 auto moveb_cb = [this](const std::shared_ptr<dsr_msgs2::srv::MoveBlending::Request> req, std::shared_ptr<dsr_msgs2::srv::MoveBlending::Response> res)-> void    
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     res->success = false;
 
     std::vector<MOVE_POSB> posb(req->pos_cnt); // Use std::vector instead of VLA for safe dynamic allocation (C++ standard-compliant)
@@ -638,6 +655,8 @@ auto moveb_cb = [this](const std::shared_ptr<dsr_msgs2::srv::MoveBlending::Reque
 
 auto movespiral_cb = [this](const std::shared_ptr<dsr_msgs2::srv::MoveSpiral::Request> req, std::shared_ptr<dsr_msgs2::srv::MoveSpiral::Response> res)-> void          
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     res->success = false;
     std::array<float, 3> target_pos;
     std::array<float, 2> target_vel;
@@ -712,6 +731,8 @@ auto movespiral_cb = [this](const std::shared_ptr<dsr_msgs2::srv::MoveSpiral::Re
 
 auto moveperiodic_cb = [this](const std::shared_ptr<dsr_msgs2::srv::MovePeriodic::Request> req, std::shared_ptr<dsr_msgs2::srv::MovePeriodic::Response> res)-> void          
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     res->success = false;
     std::array<float, NUM_TASK> target_amp;
     std::array<float, NUM_TASK> target_periodic;
@@ -735,6 +756,8 @@ auto movewait_cb = [this](const std::shared_ptr<dsr_msgs2::srv::MoveWait::Reques
 
 auto jog_cb = [this](const std::shared_ptr<dsr_msgs2::srv::Jog::Request> req, std::shared_ptr<dsr_msgs2::srv::Jog::Response> res)-> void        
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     if (m_model == "p3020" && req->jog_axis == JOG_AXIS_JOINT_4){
         RCLCPP_WARN(rclcpp::get_logger("dsr_controller2"),"The p3020 model does not support control of the 4th axis.");
         res->success = FALSE; 
@@ -746,6 +769,8 @@ auto jog_cb = [this](const std::shared_ptr<dsr_msgs2::srv::Jog::Request> req, st
 
 auto jog_multi_cb = [this](const std::shared_ptr<dsr_msgs2::srv::JogMulti::Request> req, std::shared_ptr<dsr_msgs2::srv::JogMulti::Response> res)-> void                    
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
 
     std::array<float, NUM_JOINT> target_jog;
     std::copy(req->jog_axis.cbegin(), req->jog_axis.cend(), target_jog.begin());
@@ -755,15 +780,19 @@ auto jog_multi_cb = [this](const std::shared_ptr<dsr_msgs2::srv::JogMulti::Reque
 
 auto move_stop_cb = [this](const std::shared_ptr<dsr_msgs2::srv::MoveStop::Request> req, std::shared_ptr<dsr_msgs2::srv::MoveStop::Response> res)-> void                  
 {
-    res->success = Drfl->stop((STOP_TYPE)req->stop_mode);
+    res->success = stop_with_joint_servo(Drfl, (STOP_TYPE)req->stop_mode);
 };
 
 auto move_resume_cb = [this](const std::shared_ptr<dsr_msgs2::srv::MoveResume::Request> /*req*/, std::shared_ptr<dsr_msgs2::srv::MoveResume::Response> res)-> void                 
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     res->success = Drfl->move_resume();
 };
 auto move_pause_cb = [this](const std::shared_ptr<dsr_msgs2::srv::MovePause::Request> /*req*/, std::shared_ptr<dsr_msgs2::srv::MovePause::Response> res)-> void                     
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     res->success = false;
     res->success = Drfl->move_pause();
 };
@@ -828,6 +857,8 @@ auto set_ref_coord_cb = [this](const std::shared_ptr<dsr_msgs2::srv::SetRefCoord
 
 auto move_home_cb = [this](const std::shared_ptr<dsr_msgs2::srv::MoveHome::Request> req, std::shared_ptr<dsr_msgs2::srv::MoveHome::Response> res)-> void                 
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
 #if (_DEBUG_DSR_CTL)
     RCLCPP_INFO(rclcpp::get_logger("dsr_controller2"),"< move_home_cb >");
     RCLCPP_INFO(rclcpp::get_logger("dsr_controller2"),"    target = %d",req->target);      
@@ -863,6 +894,8 @@ auto change_operation_speed_cb = [this](const std::shared_ptr<dsr_msgs2::srv::Ch
 
 auto enable_alter_motion_cb = [this](const std::shared_ptr<dsr_msgs2::srv::EnableAlterMotion::Request> req, std::shared_ptr<dsr_msgs2::srv::EnableAlterMotion::Response> res)-> void               
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     std::array<float, 2> limit;
     std::array<float, 2> limit_per;
     std::copy(req->limit_dpos.cbegin(), req->limit_dpos.cend(), limit.begin());
@@ -881,6 +914,8 @@ auto enable_alter_motion_cb = [this](const std::shared_ptr<dsr_msgs2::srv::Enabl
 
 auto alter_motion_cb = [this](const std::shared_ptr<dsr_msgs2::srv::AlterMotion::Request> req, std::shared_ptr<dsr_msgs2::srv::AlterMotion::Response> res)-> void            
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     std::array<float, NUM_TASK> pos_alter;
     std::copy(req->pos.cbegin(), req->pos.cend(), pos_alter.begin());
 
@@ -1354,6 +1389,8 @@ auto release_compliance_ctrl_cb = [this](const std::shared_ptr<dsr_msgs2::srv::R
 
 auto task_compliance_ctrl_cb = [this](const std::shared_ptr<dsr_msgs2::srv::TaskComplianceCtrl::Request> req, std::shared_ptr<dsr_msgs2::srv::TaskComplianceCtrl::Response> res) -> void      
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     std::array<float, NUM_TASK> stiffnesses;
     std::copy(req->stx.cbegin(), req->stx.cend(), stiffnesses.begin());
 
@@ -1367,6 +1404,8 @@ auto task_compliance_ctrl_cb = [this](const std::shared_ptr<dsr_msgs2::srv::Task
 };
 auto set_stiffnessx_cb = [this](const std::shared_ptr<dsr_msgs2::srv::SetStiffnessx::Request> req, std::shared_ptr<dsr_msgs2::srv::SetStiffnessx::Response> res)-> void      
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     std::array<float, NUM_TASK> stiffnesses;
     std::copy(req->stx.cbegin(), req->stx.cend(), stiffnesses.begin());
 
@@ -1512,6 +1551,8 @@ auto get_user_cart_coord_cb = [this](const std::shared_ptr<dsr_msgs2::srv::GetUs
 
 auto set_desired_force_cb = [this](const std::shared_ptr<dsr_msgs2::srv::SetDesiredForce::Request> req, std::shared_ptr<dsr_msgs2::srv::SetDesiredForce::Response> res)-> void     
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     std::array<float, NUM_TASK> feedback;
     std::array<unsigned char, NUM_TASK> direction;
 
@@ -1898,6 +1939,8 @@ auto drl_pause_cb = [this](const std::shared_ptr<dsr_msgs2::srv::DrlPause::Reque
 };
 auto drl_start_cb = [this](const std::shared_ptr<dsr_msgs2::srv::DrlStart::Request> req, std::shared_ptr<dsr_msgs2::srv::DrlStart::Response> res)-> void
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     //ROS_INFO("drl_start_cb() called and calling Drfl->drl_start");
     res->success = false;
 
@@ -1920,6 +1963,8 @@ auto drl_stop_cb = [this](const std::shared_ptr<dsr_msgs2::srv::DrlStop::Request
 
 auto drl_resume_cb = [this](const std::shared_ptr<dsr_msgs2::srv::DrlResume::Request> /*req*/, std::shared_ptr<dsr_msgs2::srv::DrlResume::Response> res) -> void    
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     //ROS_INFO("drl_resume_cb() called and calling Drfl->drl_resume");
     res->success = false;
 
@@ -1945,6 +1990,8 @@ auto get_drl_state_cb = [this](const std::shared_ptr<dsr_msgs2::srv::GetDrlState
 //----- TCP Service Call-back functions -------------------------------------------------------------
 auto set_current_tcp_cb = [this](const std::shared_ptr<dsr_msgs2::srv::SetCurrentTcp::Request> req, std::shared_ptr<dsr_msgs2::srv::SetCurrentTcp::Response> res) -> void     
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     //ROS_INFO("set_current_tcp_cb() called and calling Drfl->set_tcp");
     res->success = false;
     res->success = Drfl->set_tcp(req->name);
@@ -1960,6 +2007,8 @@ auto get_current_tcp_cb = [this](const std::shared_ptr<dsr_msgs2::srv::GetCurren
 
 auto config_create_tcp_cb = [this](const std::shared_ptr<dsr_msgs2::srv::ConfigCreateTcp::Request> req, std::shared_ptr<dsr_msgs2::srv::ConfigCreateTcp::Response> res) -> void 
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     //ROS_INFO("config_create_tcp_cb() called and calling Drfl->add_tcp");
     std::array<float, 6> target_pos;
     std::copy(req->pos.cbegin(), req->pos.cend(), target_pos.begin());
@@ -1968,6 +2017,8 @@ auto config_create_tcp_cb = [this](const std::shared_ptr<dsr_msgs2::srv::ConfigC
 
 auto config_delete_tcp_cb = [this](const std::shared_ptr<dsr_msgs2::srv::ConfigDeleteTcp::Request> req, std::shared_ptr<dsr_msgs2::srv::ConfigDeleteTcp::Response> res) -> void
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     //ROS_INFO("config_delete_tcp_cb() called and calling Drfl->del_tcp");
     res->success = Drfl->del_tcp(req->name);
 };
@@ -1975,6 +2026,8 @@ auto config_delete_tcp_cb = [this](const std::shared_ptr<dsr_msgs2::srv::ConfigD
 //----- TOOL Service Call-back functions ------------------------------------------------------------
 auto set_current_tool_cb = [this](const std::shared_ptr<dsr_msgs2::srv::SetCurrentTool::Request> req, std::shared_ptr<dsr_msgs2::srv::SetCurrentTool::Response> res) -> void  
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     //ROS_INFO("set_current_tool_cb() called and calling Drfl->set_tool");
     res->success = Drfl->set_tool(req->name);
 };
@@ -1988,6 +2041,8 @@ auto get_current_tool_cb = [this](const std::shared_ptr<dsr_msgs2::srv::GetCurre
 
 auto config_create_tool_cb = [this](const std::shared_ptr<dsr_msgs2::srv::ConfigCreateTool::Request> req, std::shared_ptr<dsr_msgs2::srv::ConfigCreateTool::Response> res) -> void
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     //ROS_INFO("config_create_tool_cb() called and calling Drfl->add_tool");
     std::array<float, 3> target_cog;
     std::array<float, 6> target_inertia;
@@ -1998,6 +2053,8 @@ auto config_create_tool_cb = [this](const std::shared_ptr<dsr_msgs2::srv::Config
 
 auto config_delete_tool_cb = [this](const std::shared_ptr<dsr_msgs2::srv::ConfigDeleteTool::Request> req, std::shared_ptr<dsr_msgs2::srv::ConfigDeleteTool::Response> res) -> void  
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     //ROS_INFO("config_delete_tool_cb() called and calling Drfl->del_tool");
     res->success = Drfl->del_tool(req->name);
 };
@@ -2011,12 +2068,16 @@ auto set_tool_shape_cb = [this](const std::shared_ptr<dsr_msgs2::srv::SetToolSha
 auto connect_rt_control_cb = [this](const std::shared_ptr<dsr_msgs2::srv::ConnectRtControl::Request> req, 
                                     std::shared_ptr<dsr_msgs2::srv::ConnectRtControl::Response> res) -> void 
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     res->success = Drfl->connect_rt_control(req->ip_address, req->port);
 };
 
 auto disconnect_rt_control_cb = [this](const std::shared_ptr<dsr_msgs2::srv::DisconnectRtControl::Request> /*req*/, 
                                        std::shared_ptr<dsr_msgs2::srv::DisconnectRtControl::Response> res) -> void 
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     // To-do : Update disconnection function in controller version v3.6
     // res->success = Drfl->disconnect_rt_control();
 };
@@ -2052,30 +2113,40 @@ auto get_rt_control_output_data_list_cb = [this](const std::shared_ptr<dsr_msgs2
 auto set_rt_control_input_cb = [this](const std::shared_ptr<dsr_msgs2::srv::SetRtControlInput::Request> req, 
                                       std::shared_ptr<dsr_msgs2::srv::SetRtControlInput::Response> res) -> void 
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     res->success = Drfl->set_rt_control_input(req->version, req->period, req->loss);
 };
 
 auto set_rt_control_output_cb = [this](const std::shared_ptr<dsr_msgs2::srv::SetRtControlOutput::Request> req, 
                                        std::shared_ptr<dsr_msgs2::srv::SetRtControlOutput::Response> res) -> void 
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     res->success = Drfl->set_rt_control_output(req->version, req->period, req->loss);
 };
 
 auto start_rt_control_cb = [this](const std::shared_ptr<dsr_msgs2::srv::StartRtControl::Request> /*req*/, 
                                   std::shared_ptr<dsr_msgs2::srv::StartRtControl::Response> res) -> void 
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     res->success = Drfl->start_rt_control();
 };
 
 auto stop_rt_control_cb = [this](const std::shared_ptr<dsr_msgs2::srv::StopRtControl::Request> /*req*/, 
                                  std::shared_ptr<dsr_msgs2::srv::StopRtControl::Response> res) -> void 
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     res->success = Drfl->stop_rt_control();
 };
 
 auto set_velj_rt_cb = [this](const std::shared_ptr<dsr_msgs2::srv::SetVeljRt::Request> req, 
                              std::shared_ptr<dsr_msgs2::srv::SetVeljRt::Response> res) -> void 
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     std::array<float, 6> vel;
     std::copy(req->vel.cbegin(), req->vel.cend(), vel.begin());
     res->success = Drfl->set_velj_rt(vel.data());
@@ -2084,6 +2155,8 @@ auto set_velj_rt_cb = [this](const std::shared_ptr<dsr_msgs2::srv::SetVeljRt::Re
 auto set_accj_rt_cb = [this](const std::shared_ptr<dsr_msgs2::srv::SetAccjRt::Request> req, 
                              std::shared_ptr<dsr_msgs2::srv::SetAccjRt::Response> res) -> void 
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     std::array<float, 6> acc;
     std::copy(req->acc.cbegin(), req->acc.cend(), acc.begin());
     res->success = Drfl->set_accj_rt(acc.data());
@@ -2191,6 +2264,8 @@ auto read_data_rt_cb = [this](const std::shared_ptr<dsr_msgs2::srv::ReadDataRt::
 auto write_data_rt_cb = [this](const std::shared_ptr<dsr_msgs2::srv::WriteDataRt::Request> req, 
                                std::shared_ptr<dsr_msgs2::srv::WriteDataRt::Response> res) -> void 
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     std::array<float, 6> external_force_torque;
     std::array<float, 6> external_analog_output;
     std::array<float, 6> external_analog_input;
@@ -2267,6 +2342,8 @@ auto set_output_register_float_cb = [this](const std::shared_ptr<dsr_msgs2::srv:
 // Callback for alter_motion_stream
 auto alter_cb = [this](const std::shared_ptr<dsr_msgs2::msg::AlterMotionStream> msg) -> void
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     std::array<float, NUM_JOINT> target_pos;
     std::copy(msg->pos.cbegin(), msg->pos.cend(), target_pos.begin());
     Drfl->alter_motion(target_pos.data());
@@ -2275,6 +2352,8 @@ auto alter_cb = [this](const std::shared_ptr<dsr_msgs2::msg::AlterMotionStream> 
 // Callback for servoj_stream
 auto servoj_cb = [this](const std::shared_ptr<dsr_msgs2::msg::ServojStream> msg) -> void
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     std::array<float, NUM_JOINT> target_pos;
     std::copy(msg->pos.cbegin(), msg->pos.cend(), target_pos.begin());
     std::array<float, NUM_JOINT> target_vel;
@@ -2291,6 +2370,8 @@ auto servoj_cb = [this](const std::shared_ptr<dsr_msgs2::msg::ServojStream> msg)
 // Callback for servol_stream
 auto servol_cb = [this](const std::shared_ptr<dsr_msgs2::msg::ServolStream> msg) -> void
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     std::array<float, NUM_TASK> target_pos;
     std::copy(msg->pos.cbegin(), msg->pos.cend(), target_pos.begin());
     std::array<float, 2> target_vel;
@@ -2305,6 +2386,8 @@ auto servol_cb = [this](const std::shared_ptr<dsr_msgs2::msg::ServolStream> msg)
 // Callback for speedj_stream
 auto speedj_cb = [this](const std::shared_ptr<dsr_msgs2::msg::SpeedjStream> msg) -> void
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     std::array<float, NUM_JOINT> target_vel;
     std::copy(msg->vel.cbegin(), msg->vel.cend(), target_vel.begin());
     std::array<float, NUM_JOINT> target_acc;
@@ -2319,6 +2402,8 @@ auto speedj_cb = [this](const std::shared_ptr<dsr_msgs2::msg::SpeedjStream> msg)
 // Callback for speedl_stream
 auto speedl_cb = [this](const std::shared_ptr<dsr_msgs2::msg::SpeedlStream> msg) -> void
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     std::array<float, NUM_TASK> target_vel;
     std::copy(msg->vel.cbegin(), msg->vel.cend(), target_vel.begin());
     std::array<float, 2> target_acc;
@@ -2331,6 +2416,8 @@ auto speedl_cb = [this](const std::shared_ptr<dsr_msgs2::msg::SpeedlStream> msg)
 // Callback for servoj_rt_stream
 auto servoj_rt_cb = [this](const std::shared_ptr<dsr_msgs2::msg::ServojRtStream> msg) -> void
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     std::array<float, NUM_JOINT> target_pos;
     std::copy(msg->pos.cbegin(), msg->pos.cend(), target_pos.begin());
     std::array<float, NUM_JOINT> target_vel;
@@ -2346,6 +2433,8 @@ auto servoj_rt_cb = [this](const std::shared_ptr<dsr_msgs2::msg::ServojRtStream>
 // Callback for servol_rt_stream
 auto servol_rt_cb = [this](const std::shared_ptr<dsr_msgs2::msg::ServolRtStream> msg) -> void
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     std::array<float, NUM_TASK> target_pos;
     std::copy(msg->pos.cbegin(), msg->pos.cend(), target_pos.begin());
     std::array<float, NUM_TASK> target_vel;
@@ -2360,6 +2449,8 @@ auto servol_rt_cb = [this](const std::shared_ptr<dsr_msgs2::msg::ServolRtStream>
 // Callback for speedj_rt_stream
 auto speedj_rt_cb = [this](const std::shared_ptr<dsr_msgs2::msg::SpeedjRtStream> msg) -> void
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     std::array<float, NUM_JOINT> target_vel;
     std::copy(msg->vel.cbegin(), msg->vel.cend(), target_vel.begin());
     std::array<float, NUM_JOINT> target_acc;
@@ -2374,6 +2465,8 @@ auto speedj_rt_cb = [this](const std::shared_ptr<dsr_msgs2::msg::SpeedjRtStream>
 // Callback for speedl_rt_stream
 auto speedl_rt_cb = [this](const std::shared_ptr<dsr_msgs2::msg::SpeedlRtStream> msg) -> void
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     std::array<float, NUM_TASK> target_vel;
     std::copy(msg->vel.cbegin(), msg->vel.cend(), target_vel.begin());
     std::array<float, NUM_TASK> target_acc;
@@ -2386,6 +2479,8 @@ auto speedl_rt_cb = [this](const std::shared_ptr<dsr_msgs2::msg::SpeedlRtStream>
 // Callback for torque_rt_stream
 auto torque_rt_cb = [this](const std::shared_ptr<dsr_msgs2::msg::TorqueRtStream> msg) -> void
 {
+    std::unique_lock<std::mutex> motion;
+    if (!lock_direct_motion(Drfl, motion)) return;
     std::array<float, NUM_TASK> tor;
     std::copy(msg->tor.cbegin(), msg->tor.cend(), tor.begin());
     float time = msg->time;
@@ -2612,7 +2707,8 @@ auto torque_rt_cb = [this](const std::shared_ptr<dsr_msgs2::msg::TorqueRtStream>
           }
 
           // Execute Movej Motion
-          bool is_started = Drfl->movej_h2r(pos_f.data(), vel_f.data(), acc_f.data());
+          std::unique_lock<std::mutex> motion;
+          bool is_started = lock_direct_motion(Drfl, motion) && Drfl->movej_h2r(pos_f.data(), vel_f.data(), acc_f.data());
           if (!is_started) {
               RCLCPP_ERROR(get_node()->get_logger(), "Failed to start MovejH2r motion");
               result->success = false;
@@ -2690,7 +2786,8 @@ auto torque_rt_cb = [this](const std::shared_ptr<dsr_msgs2::msg::TorqueRtStream>
           }
 
           // Execute Movel Motion
-          bool is_started = Drfl->movel_h2r(pos_f.data(), vel_f.data(), acc_f.data());
+          std::unique_lock<std::mutex> motion;
+          bool is_started = lock_direct_motion(Drfl, motion) && Drfl->movel_h2r(pos_f.data(), vel_f.data(), acc_f.data());
           if (!is_started) {
               RCLCPP_ERROR(get_node()->get_logger(), "Failed to start MovelH2r motion");
               result->success = false;

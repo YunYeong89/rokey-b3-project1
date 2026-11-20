@@ -40,6 +40,19 @@ class RobotChain:
         margin = np.deg2rad(settings['joint_margin_deg'])
         self.lower, self.upper = np.asarray(limits)[:, 0] + margin, np.asarray(limits)[:, 1] - margin
         self.settings = settings
+        pose, _, joints = self.forward(np.zeros(6))
+        shoulder, elbow, wrist = joints[1:4]
+        self.shoulder = shoulder
+        self.arm_length = np.linalg.norm(elbow - shoulder) + np.linalg.norm(wrist - elbow)
+        self.tcp_to_wrist = pose[:3, :3].T @ (wrist - pose[:3, 3])
+
+    def within_outer_reach(self, positions, rotation, margin):
+        """M0609 outer reach for TCP positions in metres at a fixed rotation."""
+        wrist = positions + rotation @ self.tcp_to_wrist
+        # The shoulder's lateral offset rotates with joint 1 and is perpendicular to the arm's reach plane.
+        radial_sq = np.sum(wrist[:, :2] ** 2, axis=1) - self.shoulder[:2] @ self.shoulder[:2]
+        distance_sq = np.maximum(radial_sq, 0.) + (wrist[:, 2] - self.shoulder[2]) ** 2
+        return distance_sq <= (self.arm_length - margin) ** 2
 
     def forward(self, q):
         transform, origins, axes, index = np.eye(4), [], [], 0
@@ -58,16 +71,21 @@ class RobotChain:
                                    for origin, axis in zip(origins, axes)])
         return pose, jacobian, np.asarray([*origins, flange])
 
-    def solve(self, position, rotation, seed):
+    def solve(self, position, rotation, seed, *, transfer=False):
         q = np.clip(np.asarray(seed).copy(), self.lower, self.upper)
         c = self.settings
+        tolerance = c['ik_position_mm']
+        minimum = c['minimum_singular_value']
+        if transfer:
+            tolerance = min(tolerance, c.get('transfer_position_mm', .1))
+            minimum = max(minimum, c.get('transfer_minimum_singular_value', .005))
         for _ in range(80):
             pose, jacobian, _ = self.forward(q)
             dp = position - pose[:3, 3]
             dr = Rotation.from_matrix(rotation @ pose[:3, :3].T).as_rotvec()
             weighted = jacobian * np.array([1., 1., 1., .15, .15, .15])[:, None]
-            if np.linalg.norm(dp) < c['ik_position_mm'] / 1000 and np.linalg.norm(dr) < np.deg2rad(c['ik_angle_deg']):
-                return q if np.linalg.svd(weighted, compute_uv=False)[-1] >= c['minimum_singular_value'] else None
+            if np.linalg.norm(dp) < tolerance / 1000 and np.linalg.norm(dr) < np.deg2rad(c['ik_angle_deg']):
+                return q if np.linalg.svd(weighted, compute_uv=False)[-1] >= minimum else None
             error = np.r_[dp, .15 * dr]
             step = weighted.T @ np.linalg.solve(weighted @ weighted.T + .0001 * np.eye(6), error)
             step *= min(1., np.deg2rad(c['joint_step_deg']) / max(np.max(np.abs(step)), 1e-12))

@@ -1,11 +1,19 @@
 """Live external-force graph: the controller's wrench with the TCP x, y, z over time (virtual or real). The
-container has no display, so rokey/images/force_live.png is redrawn every second (keep it open in VS Code);
-on exit a full graph and a CSV are saved. Runs alongside any other robot program.
-  ros2 run rokey draw_graph [--rate 30] [--window 30] [--compensated] [--duration 60]
+container has no display, so rokey/images/force_live.png is redrawn every second (keep it open in VS Code; --no-png:
+not, the web chart draws the stream instead); the samples also go to /robot/force_graph for the web robot tab, which
+draws the same four panels in the browser. On exit a full graph and a CSV are saved (not with --no-save: the web's
+monitor). Runs alongside any other robot program.
+  ros2 run rokey draw_graph [--rate 30] [--window 30] [--compensated] [--duration 60] [--no-png] [--no-save]
 """
 import argparse
+
+if __package__:
+    from .robot_namespace import program_args, robot_topic
+else:
+    from robot_namespace import program_args, robot_topic
 import csv
 from datetime import datetime
+import json
 import time
 
 import matplotlib
@@ -13,6 +21,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
+from std_msgs.msg import String
 
 if __package__:
     from .force_data import CALIBRATION_DIR, IMAGE_DIR, CalibrationRun, ForceData
@@ -89,24 +98,63 @@ class ForceGraph:
             writer.writerows(np.c_[data.t - data.t[0], data.pose, force, ForceData.normal(data.wrench)].round(5))
 
 
+class GraphStream:
+    """The live graph's samples for the web chart: /robot/force_graph (std_msgs/String JSON), a batch about every
+    0.1 s with the samples since the last one: t (s from the first sample), force (BASE) and fn (N), position (TCP x y z,
+    mm), with --compensated force_calibrated and fn_calibrated too; plus mode, tool, tcp (names) and threshold."""
+    CONTEXT = 40  # rows before the new ones: the calibrated model differentiates the pose
+
+    def __init__(self, graph):
+        run = graph.run
+        self.graph, self.sent = graph, 0
+        self.publisher = run.node.create_publisher(String, robot_topic(run.node, '/robot/force_graph'), 10)
+        self.meta = dict(mode=run.mode, tool=run.meta['tool'], tcp=run.meta['tcp'], threshold=graph.threshold)
+
+    def publish(self):
+        rows = self.graph.run.recorder.rows
+        new = len(rows) - self.sent
+        if new <= 0 or len(rows) < 3:
+            return
+        data = ForceData(rows[max(0, self.sent - self.CONTEXT):], [''] * (len(rows) - max(0, self.sent - self.CONTEXT)))
+        tail = slice(-new, None)
+        batch = dict(self.meta, t=(data.t[tail] - rows[0][0]).round(4).tolist(),
+                     force=self.graph.to_base(data, data.wrench)[tail].round(3).tolist(),
+                     fn=ForceData.normal(data.wrench)[tail].round(3).tolist(),
+                     position=data.pose[tail, :3].round(2).tolist())
+        if self.graph.model is not None:
+            corrected = self.graph.model.correct(data)
+            batch.update(force_calibrated=self.graph.to_base(data, corrected)[tail].round(3).tolist(),
+                         fn_calibrated=ForceData.normal(corrected)[tail].round(3).tolist())
+        self.publisher.publish(String(data=json.dumps(batch)))
+        self.sent = len(rows)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--rate', type=float, default=30.0, help='sampling rate limit, Hz (default: 30)')
     parser.add_argument('--window', type=float, default=30.0, help='live graph span, s (default: 30)')
     parser.add_argument('--compensated', action='store_true', help='overlay the force_physics calibration')
     parser.add_argument('--duration', type=float, help='stop after this many seconds (default: Ctrl+C)')
-    options = parser.parse_args()
+    parser.add_argument('--no-png', action='store_true', help='no live PNG (the web chart draws the stream)')
+    parser.add_argument('--no-save', action='store_true', help='no full graph / CSV on exit (the web monitor)')
+    options = parser.parse_args(program_args())
     run = CalibrationRun('draw_graph')
     model = PhysicsCompensator.load(CALIBRATION_DIR / f'force_physics_{run.mode}.json') if options.compensated else None
     graph = ForceGraph(run, run.config['scan']['touch_threshold'], model)
+    stream = GraphStream(graph)
     IMAGE_DIR.mkdir(exist_ok=True)
     live, start, redraw = IMAGE_DIR / 'force_live.png', time.monotonic(), time.monotonic() + 1.0
-    run.log(f'drawing {live} every second; Ctrl+C to finish')
+    published = start
+    run.log('streaming /robot/force_graph' + ('' if options.no_png else f', drawing {live} every second')
+            + '; Ctrl+C to finish')
     try:
         while not options.duration or time.monotonic() - start < options.duration:
             tick = time.monotonic()
             graph.sample()
-            if tick >= redraw and len(run.recorder.rows) > 1:
+            if tick >= published + 0.1:
+                stream.publish()
+                published = tick
+            if not options.no_png and tick >= redraw and len(run.recorder.rows) > 1:
                 graph.draw(live, options.window)
                 redraw = tick + 1.0
             time.sleep(max(0.0, 1 / options.rate - (time.monotonic() - tick)))
@@ -114,7 +162,7 @@ def main():
         pass
     finally:
         try:
-            if len(run.recorder.rows) > 1:
+            if not options.no_save and len(run.recorder.rows) > 1:
                 stem = IMAGE_DIR / f'force_graph_{datetime.now():%Y%m%d_%H%M%S}'
                 graph.draw(stem.with_suffix('.png'))
                 graph.save_csv(stem.with_suffix('.csv'))

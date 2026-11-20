@@ -91,6 +91,7 @@ class RVizDisplay:
         import yaml
         from sensor_msgs.msg import JointState
         self.rclpy, self.JointState = rclpy, JointState
+        self.model = model
         rclpy.init()
         self.node = rclpy.create_node('cobot_native_joint_source', namespace='/cobot_native')
         self.publisher = self.node.create_publisher(JointState, 'joint_states', 10)
@@ -114,6 +115,10 @@ class RVizDisplay:
         start_process([str(executable),
                        '--ros-args', '--params-file', str(parameters),
                        '-r', '__ns:=/cobot_native'])
+        from rcl_interfaces.srv import SetParameters
+        self.description_client = self.node.create_client(
+            SetParameters, '/cobot_native/robot_state_publisher/set_parameters')
+        self.description_version = model.urdf.stat().st_mtime_ns
         root = Path(__file__).resolve().parent.parent
         source = (root / 'ws_cobot_pjt/src/cobot_rg2/rg2/m0609_rg2_bringup/rviz/default.rviz')
         config = yaml.safe_load(source.read_text())
@@ -140,6 +145,14 @@ class RVizDisplay:
         self.map_publisher.publish(self.map_markers)
 
     def update(self, positions):
+        version = self.model.urdf.stat().st_mtime_ns
+        if version != self.description_version and self.description_client.service_is_ready():
+            from rcl_interfaces.msg import Parameter, ParameterValue, ParameterType
+            from rcl_interfaces.srv import SetParameters
+            self.description_client.call_async(SetParameters.Request(parameters=[Parameter(
+                name='robot_description', value=ParameterValue(
+                    type=ParameterType.PARAMETER_STRING, string_value=self.model.urdf.read_text()))]))
+            self.description_version = version
         message = self.JointState()
         message.header.stamp = self.node.get_clock().now().to_msg()
         message.name = list(positions)

@@ -107,7 +107,16 @@ async function loadJobs() {
 async function loadMembers() {
   const [us, vs] = await Promise.all([api("GET", "/api/users"), api("GET", "/api/vehicles")]);
   $("#usersBody").innerHTML = us.map((u) =>
-    `<tr><td>${esc(u.username)}</td><td>${esc(u.name)}</td><td><span class="badge ${u.role === "admin" ? "mode" : "ok"}">${u.role === "admin" ? "관리자" : "사용자"}</span></td></tr>`).join("");
+    `<tr><td>${esc(u.username)}</td><td>${esc(u.name)}</td><td><span class="badge ${u.role === "admin" ? "mode" : "ok"}">${u.role === "admin" ? "관리자" : "사용자"}</span></td>
+    <td><input type="email" class="inline" data-uid="${u.id}" value="${esc(u.email)}" placeholder="없음"
+      style="width: 100%; min-width: 150px; margin: 0; padding: 6px 8px; font-size: 14px"></td></tr>`).join("");
+  $$("#usersBody input[data-uid]").forEach((inp) => inp.addEventListener("change", async () => {   // 칸에서 나오거나 Enter 면 저장
+    const msg = $("#emailMsg");
+    try {
+      const r = await api("PATCH", `/api/users/${inp.dataset.uid}`, { email: inp.value });
+      inp.value = r.email || ""; msg.className = "form-msg ok"; msg.textContent = "이메일을 저장했습니다.";
+    } catch (e) { msg.className = "form-msg err"; msg.textContent = e.message; }
+  }));
   const owners = us.filter((u) => u.role === "user");
   const opts = (sel) => `<option value="">차주 없음</option>` + owners.map((u) =>
     `<option value="${u.id}" ${u.id === sel ? "selected" : ""}>${esc(u.name)} (${esc(u.username)})</option>`).join("");
@@ -371,14 +380,23 @@ $("#estopBtn").addEventListener("click", stopJob);
 // ------------------------------------------------------------ rosbridge
 // robot_control.js 의 연결 하나를 함께 쓴다: web_control 상태·명령, /repair/status, 로봇팔 관절값 (http/https·LAN 주소 공통)
 function connectRos() {
-  robotControl.addEventListener("connection", (event) => {
-    state.robotMsg = null; robot.attachRos(event.detail); updateRobotState();   // /dsr01/joint_states → 로봇팔 3D
+  let jointTopic;
+  const attachArm = () => {
+    jointTopic = robotControl.jointTopic();
+    robot.attachRos(robotControl.ros, jointTopic);
+  };
+  robotControl.addEventListener("connection", () => {
+    state.robotMsg = null; attachArm(); updateRobotState();
   });
   robotControl.addEventListener("close", () => {
     state.robotMsg = null; robot.onRosClose(); updateRobotState();               // 마지막 자세 유지 + 반투명
   });
-  if (robotControl.connected) robot.attachRos(robotControl.ros);
+  if (robotControl.connected) attachArm();
   robotControl.addEventListener("state", async () => {
+    if (robotControl.connected && jointTopic !== robotControl.jointTopic()) {
+      state.robotMsg = null;
+      attachArm();
+    }
     state.rosOk = robotControl.ready;
     if (!state.demo) setRosPill(state.rosOk ? "on" : "off", !robotControl.live ? "ROS 제어 노드 응답 대기"
       : !state.rosOk ? "로봇 준비 대기" : robotControl.status.busy ? "로봇 실행 중" : "로봇 제어 준비됨");

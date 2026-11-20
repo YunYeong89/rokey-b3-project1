@@ -73,7 +73,7 @@ class VirtualTransport:
         raise TimeoutError('Actual Gazebo TCP did not become stationary')
 
     def begin(self, method):
-        response = self.robot.request(f'/dsr01/surface_follow/{method}', Trigger)
+        response = self.robot.request(f'{self.robot.node.get_namespace()}/surface_follow/{method}', Trigger)
         self.run_id = json.loads(response.message)['run_id']
         # States already in flight still carry the previous (stopped) run_id; own the stream only once the
         # native side reports this run, well inside its 150 ms command watchdog.
@@ -104,7 +104,7 @@ class VirtualTransport:
         previous = self.robot.timeout
         try:
             self.robot.timeout = 10.
-            self.robot.request('/dsr01/surface_follow/end', Trigger)
+            self.robot.request(self.robot.node.get_namespace() + '/surface_follow/end', Trigger)
             after, deadline = self.data.get('sequence', 0), time.monotonic() + 2
             while time.monotonic() < deadline:
                 self.spin(.02)

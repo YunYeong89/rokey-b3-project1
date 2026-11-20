@@ -1,8 +1,15 @@
+import { robotControl } from "./robot_control.js";
+
 /** The running program's clouds (session/clouds/<name>.npy via /api/robot/clouds) in the robot viewer: reference
  * (the part, then its measurable points after planning) and measured (contact points, rewritten every second). */
 export class CloudFeed {
   constructor(viewer, names = ["reference", "measured"]) {
     Object.assign(this, { viewer, names, tags: {} });
+    robotControl.addEventListener("robot", () => {
+      this.tags = {};
+      this.names.forEach((name) => this.viewer.setCloud(name, new Float32Array()));
+      if (this.timer) this.poll();
+    });
   }
 
   start() {
@@ -12,12 +19,15 @@ export class CloudFeed {
   }
 
   async poll() {
+    const robot = robotControl.selected;
     for (const name of this.names) {
-      const response = await fetch(`/api/robot/clouds/${name}`, { cache: "no-cache" });
+      const response = await fetch(`/api/robot/clouds/${name}?robot=${encodeURIComponent(robot)}`, { cache: "no-cache" });
       const tag = response.headers.get("ETag");
       if (!response.ok || tag === this.tags[name]) continue;  // none yet (404) or unchanged
+      const points = CloudFeed.parse(await response.arrayBuffer());
+      if (robot !== robotControl.selected) return;
       this.tags[name] = tag;
-      this.viewer.setCloud(name, CloudFeed.parse(await response.arrayBuffer()));
+      this.viewer.setCloud(name, points);
     }
   }
 

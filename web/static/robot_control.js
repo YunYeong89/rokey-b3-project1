@@ -10,70 +10,159 @@ export function rosbridgeUrl() {
 class RobotControlClient extends EventTarget {
   constructor() {
     super();
-    this.received = 0;
+    this.selected = "dsr01";
     this.connected = false;
+    this.robots = new Map();
     this.connect();
     setInterval(() => this.emit(), 500);
+    setInterval(() => this.discover(), 4000);
   }
 
   connect() {
-    this.ros = new ROSLIB.Ros({ url: rosbridgeUrl() });
+    const ros = this.ros = new ROSLIB.Ros({ url: rosbridgeUrl() });
     this.ros.on("connection", () => {
+      if (ros !== this.ros) return;
       this.connected = true;
-      this.received = 0;
-      this.commands = new ROSLIB.Topic({ ros: this.ros, name: "/robot/command", messageType: "std_msgs/msg/String" });
-      this.repairs = new ROSLIB.Topic({ ros: this.ros, name: "/repair/command", messageType: "std_msgs/msg/String" });
-      this.commands.advertise();
-      this.repairs.advertise();
-      new ROSLIB.Topic({ ros: this.ros, name: "/robot/status", messageType: "std_msgs/msg/String" })
-        .subscribe((message) => {
-          this.status = JSON.parse(message.data);
-          this.received = performance.now();
-          this.emit();
-        });
-      new ROSLIB.Topic({ ros: this.ros, name: "/repair/status", messageType: "std_msgs/msg/String", throttle_rate: 50 })
-        .subscribe((message) => this.dispatchEvent(new CustomEvent("repair", { detail: JSON.parse(message.data) })));
-      this.dispatchEvent(new CustomEvent("connection", { detail: this.ros }));  // 같은 연결을 쓰는 화면 (로봇팔 3D)
+      this.outputs = new Map();
+      this.watch("dsr01");
+      if (this.selected !== "dsr01") this.watch(this.selected);
+      this.discover();
+      this.dispatchEvent(new CustomEvent("connection", { detail: ros }));
       this.emit();
     });
     this.ros.on("error", () => {});
     this.ros.on("close", () => {
+      if (ros !== this.ros) return;
       this.connected = false;
-      this.received = 0;
+      this.robots.clear();
       this.dispatchEvent(new Event("close"));
       this.emit();
       this.retry = setTimeout(() => this.connect(), 2000);
     });
   }
 
-  get live() { return this.connected && performance.now() - this.received < 2500 && this.received > 0; }
+  reconnect() {
+    clearTimeout(this.retry);
+    const old = this.ros;
+    this.connected = false;
+    this.robots.clear();
+    this.dispatchEvent(new Event("close"));
+    this.connect();
+    old?.close();
+    this.emit();
+  }
+
+  topic(path, robot = this.selected) { return robot === "dsr01" ? path : `/${robot}${path}`; }
+
+  jointTopic() {
+    if (this.selected === "dsr01" && window.APP.robotJointTopic) return window.APP.robotJointTopic;
+    return `/${this.selected}/${this.status?.mode === "real" ? "joint_states" : "sim_joint_states"}`;
+  }
+
+  watch(robot) {
+    if (this.robots.has(robot)) return;
+    const ros = this.ros, record = { received: -Infinity };
+    this.robots.set(robot, record);
+    new ROSLIB.Topic({ ros, name: this.topic("/robot/status", robot), messageType: "std_msgs/msg/String" })
+      .subscribe((message) => {
+        if (ros !== this.ros) return;
+        record.status = JSON.parse(message.data);
+        record.received = performance.now();
+        this.emit();
+      });
+    new ROSLIB.Topic({ ros, name: this.topic("/repair/status", robot), messageType: "std_msgs/msg/String", throttle_rate: 50 })
+      .subscribe((message) => {
+        if (ros === this.ros && robot === this.selected)
+          this.dispatchEvent(new CustomEvent("repair", { detail: JSON.parse(message.data) }));
+      });
+  }
+
+  discover() {
+    if (!this.connected) return;
+    const ros = this.ros;
+    ros.getTopics(({ topics }) => {
+      if (ros !== this.ros || !this.connected) return;
+      for (const name of topics) {
+        const match = name.match(/^\/(robot_[1-9][0-9]*)\/robot\/status$/);
+        if (match) this.watch(match[1]);
+      }
+    }, () => {});
+  }
+
+  get available() {
+    return [...this.robots].filter(([, r]) => performance.now() - r.received < 2500).map(([id]) => id);
+  }
+
+  select(robot) {
+    if (robot === this.selected) return;
+    this.selected = robot;
+    this.dispatchEvent(new Event("robot"));
+    this.emit();
+  }
+
+  get status() { return this.robots.get(this.selected)?.status; }
+  get live() { return this.connected && this.available.includes(this.selected); }
   get ready() { return this.live && this.status?.ready; }
   emit() { this.dispatchEvent(new CustomEvent("state", { detail: this.status })); }
 
-  start(task, parameters, requestId) {
+  publish(path, value) {
+    const name = this.topic(path);
+    if (!this.outputs.has(name)) this.outputs.set(name,
+      new ROSLIB.Topic({ ros: this.ros, name, messageType: "std_msgs/msg/String" }));
+    this.outputs.get(name).publish(new ROSLIB.Message({ data: JSON.stringify(value) }));
+  }
+
+  start(task, parameters, requestId, vehicleId) {
     if (!this.live) throw new Error("ROS 제어 노드에 연결되지 않았습니다");
-    this.commands.publish(new ROSLIB.Message({ data: JSON.stringify({ cmd: "start", task, parameters, request_id: requestId }) }));
+    this.publish("/robot/command", {
+      cmd: "start", task, parameters, request_id: requestId, vehicle_id: vehicleId
+    });
+  }
+
+  inspect(parts, planOnly, requestId, vehicleId) {
+    if (!this.live) throw new Error("ROS 제어 노드에 연결되지 않았습니다");
+    this.publish("/robot/command", { cmd: "inspect", parts, plan_only: planOnly, request_id: requestId, vehicle_id: vehicleId });
+  }
+
+  continueInspection(requestId) {
+    if (!this.ready) throw new Error("로봇 준비 상태를 확인하세요");
+    this.publish("/robot/command", { cmd: "inspection_continue", request_id: requestId });
   }
 
   /** Robot stop: move_stop, and the program started from the web is interrupted (web_control). */
   stop() {
     if (!this.connected) throw new Error("rosbridge 연결을 확인하세요");
-    this.commands.publish(new ROSLIB.Message({ data: JSON.stringify({ cmd: "stop" }) }));
+    this.publish("/robot/command", { cmd: "stop" });
   }
 
   /** Live force graph (draw_graph) beside any program. */
   graph(on, compensated) {
     if (!this.live) throw new Error("ROS 제어 노드에 연결되지 않았습니다");
-    this.commands.publish(new ROSLIB.Message({ data: JSON.stringify({ cmd: "graph", on, compensated }) }));
+    this.publish("/robot/command", { cmd: "graph", on, compensated });
+  }
+
+  /** One key of the web teleop (rokey teleop --web): a held button repeats it, "" releases (stops at once). */
+  teleop(key) {
+    if (!this.connected) throw new Error("rosbridge 연결을 확인하세요");
+    this.publish("/robot/teleop", { key });
   }
 
   repair(command) {
     if (!this.live) throw new Error("ROS 제어 노드에 연결되지 않았습니다");
-    this.repairs.publish(new ROSLIB.Message({ data: JSON.stringify(command) }));
+    this.publish("/repair/command", command);
   }
 }
 
 export const robotControl = new RobotControlClient();
+
+const SCAN_STAGES = { planning: "계획", moving: "이동", scanning: "측정", reporting: "결과 저장" };
+
+/** real_scan progress (/scan/progress via web_control's status): stage, path and segment, share, points, force. */
+function scanText(scan) {
+  return ` · 스캔 ${SCAN_STAGES[scan.stage]} 경로 ${scan.path}/${scan.paths} 구간 ${scan.segment}/${scan.segments}`
+    + ` · ${Math.round(scan.progress * 100)}% · 점 ${scan.points} · ${scan.force_n.toFixed(2)} N`
+    + ` · 남은 약 ${Math.ceil(scan.remaining_s / 60)}분`;
+}
 
 export class RobotTaskPanel {
   constructor(panel) {
@@ -141,9 +230,9 @@ export class RobotTaskPanel {
   refresh() {
     const state = robotControl.status;
     if (state?.catalog && !this.catalog) {
-      this.catalog = state.catalog;
-      this.select.replaceChildren(...this.catalog.map((item) =>
-        new Option(item.virtual ? `${item.label} (시뮬레이션 전용)` : item.label, item.id)));
+      this.catalog = state.catalog.filter((item) => !item.panel && !item.virtual &&
+        !["choose_car", "scan_surface", "real_scan", "box_scan", "defect_scan", "pick_probe"].includes(item.id));
+      this.select.replaceChildren(...this.catalog.map((item) => new Option(item.label, item.id)));
       this.renderFields();
     }
     if (this.pending && state?.event === "rejected" && state.rejected_request === this.pending.id) {
@@ -167,8 +256,9 @@ export class RobotTaskPanel {
       : state.external_tasks?.length ? `터미널 작업 실행 중: ${state.external_tasks.join(", ")}`
       : this.pending ? "실행 접수 대기"
       : `${state.message} · ${robot} ${robotControl.ready ? "준비됨" : "준비 대기"}`
-        + `${state.probe_attached ? "" : state.mode === "real" ? ` · 탐침 TCP(${state.probe_tcp}) 미선택` : " · 탐침 미파지"}`
+        + `${state.probe_attached === true ? " · 탐침 파지" : state.probe_attached === false ? " · 탐침 미파지" : " · 탐침 상태 확인 중"}`
         + `${state.task ? ` · ${state.task}` : ""}`;
+    if (robotControl.live && state.scan) this.status.textContent += scanText(state.scan);
     if (state?.event === "robot_stopped") this.error.textContent = `로봇 정지 명령 전송 (${state.stop_sent}건)`;
     if (state?.log !== this.log.textContent) this.log.textContent = state?.log || "";
   }

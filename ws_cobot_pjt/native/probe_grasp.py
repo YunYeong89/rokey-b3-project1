@@ -11,6 +11,8 @@ class ProbeGrasp:
         from gz.msgs10.stringmsg_pb2 import StringMsg
         from gz.transport13 import AdvertiseMessageOptions, SubscribeOptions
         self.backend, self.design, self.Empty, self.StringMsg = backend, design, Empty, StringMsg
+        from probe_mount import ProbeMount
+        self.mount = ProbeMount(backend.node)
         self.states = {}
         self.publishers = {}
         for group in ['dock', 'grip']:
@@ -63,12 +65,14 @@ class ProbeGrasp:
             return {'success': False, 'message': fit_error}
         self.pause(True)
         try:
+            flange_body = self.mount.transform()
             self.switch('dock', False)
             try:
                 self.switch('grip', True)
             except Exception:
                 self.switch('dock', True)
                 raise
+            self.design.set_mount(flange_body)
             self.design.attached = True
         finally:
             self.pause(False)

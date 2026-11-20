@@ -1,0 +1,37 @@
+{
+  "before": {
+    "triangles": 518458,
+    "vertices": 258842,
+    "degenerate": 67,
+    "duplicates": 12,
+    "boundary_edges": 4,
+    "nonmanifold_edges": 31,
+    "winding_consistent": true,
+    "near_coplanar_edges": 152911,
+    "folded_edges": 639,
+    "area_mm2": 501429.40731452603
+  },
+  "after": {
+    "triangles": 450253,
+    "vertices": 224778,
+    "degenerate": 0,
+    "duplicates": 0,
+    "boundary_edges": 155,
+    "nonmanifold_edges": 1,
+    "winding_consistent": true,
+    "near_coplanar_edges": 110718,
+    "folded_edges": 236,
+    "area_mm2": 501390.14307103923
+  },
+  "planar_patches": 11839,
+  "projected_vertices": 636,
+  "simplified_components": 46,
+  "open_components": 5,
+  "projection_tolerance_mm": 0.01,
+  "simplification_tolerance_mm": 0.01,
+  "source_mesh": "meshes/vehicles/b3_project1/assembly.stl",
+  "surface_mesh": "meshes/vehicles/b3_project1/assembly_surface.npz",
+  "source_sha256": "fdd2878a28399ef6ff3503511ea5a58c0d7f14b5849bd209d110dddb7de9865a",
+  "surface_sha256": "cc615217292547ab196c056e7cbf449ca768dfc01b66bba65cfe7010e2d71d5f",
+  "units": "vehicle_mm"
+}

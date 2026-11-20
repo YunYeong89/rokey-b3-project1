@@ -32,11 +32,11 @@ types:
 
 # Gazebo performance coupon (source dimensions kept in millimetres).
 performance:
-  mesh: meshes/fracture_sample.stl   # mm; source +Y becomes coupon +Z
+  mesh: meshes/fracture_sample_shallow.stl   # mm; width-series crack depth 0.5 mm, source +Y becomes coupon +Z
   pose_mm_deg: [400.0, 0.0, 0.0]
   lift_mm: 50.0
   color: [0.65, 0.48, 0.28]
-  friction: 0.01
+  friction: 0.2      # with the ball tip's 0.2 (native/scene.json): 0.01 slipped too freely
 
 
 # --car real (native session): the team's vehicle assembly (rokey-b3-project1, meshes/vehicles/b3_project1), not
@@ -46,9 +46,12 @@ performance:
 # axle, right -> left wheel bodies: all four centres level), scaled to length_mm overall.
 real:
   mesh: meshes/vehicles/b3_project1/assembly.stl
+  surface_mesh: meshes/vehicles/b3_project1/assembly_surface.npz
+  surface_mesh_length_mm: 250.0      # length_mm the prepared surface was made at (scaled to length_mm on load)
   front: [0.9822, 0.0268, -0.1857]
   left: [0.0355, 0.9454, 0.3239]
-  length_mm: 250.0                  # ~1:18 like the team's vehicles -> 250 x 133 x 154 mm
+  length_mm: 225.17                 # the printed vehicle: wheel diameter 48 mm measured, 53.29 mm at the
+                                    # former 250 mm -> scale 0.9007: 225.2 x 116.6 x 135.3 mm
   nose_x_mm: 410.0                  # 440 left each door's upper rear corner (x ~590) out of reach to back off from;
                                     # 410: doors 97-99 % covered, bonnet 100 %, HOME tool 42 mm clear of the vehicle
   lift_mm: 50.0                     # fixed this far above the table (jig not modelled)
@@ -58,7 +61,23 @@ real:
   # shell_mm[0] of the outer box (sides, ends, top) with their top above shell_mm[1] are the body (not wheels, axles,
   # seats, dashboard); body triangles at door x0..x1, z0..z1 facing sideways (|normal y| >= door[4]) are both doors.
   parts:
-    bonnet: [[80.0, 0.0, 100.0]]
-    bumper: [[124.5, 0.0, 53.0], [-124.0, 0.0, 57.0]]
-  shell_mm: [15.0, 60.0]
-  door: [-44.0, 40.0, 45.0, 135.0, 0.7]
+    bonnet: [[72.05, 0.0, 90.07]]   # vehicle-frame mm below scale with length_mm (0.9007)
+    bumper: [[112.13, 0.0, 47.74], [-111.68, 0.0, 51.34]]
+  shell_mm: [13.51, 54.04]
+  door: [-39.63, 36.03, 40.53, 121.59, 0.7]
+
+# --car demo (= demo_front), demo_front, demo_left, demo_right (native session): the `real` vehicle fixed on the vehicle
+# holder (team 3D-models holder.stl: 200 x 200 mm base plate on the table, four posts up into the vehicle underside),
+# holder and vehicle turned together about the holder centre so that the front, the left door or the right door
+# faces the robot. The probe rack stays as it is (native/scene.json probes).
+demo:
+  holder_mesh: meshes/fixed_holder.stl  # mm, z up, base plate underside on z = 0, post tops at 125 mm
+  centre_mm: [650.0, 0.0]               # holder bottom centre in BASE (650 mm ahead of the robot base origin)
+  yaw_deg: {demo: 180.0, demo_front: 180.0, demo_left: 90.0, demo_right: -90.0}  # vehicle and holder (holder x along
+                                        # the vehicle length): front / left door / right door toward the robot
+  seat_mm: 37.88                        # vehicle-frame underside height on the post tops: the lowest over the four
+                                        # post footprints (posts 72 mm along the length, clear of the drive tunnel on
+                                        # y = 0), for real.length_mm 225.17 (42.1 at 250)
+  height_mm: 214.0                      # holder + vehicle top above the table: the real posts go into the underside,
+                                        # the simulation shortens them instead (post tops 116.6 mm, wheels 78.7 mm up)
+  color: [0.42, 0.42, 0.46]             # simulation display (rgb)

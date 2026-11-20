@@ -27,6 +27,10 @@
 #include <fstream>
 #include <iostream>
 #include <chrono>
+#include <atomic>
+#include <cmath>
+#include <exception>
+#include <iterator>
 #include <map>
 #include <mutex>
 #include <unistd.h>     
@@ -35,7 +39,10 @@
 #include "dsr_hardware2/dsr_hw_interface2.h"
 #include "dsr_hardware2/util.hpp"
 #include "ament_index_cpp/get_package_share_directory.hpp"
+#include "dsr_msgs2/msg/force_telemetry.hpp"
+#include "realtime_tools/realtime_publisher.hpp"
 #include "../../dsr_common2/include/DRFLEx.h"
+#include "joint_servo.hpp"
 
 using namespace std;
 using namespace chrono;
@@ -51,6 +58,21 @@ constexpr size_t g_k_p3020_fixed_joint_index = 3;
 std::map<std::string, CDRFLEx*> g_drfl_instances;
 std::mutex g_drfl_map_mutex;
 CDRFLEx* g_active_drfl = nullptr;
+static std::map<CDRFLEx *, dsr_hardware2::JointServo *> joint_servos;
+
+bool lock_direct_motion(CDRFLEx * drfl, std::unique_lock<std::mutex> & guard)
+{
+    std::lock_guard<std::mutex> lock(g_drfl_map_mutex);
+    const auto servo = joint_servos.find(drfl);
+    return servo == joint_servos.end() || servo->second->lock_direct_motion(guard);
+}
+
+bool stop_with_joint_servo(CDRFLEx * drfl, STOP_TYPE type)
+{
+    std::lock_guard<std::mutex> lock(g_drfl_map_mutex);
+    const auto servo = joint_servos.find(drfl);
+    return servo == joint_servos.end() ? drfl->stop(type) : servo->second->stop(type);
+}
 
 void* get_drfl(const char* robot_name = nullptr){
     std::lock_guard<std::mutex> lock(g_drfl_map_mutex);
@@ -71,6 +93,70 @@ void* get_drfl(const char* robot_name = nullptr){
 }
 
 namespace dsr_hardware2{
+
+class ForceTelemetryPublisher
+{
+public:
+    explicit ForceTelemetryPublisher(const rclcpp::Node::SharedPtr & node)
+    {
+        auto publisher = node->create_publisher<dsr_msgs2::msg::ForceTelemetry>(
+            "realtime/force_telemetry", rclcpp::QoS(rclcpp::KeepLast(5)).best_effort().durability_volatile());
+        publisher_ = std::make_unique<realtime_tools::RealtimePublisher<dsr_msgs2::msg::ForceTelemetry>>(publisher);
+        // DDS subscriber discovery stays outside the hardware read loop.
+        demand_timer_ = node->create_wall_timer(std::chrono::milliseconds(200),
+            [publisher, subscribed = subscribed_]() {
+                subscribed->store(publisher->get_subscription_count() > 0, std::memory_order_relaxed);
+            });
+    }
+
+    void publish(const RT_OUTPUT_DATA_LIST & data, const rclcpp::Time & read_stamp)
+    {
+        if (!subscribed_->load(std::memory_order_relaxed)) {
+            return;
+        }
+        const double stamp = data.time_stamp;
+        if (!std::isfinite(stamp) || stamp <= 0.0 || stamp == last_stamp_ || !publisher_->trylock()) {
+            return;
+        }
+
+        auto & msg = publisher_->msg_;
+        msg.time_stamp = stamp;
+        msg.read_stamp = read_stamp;
+        const auto copy = [](const auto & source, auto & target) {
+            std::copy(std::begin(source), std::end(source), target.begin());
+        };
+        copy(data.actual_joint_position, msg.actual_joint_position_deg);
+        copy(data.actual_joint_position_abs, msg.actual_joint_position_abs_deg);
+        copy(data.actual_joint_velocity, msg.actual_joint_velocity_deg_s);
+        copy(data.actual_joint_velocity_abs, msg.actual_joint_velocity_abs_deg_s);
+        copy(data.target_joint_acceleration, msg.target_joint_acceleration_deg_s2);
+        copy(data.actual_tcp_position, msg.actual_tcp_pose_mm_deg);
+        copy(data.actual_tcp_velocity, msg.actual_tcp_velocity_mm_deg_s);
+        copy(data.actual_flange_position, msg.actual_flange_pose_mm_deg);
+        copy(data.external_tcp_force, msg.external_tcp_wrench_n_nm);
+        copy(data.raw_joint_torque, msg.raw_joint_torque_nm);
+        copy(data.external_joint_torque, msg.external_joint_torque_nm);
+        copy(data.gravity_torque, msg.gravity_torque_nm);
+        copy(data.joint_temperature, msg.joint_temperature_c);
+        auto row = msg.jacobian_matrix.begin();
+        for (const auto & source_row : data.jacobian_matrix) {
+            row = std::copy(std::begin(source_row), std::end(source_row), row);
+        }
+        msg.singularity = data.singularity;
+        msg.solution_space = data.solution_space;
+        msg.robot_mode = data.robot_mode;
+        msg.robot_state = data.robot_state;
+        msg.control_mode = data.control_mode;
+        last_stamp_ = stamp;
+        publisher_->unlockAndPublish();
+    }
+
+private:
+    std::shared_ptr<std::atomic_bool> subscribed_ = std::make_shared<std::atomic_bool>(false);
+    std::unique_ptr<realtime_tools::RealtimePublisher<dsr_msgs2::msg::ForceTelemetry>> publisher_;
+    rclcpp::TimerBase::SharedPtr demand_timer_;
+    double last_stamp_ = 0.0;
+};
 
 CallbackReturn DRHWInterface::on_init(const hardware_interface::HardwareInfo & info)
 {
@@ -332,6 +418,27 @@ CallbackReturn DRHWInterface::on_init(const hardware_interface::HardwareInfo & i
     return CallbackReturn::SUCCESS;
 }
 
+CallbackReturn DRHWInterface::on_configure(const rclcpp_lifecycle::State & previous_state)
+{
+    const auto result = hardware_interface::SystemInterface::on_configure(previous_state);
+    if (result == CallbackReturn::SUCCESS && mode_ == "real") {
+        const auto node = get_node();
+        if (!node) {
+            RCLCPP_WARN(get_logger(), "Force telemetry unavailable: hardware node is missing");
+            return result;
+        }
+        try {
+            force_telemetry_ = std::make_unique<ForceTelemetryPublisher>(node);
+            joint_servo_ = std::make_unique<JointServo>(m_Drfl, node);
+            std::lock_guard<std::mutex> lock(g_drfl_map_mutex);
+            joint_servos[&m_Drfl] = joint_servo_.get();
+        } catch (const std::exception & error) {
+            RCLCPP_WARN(get_logger(), "Force telemetry unavailable: %s", error.what());
+        }
+    }
+    return result;
+}
+
 std::vector<hardware_interface::StateInterface> DRHWInterface::export_state_interfaces()
 {
   std::vector<hardware_interface::StateInterface> state_interfaces;
@@ -368,12 +475,15 @@ std::vector<hardware_interface::CommandInterface> DRHWInterface::export_command_
 }
 
 
-return_type DRHWInterface::read(const rclcpp::Time & /*time*/, const rclcpp::Duration & /*period*/)
+return_type DRHWInterface::read(const rclcpp::Time & time, const rclcpp::Duration & /*period*/)
 {
     const size_t expected_num_joints = joint_position_.size();
     if(mode_ == "real") {
         const LPRT_OUTPUT_DATA_LIST data = m_Drfl.read_data_rt();
         if(nullptr == data) {
+            if (joint_servo_ && joint_servo_->owns_motion()) {
+                joint_servo_->stop(STOP_TYPE_SLOW);
+            }
             RCLCPP_WARN(rclcpp::get_logger("dsr_hw_interface2"),
                                     "[read] read_data_rt retrieves nullptr");
             return return_type::ERROR;
@@ -385,6 +495,12 @@ return_type DRHWInterface::read(const rclcpp::Time & /*time*/, const rclcpp::Dur
             joint_position_[idx_ros] = static_cast<float>(data->actual_joint_position[idx_control] * (M_PI / 180.0f));
             joint_velocities_[idx_ros] = static_cast<float>(data->actual_joint_velocity[idx_control] * (M_PI / 180.0f));
             idx_ros++;
+        }
+        if (force_telemetry_) {
+            force_telemetry_->publish(*data, time);
+        }
+        if (joint_servo_) {
+            joint_servo_->observe(*data);
         }
     }else if(mode_ == "virtual") {
         LPROBOT_POSE pose = m_Drfl.GetCurrentPose();
@@ -445,6 +561,10 @@ return_type DRHWInterface::write(const rclcpp::Time &, const rclcpp::Duration &d
     auto now_cpu = std::chrono::steady_clock::now();
     double real_loop_dt = std::chrono::duration<double>(now_cpu - last_tick_).count();
     last_tick_ = now_cpu;
+    if (joint_servo_ && joint_servo_->write()) {
+        pre_joint_position_command_ = joint_position_command_;
+        return return_type::OK;
+    }
 
     // dt provided by controller_manager
     const double dt_sec = dt.seconds();
@@ -500,6 +620,10 @@ return_type DRHWInterface::write(const rclcpp::Time &, const rclcpp::Duration &d
 
     if (positionCommandRunning(pre_joint_position_command_, joint_position_command_))
     {
+        std::unique_lock<std::mutex> guard;
+        if (joint_servo_ && !joint_servo_->lock_direct_motion(guard)) {
+            return return_type::OK;
+        }
         if (idle_)
         {
             m_Drfl.set_safety_mode(SAFETY_MODE_AUTONOMOUS, SAFETY_MODE_EVENT_MOVE);
@@ -568,6 +692,13 @@ return_type DRHWInterface::write(const rclcpp::Time &, const rclcpp::Duration &d
 
 DRHWInterface::~DRHWInterface()
 {
+    {
+        std::lock_guard<std::mutex> lock(g_drfl_map_mutex);
+        joint_servos.erase(&m_Drfl);
+    }
+    if (joint_servo_ && joint_servo_->owns_motion()) {
+        joint_servo_->stop(STOP_TYPE_SLOW);
+    }
     m_Drfl.stop_rt_control();
     // To-do : Update disconnection function in controller version v3.6
     // m_Drfl.disconnect_rt_control();

@@ -19,6 +19,7 @@ surface_follow also writes its trace to rokey/surface_runs/.
   e.g. the dent only: --from-row 14 --rows 22
 """
 import argparse
+from .robot_namespace import program_args
 import csv
 from datetime import datetime
 import textwrap
@@ -312,7 +313,7 @@ def main():
     parser.add_argument('--speed', type=float, help='feed along the rows, mm/s (default defect_scan.speed_mm_s)')
     parser.add_argument('--rows', type=int, help='only N rows (quick check)')
     parser.add_argument('--from-row', type=int, default=0, help='skip this many rows from the bottom (dent: 15)')
-    options = parser.parse_args()
+    options = parser.parse_args(program_args())
     program = RobotProgram('defect_scan')
     try:
         if program.mode != 'virtual':

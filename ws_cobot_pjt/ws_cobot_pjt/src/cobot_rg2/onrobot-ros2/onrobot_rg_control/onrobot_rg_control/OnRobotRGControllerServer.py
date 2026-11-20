@@ -24,6 +24,7 @@ from rclpy.action import GoalResponse, CancelResponse
 from std_srvs.srv import Trigger
 from control_msgs.action import GripperCommand
 from sensor_msgs.msg import JointState
+from std_msgs.msg import Bool
 from onrobot_rg_msgs.srv import GripperPose
 
 from onrobot_rg_msgs.msg import OnRobotRGOutput
@@ -168,6 +169,7 @@ class OnRobotRGNode(Node):
         self.mimic_ratios = [1, -1, 1, -1, -1, 1]
         
         self.joint_states_pub = self.create_publisher(JointState, '/joint_states', 3, callback_group=self.reentrant)
+        self.grip_detected_pub = self.create_publisher(Bool, 'gripper/grip_detected', 1)
         
     def initModbusTCP(self):
         try:
@@ -218,6 +220,7 @@ class OnRobotRGNode(Node):
         msg.position = [joint_angle * ratio for ratio in self.mimic_ratios]
         msg.effort = ([((float)(self.command.rgfr))/10 for _ in self.mimic_ratios]) if self.status['busy'] else ([0.0 for _ in self.mimic_ratios])
         self.joint_states_pub.publish(msg)
+        self.grip_detected_pub.publish(Bool(data=bool(self.status['grip'] and not self.status['busy'])))
         
     """
         Convert gripper width to joint value

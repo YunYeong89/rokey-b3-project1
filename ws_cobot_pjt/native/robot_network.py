@@ -9,8 +9,9 @@ import threading
 
 
 class RobotNetwork:
-    def __init__(self, host, token):
+    def __init__(self, host, token, bind_host='127.0.0.1'):
         self.host = socket.gethostbyname(host)
+        self.bind_host = bind_host
         self.source = f'/tmp/cobot-network-{token}.c'
         self.library = f'/tmp/cobot-network-{token}.so'
         self.closed = threading.Event()
@@ -26,7 +27,7 @@ class RobotNetwork:
                         '-O2', '-Wall', '-Werror', self.source, '-ldl', '-o', self.library],
                        check=True)
         self.server = socket.socket()
-        self.server.bind(('127.0.0.1', 0))
+        self.server.bind((self.bind_host, 0))
         self.server.listen(4)
         self.server.settimeout(0.25)
         self.thread = threading.Thread(target=self.accept, daemon=True)

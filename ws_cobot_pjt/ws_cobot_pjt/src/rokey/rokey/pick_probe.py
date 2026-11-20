@@ -5,6 +5,11 @@ Run inside the container while ./run_virtual.sh --car <sedan|suv|sports|random> 
   ros2 run rokey pick_probe
 """
 import argparse
+
+if __package__:
+    from .robot_namespace import program_args
+else:
+    from robot_namespace import program_args
 import json
 import math
 from pathlib import Path
@@ -33,7 +38,7 @@ class ProbePickup:
     def __init__(self, node, robot, plan, motion):
         self.node, self.robot, self.plan, self.motion = node, robot, plan, motion
         self.status = {}
-        self.sub = node.create_subscription(String, '/dsr01/virtual_control/status', self.receive, 10)
+        self.sub = node.create_subscription(String, 'virtual_control/status', self.receive, 10)
 
     def receive(self, message):
         self.status = json.loads(message.data)
@@ -95,12 +100,19 @@ class ProbePickup:
         self.gripper(self.plan['close_angle_rad'])
         self.wait_ready()
         previous=self.robot.timeout;self.robot.timeout=12.
-        try:self.robot.request('/dsr01/probe/attach',Trigger)
+        try:self.robot.request(self.node.get_namespace() + '/probe/attach',Trigger)
         finally:self.robot.timeout=previous
+        self.plan.update(json.loads(SESSION_PLAN.read_text()))
         self.node.get_logger().info('6/7 SELECT PROBE TCP/TOOL')
         mode=self.robot.get_robot_mode()
         self.robot.request('system/set_robot_mode',srv.SetRobotMode,robot_mode=0)
         try:
+            self.robot.request('tcp/config_delete_tcp', srv.ConfigDeleteTcp, name=self.plan['tcp_name'])
+            self.robot.request('tcp/config_create_tcp', srv.ConfigCreateTcp,
+                               name=self.plan['tcp_name'], pos=self.plan['tcp_mm_deg'])
+            self.robot.request('tool/config_delete_tool', srv.ConfigDeleteTool, name=self.plan['tool_name'])
+            self.robot.request('tool/config_create_tool', srv.ConfigCreateTool,
+                               name=self.plan['tool_name'], **self.plan['tool_profile'])
             self.robot.set_tool(self.plan['tool_name'])
             self.robot.set_tcp(self.plan['tcp_name'])
         finally:self.robot.request('system/set_robot_mode',srv.SetRobotMode,robot_mode=mode)
@@ -114,7 +126,7 @@ class ProbePickup:
 def main():
     parser=argparse.ArgumentParser(description=__doc__,formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--plan',type=Path,default=SESSION_PLAN)
-    args=parser.parse_args()
+    args=parser.parse_args(program_args())
     if not args.plan.exists():parser.error(f'{args.plan} 없음: ./run_virtual.sh --car sedan (suv, sports, random) 으로 세션을 시작하세요')
     plan=json.loads(args.plan.read_text())
     if not plan.get('simulation_only'):parser.error('Expected a simulation-only probe plan')

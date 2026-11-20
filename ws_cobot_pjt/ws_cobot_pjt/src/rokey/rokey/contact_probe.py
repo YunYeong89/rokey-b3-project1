@@ -19,11 +19,16 @@ class ContactProbe:
         self.robot, self.force, self.touch_threshold = robot, force, touch_threshold
         self.compliant = self.forcing = False
         self.bias, self.hits = np.zeros(6), 0
+        # The defined TCP less the controller's active one, in the tool frame (mm): the controller moves and reports
+        # its own TCP, the program commands and reads the defined one (real_scan: real_scene.yaml probe.tcp_mm_deg).
+        self.offset = np.zeros(3)
 
     def read(self):
-        """BASE pose and the tared BASE wrench."""
+        """BASE pose of the defined TCP and the tared BASE wrench."""
         pose, _ = self.robot.get_current_posx()
-        return np.asarray(pose), np.asarray(self.robot.get_tool_force()) - self.bias
+        pose = np.asarray(pose, float)
+        pose[:3] += rotation_zyz(pose[3:]) @ self.offset
+        return pose, np.asarray(self.robot.get_tool_force()) - self.bias
 
     def tare(self, samples=10):
         """Zero the wrench in free space while static, right before a contact search."""
@@ -67,10 +72,12 @@ class ContactProbe:
     def close(self):
         if self.robot.motion_active:
             self.robot.stop()
-        self.release()
-        if self.compliant:
-            self.robot.release_compliance_ctrl()
-            self.compliant = False
+        try:
+            self.release()
+        finally:
+            if self.compliant:
+                self.robot.release_compliance_ctrl()
+                self.compliant = self.forcing = False
 
     @staticmethod
     def turn_deg(angles, rotation):
@@ -80,21 +87,15 @@ class ContactProbe:
     def move(self, position, rotation, speed=10.0, until=None, acc=50.0):
         """Blocking BASE movel; returns True when `until(pose, wrench)` stopped it early."""
         current, _ = self.robot.get_current_posx()
+        position = np.asarray(position, float) - rotation @ self.offset  # the controller's TCP there
         target = [*map(float, position), *angles_zyz(rotation, current[3:])]
         distance = np.linalg.norm(np.subtract(position, current[:3]))
         turn = self.turn_deg(current[3:], rotation)
         self.robot.amovel(target, [speed, 20.0], [acc, 60.0])
         deadline = time.monotonic() + max(distance / speed + speed / acc, turn / 20. + 20. / 60.) + 5.0
-        time.sleep(0.05)  # check_motion can still report idle right after amovel
-        started = False
-        while self.robot.check_motion() != 0:
-            started = True
-            self.robot.check_cancelled()
-            if until is not None and until(*self.read()):
-                self.robot.stop()
-                return True
-            if time.monotonic() > deadline:
-                raise TimeoutError(f'movel 시간 초과: {target}')
+        stopped, started = self.wait(deadline, until, f'movel {target}')
+        if stopped:
+            return True
         if not started and (distance > 1.0 or turn > 1.0):
             # The controller can refuse a move with only a warning alarm (e.g. unreachable target), but a short move
             # (a 1.5 mm row change at 4 mm/s, a few mm down to the standoff) can also be over before the first
@@ -105,6 +106,31 @@ class ContactProbe:
                 raise RuntimeError(f'movel이 실행되지 않았습니다: 목표={[round(v, 1) for v in target]}, '
                                    f'마지막 컨트롤러 알람: {self.robot.last_alarm or "없음"}')
         return False
+
+    def spline(self, positions, rotation, speed, until=None, acc=50.0, *, constant_speed=True):
+        """Blocking BASE spline (movesx) from the TCP through `positions` (at most 100) at one
+        orientation; returns True when `until(pose, wrench)` stopped it early."""
+        current, _ = self.robot.get_current_posx()
+        angles = angles_zyz(rotation, current[3:])
+        positions = np.asarray(positions, float) - rotation @ self.offset  # the controller's TCP there
+        self.robot.amovesx([[*map(float, point), *angles] for point in positions],
+                           [speed, 20.0], [acc, 60.0], opt=int(constant_speed))
+        length = np.linalg.norm(np.diff(np.vstack([current[:3], positions]), axis=0), axis=1).sum()
+        return self.wait(time.monotonic() + length / speed + speed / acc + 5.0, until, f'movesx {len(positions)}점')[0]
+
+    def wait(self, deadline, until, label):
+        """Until the requested motion ends -> (stopped by `until`, seen moving)."""
+        time.sleep(0.05)  # check_motion can still report idle right after the request
+        started = False
+        while self.robot.check_motion() != 0:
+            started = True
+            self.robot.check_cancelled()
+            if until is not None and until(*self.read()):
+                self.robot.stop()
+                return True, started
+            if time.monotonic() > deadline:
+                raise TimeoutError(f'{label} 시간 초과')
+        return False, started
 
     def settle(self, samples=4, timeout=3.0, lost_time=0.3):
         """Mean of consecutive still, in-band samples; None once contact is lost or never settles."""

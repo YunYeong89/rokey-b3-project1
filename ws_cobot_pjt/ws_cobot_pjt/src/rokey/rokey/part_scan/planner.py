@@ -5,12 +5,15 @@ tilt_deg, on the outer skin where skin_mm is set (not recessed behind it: the do
 clear and reachable. Then per pass, horizontal (rows along the grid's u) and vertical (along v), every 0.5 mm line
 followed as a straight move would go: IK from the last cell, a cell dropped where it fails or the joints jump; the
 runs of what is left are the measurable segments (`maps`, drawn by report.plan). Lines every pitch are selected and
-their segments joined into one path per connected measurable region, the probe in contact throughout, riding the
+their segments joined into one segment per connected measurable region, the probe in contact throughout, riding the
 slopes by force control: line by line (serpentine), a line broken by a gap continues as a stripe on its side, the
 rest reached around it; every join a straight move over measurable cells, or the shortest way round them
-straightened. The tool keeps the axis throughout. `paths`: (BASE mm surface points, axis). A path is kept from its
-first to its last point that can be approached and left: out along the axis to the standoff point, the tool turned
-down there, straight up to the travel height (tool and arm clear, within reach, at samples of each leg)."""
+straightened. The tool keeps the axis throughout. A segment is kept from its first to its last point that can be
+approached and left: out along the axis to the standoff point, the tool turned down there, straight up to the travel
+height (tool and arm clear, within reach, at samples of each leg). One path per pass (`sweeps`: horizontal, then
+vertical, per axis): its segments from the longest on, each time the nearest end of the rest, the probe lifted only
+between them, straight across at the standoff where that is clear and within reach, else over the travel height.
+`paths`: the segments as (BASE mm surface points, axis)."""
 from collections import deque
 
 import numpy as np
@@ -106,10 +109,21 @@ def stripes(mask, lines, shortest):
 def raster(mask, runs):
     """One path through all the segments of one connected region: from the first on, each time the segment on the
     next line overlapping the last one (the line direction turned when only the other side has one), else the
-    nearest one left; either way round, whichever end is nearer; joined over the region (corners)."""
+    nearest one left; either way round, whichever end is nearer; joined over the region (corners). Between adjacent
+    lines the join is straight when it stays within one line spacing of the region: no backtrack along a longer
+    line, so no reversal (a stop) at the line ends."""
     pending = list(runs)
     k, cells = pending.pop(0)
     parts, step = [cells], 1
+    lines = np.unique([c[0, 1] for _, c in runs])
+    loose = mask.copy()
+    for _ in range(int(np.diff(lines).min()) if len(lines) > 1 else 1):
+        grown = loose.copy()
+        grown[1:] |= loose[:-1]
+        grown[:-1] |= loose[1:]
+        grown[:, 1:] |= loose[:, :-1]
+        grown[:, :-1] |= loose[:, 1:]
+        loose = grown
 
     def overlapping(line, low, high):
         return [n for n, (j, c) in enumerate(pending)
@@ -123,17 +137,46 @@ def raster(mask, runs):
             choice = overlapping(k + step, low, high) or range(len(pending))
         n, end = min(((n, end) for n in choice for end in (0, -1)),
                      key=lambda pick: np.abs(pending[pick[0]][1][pick[1]] - cells[-1]).sum())
-        last = cells[-1]
+        last, line = cells[-1], k
         k, cells = pending.pop(n)
         cells = cells[::-1] if end else cells
-        parts += [densify(corners(mask, last, cells[0]))[1:-1], cells]
+        straight = abs(k - line) == 1 and on_mask(loose, last, cells[0])
+        parts += [densify([last, cells[0]] if straight else corners(mask, last, cells[0]))[1:-1], cells]
+    return np.concatenate(parts).astype(float)
+
+
+
+def sweep(mask, runs):
+    """One path through all the segments of one connected region line after line in the lines' order, never back
+    (raster may turn back to reach a segment): on each line its segments in order along it, every other line the
+    other way round (serpentine). Joined straight between adjacent lines when that stays within one line spacing of
+    the region, else around over it (corners), also between the segments of one line."""
+    columns = np.unique([c[0, 1] for _, c in runs])
+    loose = mask.copy()
+    for _ in range(int(np.diff(columns).min()) if len(columns) > 1 else 1):
+        grown = loose.copy()
+        grown[1:] |= loose[:-1]
+        grown[:-1] |= loose[1:]
+        grown[:, 1:] |= loose[:, :-1]
+        grown[:, :-1] |= loose[:, 1:]
+        loose = grown
+    ordered = []
+    for n, line in enumerate(sorted({k for k, _ in runs})):
+        own = sorted((c for k, c in runs if k == line), key=lambda c: c[0, 0])
+        ordered += [(line, c) for c in (own if n % 2 == 0 else [c[::-1] for c in own[::-1]])]
+    (k, cells), parts = ordered[0], [ordered[0][1]]
+    for line, following in ordered[1:]:
+        last = cells[-1]
+        straight = abs(line - k) == 1 and on_mask(loose, last, following[0])
+        parts += [densify([last, following[0]] if straight else corners(mask, last, following[0]))[1:-1], following]
+        k, cells = line, following
     return np.concatenate(parts).astype(float)
 
 
 class PartPlan:
     def __init__(self, cloud, axes, clearance, reach, scan, radius, travel_z):  # radius: probe ball, mm
         self.clearance, self.reach, self.scan, self.travel = clearance, reach, scan, travel_z
-        self.paths, self.count = [], dict(axes=0, points=0, clear=0, reachable=0)
+        self.paths, self.sweeps, self.count = [], [], dict(axes=0, points=0, clear=0, reachable=0)
         self.grids, self.maps = [], []  # (axis, HeightMap); (axis, HeightMap, along, measurable cells, paths)
         margin = scan['edge_margin_mm'].get(cloud.part, scan['edge_margin_mm']['default'])
         centre = (cloud.points.min(0) + cloud.points.max(0)) / 2
@@ -148,10 +191,13 @@ class PartPlan:
                 valid = self.continuous(grid, cells, along)
                 paths = self.passes(valid, grid.step, along)
                 self.maps.append((axis, grid, along, valid, paths))
-                for path in paths:
-                    kept = self.trim(grid.positions(path[:, 0], path[:, 1]), axis)
-                    if kept is not None:
-                        self.paths.append((kept, axis))
+                segments = [kept for kept in (self.trim(grid.positions(path[:, 0], path[:, 1]), axis) for path in paths)
+                            if kept is not None]
+                if segments:  # (segments, axis, straight lift between consecutive segments)
+                    segments = self.order(segments)
+                    self.sweeps.append((segments, axis, [self.hop(a[-1], b[0], axis)
+                                                         for a, b in zip(segments[:-1], segments[1:])]))
+                    self.paths += [(segment, axis) for segment in segments]
 
     def accessible(self, positions, axis):
         ok = per_cell(positions, self.scan['check_mm'], lambda k: self.clearance.clear(positions[k], axis))
@@ -201,9 +247,9 @@ class PartPlan:
                     q = None
         return valid
 
-    def passes(self, valid, step, along):
+    def passes(self, valid, step, along, join=raster):
         """Lines along u (`along` 0: one per grid column) or v (1: one per grid row) every pitch_mm, their
-        measurable segments (min_segment_mm) rastered into one path per connected measurable region. Paths: (n, 2)
+        measurable segments (min_segment_mm) rastered (`join`) into one path per connected measurable region. Paths: (n, 2)
         cells (i, j), fractional on the joins."""
         m = self.scan['measurable']
         mask = valid if along == 0 else valid.T  # [along the line, line]
@@ -214,7 +260,7 @@ class PartPlan:
         for label in range(1, labels.max() + 1):
             own = [run for run in runs if labels[tuple(run[1][0])] == label]
             if own:
-                paths.append(raster(labels == label, own))
+                paths.append(join(labels == label, own))
         return [path[:, ::-1] if along else path for path in paths]
 
     def on_measurable(self, points, tolerance=1.5):
@@ -232,10 +278,16 @@ class PartPlan:
     def transit(self, tip, axis):
         """Out along the axis to the standoff, the tool turned down there, straight up to the travel height."""
         out, up = tip + self.scan['standoff_mm'] * axis, np.array([0., 0., 1.])
+        z = max(out[2], self.travel)
+        margin = self.scan.get('travel_margin_mm', 0.)
+        if margin:
+            high = np.array([[*out[:2], z]])
+            if not self.reach.within_outer_reach(high, up, margin)[0]:
+                return False
         poses = [(tip + d * axis, axis) for d in np.linspace(10., self.scan['standoff_mm'], 4)]
         poses += [(out, unit((1 - t) * axis + t * up)) for t in (.25, .5, .75, 1.)]
-        poses += [(np.r_[out[:2], z], up) for z in np.linspace(out[2], max(out[2], self.travel), 4)]
-        return all(self.clearance.clear(p, a) and self.reach.reachable(p, a) for p, a in poses)
+        poses += [(np.r_[out[:2], height], up) for height in np.linspace(out[2], z, 4)]
+        return all(self.clearance.clear(p, a) and self.reach.reachable(p, a, transfer=True) for p, a in poses)
 
     def trim(self, positions, axis, every=4):
         """Positions from the first to the last point (every few) with a clear transit, or None."""
@@ -247,10 +299,32 @@ class PartPlan:
         length = np.linalg.norm(np.diff(kept, axis=0), axis=1).sum()
         return kept if len(kept) >= 2 and length >= self.scan['min_path_mm'] else None
 
+    @staticmethod
+    def order(segments):
+        """The longest segment first, then each time the one with the nearest end (reversed when it is its last)."""
+        pending = sorted(segments, key=lambda points: np.linalg.norm(np.diff(points, axis=0), axis=1).sum())
+        ordered = [pending.pop()]
+        while pending:
+            end = ordered[-1][-1]
+            n, last = min(((n, last) for n in range(len(pending)) for last in (0, -1)),
+                          key=lambda pick: np.linalg.norm(pending[pick[0]][pick[1]] - end))
+            segment = pending.pop(n)
+            ordered.append(segment[::-1] if last else segment)
+        return ordered
+
+    def hop(self, end, start, axis):
+        """The straight move between the standoff points off a segment's end and the next one's start (tool on the
+        axis) is clear and within reach."""
+        a, b = end + self.scan['standoff_mm'] * axis, start + self.scan['standoff_mm'] * axis
+        count = int(np.ceil(np.linalg.norm(b - a) / self.scan['check_mm'])) + 1
+        return all(self.clearance.clear(p, axis) and self.reach.reachable(p, axis, transfer=True)
+                   for p in np.linspace(a, b, count))
+
     def summary(self, speed_mm_s):
         c, length = self.count, sum(np.linalg.norm(np.diff(p, axis=0), axis=1).sum() for p, _ in self.paths)
         share = lambda key: c[key] / max(c['points'], 1)
         measurable = ', '.join(f'{"hv"[along]} {valid.sum()}' for _, _, along, valid, _ in self.maps)
         return (f'{c["axes"]} axes, {c["points"]} candidate cells: tool clear {share("clear"):.0%}, clear and '
-                f'reachable {share("reachable"):.0%}; measurable along the lines {measurable}; {len(self.paths)} '
-                f'paths, {length:.0f} mm, ~{length / speed_mm_s / 60 + .75 * len(self.paths):.0f} min')
+                f'reachable {share("reachable"):.0%}; measurable along the lines {measurable}; {len(self.sweeps)} '
+                f'paths ({len(self.paths)} segments, lifted between), {length:.0f} mm, '
+                f'~{length / speed_mm_s / 60 + .75 * len(self.paths):.0f} min')

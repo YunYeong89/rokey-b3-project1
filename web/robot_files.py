@@ -8,7 +8,7 @@
 from pathlib import Path
 import re
 
-from flask import abort, jsonify, send_file, send_from_directory
+from flask import abort, jsonify, request, send_file, send_from_directory
 
 RUN = re.compile(r'^(.+?_\d{8}_\d{6})')
 KINDS = {'.png': 'image', '.csv': 'data', '.json': 'data', '.ply': 'cloud'}
@@ -18,14 +18,25 @@ CLOUDS = ('reference', 'measured')
 class RobotFiles:
     def __init__(self, rokey_dir, session_dir, scene_dirs=()):
         """scene_dirs: the running session's mesh cache (native/.cache/scene) first, then the package meshes."""
-        rokey = Path(rokey_dir)
-        self.folders = {'images': rokey/'images', 'pointcloud': rokey/'pointcloud'}
-        self.clouds = Path(session_dir)/'clouds'
+        self.rokey, self.session = Path(rokey_dir), Path(session_dir)
         self.scene_dirs = [Path(directory) for directory in scene_dirs]
 
-    def files(self):
+    def roots(self):
+        robot = request.args.get('robot', 'dsr01')
+        if robot == 'dsr01':
+            return self.rokey, self.session
+        if not re.fullmatch(r'robot_[1-9][0-9]*', robot):
+            abort(404)
+        return self.session / robot, self.session / robot
+
+    def folders(self):
+        root, _ = self.roots()
+        return {name: root / name for name in ('images', 'pointcloud')}
+
+    @staticmethod
+    def files(folders):
         """(folder, run, path) of every report file."""
-        for folder, root in self.folders.items():
+        for folder, root in folders.items():
             for top in (root.iterdir() if root.is_dir() else []):
                 run = RUN.match(top.name)
                 for path in (sorted(top.iterdir()) if top.is_dir() else [top]):
@@ -34,12 +45,13 @@ class RobotFiles:
 
     def runs(self, limit=20):
         runs = {}
-        for folder, run, path in self.files():
+        folders = self.folders()
+        for folder, run, path in self.files(folders):
             stat = path.stat()
             entry = runs.setdefault(run, dict(run=run, mtime=0., files=[]))
             entry['mtime'] = max(entry['mtime'], stat.st_mtime)
-            entry['files'].append(dict(path=f'{folder}/{path.relative_to(self.folders[folder]).as_posix()}',
-                                       name=path.relative_to(self.folders[folder]).as_posix(),
+            entry['files'].append(dict(path=f'{folder}/{path.relative_to(folders[folder]).as_posix()}',
+                                       name=path.relative_to(folders[folder]).as_posix(),
                                        kind=KINDS[path.suffix], size=stat.st_size, mtime=stat.st_mtime))
         newest = sorted(runs.values(), key=lambda entry: -entry['mtime'])[:limit]
         for entry in newest:
@@ -47,14 +59,16 @@ class RobotFiles:
         return newest
 
     def file(self, folder, name):
-        if folder not in self.folders:
+        folders = self.folders()
+        if folder not in folders:
             abort(404)
-        return send_from_directory(self.folders[folder], name, max_age=0)
+        return send_from_directory(folders[folder], name, max_age=0)
 
     def cloud(self, name):
         if name not in CLOUDS:
             abort(404)
-        return send_from_directory(self.clouds, f'{name}.npy', max_age=0, mimetype='application/octet-stream')
+        _, session = self.roots()
+        return send_from_directory(session / 'clouds', f'{name}.npy', max_age=0, mimetype='application/octet-stream')
 
     def scene(self, name):
         for root in self.scene_dirs:

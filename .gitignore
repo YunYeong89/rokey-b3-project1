@@ -7,3 +7,5 @@ web/car.stl
 web/car_test/
 # 원본 STL (팀원이 보관, 변환 결과 car.glb 만 올림)
 web/static/models/assembly.stl
+# 메일 비밀번호 등 (커밋 금지)
+.env

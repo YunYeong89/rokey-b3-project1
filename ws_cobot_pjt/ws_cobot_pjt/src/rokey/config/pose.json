@@ -1,0 +1,6 @@
+{
+  "home": {
+    "joints_deg": [0.0, 0.0, 90.0, 0.0, 90.0, 0.0],
+    "description": "HOME (as robot.yaml robot.home_joints_deg, which the scan programs use)"
+  }
+}

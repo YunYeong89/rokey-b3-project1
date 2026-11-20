@@ -29,7 +29,8 @@
   <depend>libpoco-dev</depend>
   <depend>dsr_common2</depend>
   
-  <build_depend>dsr_msgs2</build_depend>
+  <depend>dsr_msgs2</depend>
+  <depend>rokey_interfaces</depend>
 
   <exec_depend>controller_manager</exec_depend>
   <exec_depend>joint_state_broadcaster</exec_depend>

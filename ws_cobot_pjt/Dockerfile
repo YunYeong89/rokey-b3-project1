@@ -7,7 +7,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential git python3-colcon-common-extensions python3-rosdep \
-    python3-venv \
+    python3-venv fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/*
 
 # Resolve workspace manifests without storing robot meshes or source in the image.

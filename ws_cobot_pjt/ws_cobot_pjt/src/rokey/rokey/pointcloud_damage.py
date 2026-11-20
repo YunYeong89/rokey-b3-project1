@@ -570,7 +570,7 @@ class ComparisonReport:
     def __init__(self, output, settings):
         self.output, self.settings = Path(output), settings
 
-    def save(self, comparisons, plot=True):
+    def save(self, comparisons, plot=True, export_cloud=True):
         self.output.mkdir(parents=True, exist_ok=True)
         parts = []
         for comparison in comparisons:
@@ -591,14 +591,17 @@ class ComparisonReport:
                                 *[f'property double {k}' for k in ['deviation_mm','severity_percent']],
                                 'property uchar label', 'property uchar assessed', 'end_header'])
             cloud_path, csv_path, plot_path = [Path(str(stem)+suffix) for suffix in ('.ply','.csv','.png')]
-            np.savetxt(cloud_path, values, header=header, comments='',
-                       fmt=['%.9g']*3+['%d']*3+['%.6g']*2+['%d']*2)
+            if export_cloud:
+                np.savetxt(cloud_path, values, header=header, comments='',
+                           fmt=['%.9g']*3+['%d']*3+['%.6g']*2+['%d']*2)
             with csv_path.open('w', newline='') as stream:
                 writer = csv.writer(stream); writer.writerow(['x_mm','y_mm','z_mm','deviation_mm','severity_percent','label','assessed'])
                 names = {v:k for k,v in c.LABELS.items()}
                 for p, d, score, label, assessed in zip(points*1000, deviation, severity, labels, known):
                     writer.writerow([*p, d if np.isfinite(d) else '', score if np.isfinite(score) else '', names[label], bool(assessed)])
-            report['artifacts'] = {'scalar_cloud': cloud_path.name, 'points': csv_path.name}
+            report['artifacts'] = {'points': csv_path.name}
+            if export_cloud:
+                report['artifacts']['scalar_cloud'] = cloud_path.name
             if plot:
                 self.plot(c, plot_path); report['artifacts']['plot'] = plot_path.name
             parts.append(report)
@@ -612,11 +615,11 @@ class ComparisonReport:
         return path
 
     @staticmethod
-    def plot(comparison, path):
+    def plot(comparison, path, figure=None):
         import matplotlib
         matplotlib.use('Agg')
         import matplotlib.pyplot as plt
-        c = comparison; fig = plt.figure(figsize=(18, 6))
+        c = comparison; fig = figure if figure is not None else plt.figure(figsize=(18, 6))
         report = c.report()
         def percent(value):
             return 'N/A' if value is None else f'{value:.1f}%'
@@ -672,7 +675,8 @@ class ComparisonReport:
             axis.text(min(scores[i]+1,90),i,percent(item['damage_percent']),va='center',fontsize=8)
         axis.invert_yaxis(); axis.set_xlim(0,105); axis.set_xlabel('Assessed geometric damage [%]')
         axis.set_title('ROI / largest detected regions'); axis.grid(axis='x',alpha=.3)
-        fig.tight_layout(); fig.savefig(path, dpi=140); plt.close(fig)
+        if figure is None:
+            fig.tight_layout(); fig.savefig(path, dpi=140); plt.close(fig)
 
 
 def main():

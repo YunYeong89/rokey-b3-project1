@@ -149,12 +149,13 @@ class GazeboForceBackend(GazeboDisplay):
                     # centre and tcp_offset_mm (added to the emulator's ProbeTCP posx) were at the gripper TCP,
                     # 52.7 mm short of it, so a tool tilt of d rad showed as d x 52.7 mm of position error.
                     self.chain = KinematicChain(self.model.robot, tcp_link='probe_tip')
+                    self.surface.chain = KinematicChain(self.model.robot, tcp_link='probe_tip')
             return result
         with self.lock:
             if name in ('cartesian_start', 'cartesian_stop'):
                 try:
                     if name == 'cartesian_start':
-                        return self.surface.begin('position')
+                        return self.surface.begin('position', request.get('pd'))
                     if self.surface.method != 'position' or request['run_id'] != self.surface.run_id:
                         raise ValueError('Cartesian stream ownership mismatch')
                     return self.surface.halt('Cartesian stream released by operator')
@@ -385,9 +386,13 @@ class GazeboForceBackend(GazeboDisplay):
 
     def snapshot(self):
         with self.lock:
+            from rokey_pose import zyz
             pose = self.chain.pose_jacobian(self.feedback)[0] if self.feedback else np.eye(4)
             nominal = self.chain.pose_jacobian(self.nominal)[0] if self.nominal else pose
+            base = self.chain.transforms(self.feedback)[0]['base_link']
+            tcp_base = np.linalg.inv(base) @ pose
             return {'positions': self.feedback.copy(), 'wrench': self.wrench.tolist(),
+                    'tcp_pose_base_mm_deg': [*(tcp_base[:3, 3] * 1000), *zyz(tcp_base[:3, :3])],
                     # The emulator reports the commanded TCP; this is Gazebo's actual deviation.
                     'tcp_offset_mm': ((pose[:3, 3] - nominal[:3, 3]) * 1000).tolist(),
                     'probe_attached': bool(self.probe and self.probe.design.attached),

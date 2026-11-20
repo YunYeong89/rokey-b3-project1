@@ -328,7 +328,7 @@ def disassemble(virtual=False, until=None):
         _ok(movel(posx(0.00, 0.00, 20.00, 0.00, 0.00, 0.00), radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_REL, ra=DR_MV_RA_DUPLICATE), "DRL50 movel")
 
         r.begin(8, "헌 보닛 거치대로 이동 → 내리기 (z-100)",
-                caution="52줄 보닛 든 채 자세가 크게 바뀌는 직선 이동 / 54줄 힘 감지 없이 z≈41까지 하강")
+                caution="52줄 보닛 든 채 자세를 약 30° 바꾸는 직선 이동 / 54줄 힘 감지 없이 z≈41까지 하강")
         _ok(movel(posx(354.61, 224.58, 141.41, 159.33, 179.91, 159.21), radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_ABS, ra=DR_MV_RA_DUPLICATE), "DRL52 movel")
         _ok(movel(posx(0.00, 0.00, -100.00, 0.00, 0.00, 0.00), radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_REL, ra=DR_MV_RA_DUPLICATE), "DRL54 movel")
 
@@ -372,8 +372,9 @@ def assemble(virtual=False, until=None):
         _ok(movel(posx(250.89, 223.00, 106.77, 90.66, 179.97, 90.51), radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_ABS, ra=DR_MV_RA_DUPLICATE), "DRL15 movel")
         _ok(movel(posx(250.89, 223.00, 25.77, 90.66, 179.97, 90.51), radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_ABS, ra=DR_MV_RA_DUPLICATE), "DRL17 movel")
 
-        r.begin(3, "부품 옆(z 25.77)에서 rz 90→0 회전하며 파지 위치로",
-                caution="19줄 부품 바로 옆에서 큰 회전 + 직선 이동")
+        # rx/rz 숫자가 90→0 으로 크게 바뀌지만 ry≈180 근처 ZYZ 표기 때문이고, 실제 회전은 약 9° 기울기 변화
+        r.begin(3, "부품 옆(z 25.77)에서 x+8.45 밀어 넣으며 약 9° 기울여 파지 위치로",
+                caution="19줄 부품 바로 옆에서 기울이며 직선 이동")
         _ok(movel(posx(259.34, 223.00, 25.77, 0.20, 171.15, 0.04), radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_ABS, ra=DR_MV_RA_DUPLICATE), "DRL19 movel")
 
         r.begin(4, "새 보닛 잡기 (그리퍼 닫기)")
@@ -381,12 +382,12 @@ def assemble(virtual=False, until=None):
         wait(1.00)                                                      # DRL 25 (원본 wait)
 
         r.begin(5, "들어올림 z+200 → 차 앞 → 장착 자세",
-                caution="31줄 보닛 든 채 차 앞에서 rx/ry/rz 동시에 크게 바뀌는 직선 이동")
+                caution="31줄 보닛 든 채 차 앞에서 약 30° 기울이며 직선 이동")
         _ok(movel(posx(0.00, 0.00, 200.00, 0.00, 0.00, 0.00), radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_REL, ra=DR_MV_RA_DUPLICATE), "DRL27 movel")
         _ok(movel(posx(600.34, 0.00, 206.77, 90.55, 179.97, 90.40), radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_ABS, ra=DR_MV_RA_DUPLICATE), "DRL29 movel")
         _ok(movel(posx(604.54, -0.01, 182.00, 0.06, 150.15, -0.11), radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_ABS, ra=DR_MV_RA_DUPLICATE), "DRL31 movel")
 
-        r.begin(6, "순응, x+10 → ry-10 → 순응 해제")
+        r.begin(6, "순응, x+10 z+1 → ry-20 → 순응 해제")
         r.compliance_on = True
         _ok(task_compliance_ctrl(), "DRL33 task_compliance_ctrl")
         _ok(set_stiffnessx([3000.00, 3000.00, 3000.00, 200.00, 200.00, 200.00], time=0.0), "DRL34 set_stiffnessx")

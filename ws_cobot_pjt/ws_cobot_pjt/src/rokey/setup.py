@@ -30,6 +30,7 @@ setup(
     entry_points={
         'console_scripts': [
             'pick_probe = rokey.pick_probe:main',
+            'release_probe = rokey.release_probe:main',
             'pid_surface = rokey.pid_controller:main',
             'draw_graph = rokey.draw_graph:main',
             'contact_overshoot = rokey.contact_overshoot:main',

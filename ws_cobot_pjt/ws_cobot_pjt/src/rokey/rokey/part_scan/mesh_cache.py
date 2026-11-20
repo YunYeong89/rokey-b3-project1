@@ -27,7 +27,8 @@ class MeshPlanCache:
         # Runtime-only settings (stroke speed, measured-cloud sampling, PD, resume, forces and contact thresholds) leave
         # the plan as it is. mesh_height: merged into mesh_normal (MeshHeightPlan.configure), compared there.
         planning_scan = {key: value for key, value in scan.items()
-                         if key not in ('speed_mm_s', 'sample_mm', 'point_decimation', 'default_scan', 'mesh_height')}
+                         if key not in ('speed_mm_s', 'sample_mm', 'point_decimation', 'default_scan', 'mesh_height',
+                                        'rescan_of')}
         planning_scan['mesh_normal'] = {key: value for key, value in scan['mesh_normal'].items()
                                        if key not in ('pd', 'resume', 'point_decimation', 'position_stiffness_scale',
                                                       'position_feedback_limit_mm', 'force_n', 'contact_threshold_n',

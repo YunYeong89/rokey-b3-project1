@@ -1,12 +1,14 @@
 """Save or restore a mesh scan's point-cloud and damage report."""
 import csv
 import json
+import shutil
 from pathlib import Path
 
 import numpy as np
 
 from ..surface_follow.pointcloud_file import PointCloudFile
 from .damage_report import DamageReport
+from .defect_map import DefectMap
 from .mesh_roi import MeshRoi
 
 
@@ -45,6 +47,9 @@ class MeshFigures:
         path = self.directory / 'report.png'
         self.damage = DamageReport(nominal, measured, axis=axis, defects=defects,
                                    web=self.metadata.get('web_report')).save(path)
+        if self.metadata.get('rescan_of') and defects is not None:  # an ROI rescan: its defects drawn on the mesh too,
+            drawing = DefectMap(nominal, measured, defects, self.metadata).save(self.directory / 'defects.png')
+            shutil.copy(drawing, self.directory.parent / f'{self.directory.name}_defects.png')  # beside its _roi.json
         return path
 
     @classmethod

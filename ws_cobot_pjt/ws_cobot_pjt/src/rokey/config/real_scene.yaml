@@ -21,6 +21,11 @@ probe:
   tool_weight_name: Tool Weight v2  # TP measurement with open RG2 jaws, camera and bracket mounted, and no probe
                                   # A null value uses probe.tool_name from robot.yaml.
   held_width_mm: [26.0, 31.0]    # RG2 reported 28.6 mm with the probe held on 2026-11-19
+  pickup_tcp_name: GripperDA_v1_probe
+  pickup_approach_base_mm: [349.9876, -225.0713, 142.0636]  # approach XYZ in BASE
+  pickup_grasp_base_mm_deg: [351.1421, -222.9998, 19.6879, 144.3733, -179.6075, -127.4605]  # BASE XYZ mm and ZYZ deg
+  pickup_lift_mm: 200.0
+  release_z_offset_mm: 6.0  # release this far above the taught grasp, in BASE +Z
 
 inspection_poses:                 # optional measured [BASE X mm, Y mm, yaw deg, base Z mm] overrides
   bonnet: null                    # use the vehicle pose above

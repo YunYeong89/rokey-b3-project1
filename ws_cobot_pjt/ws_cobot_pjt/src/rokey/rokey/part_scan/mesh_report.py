@@ -48,6 +48,8 @@ class MeshReport:
             self.metadata['web_report'] = web_report
         if plan.scan.get('roi_base_mm'):
             self.metadata['roi_base_mm'] = plan.scan['roi_base_mm']
+        if plan.scan.get('rescan_of'):  # the survey this ROI rescan follows (real_scan.rescan): strict, drawn on the mesh
+            self.metadata['rescan_of'] = plan.scan['rescan_of']
         (self.directory / 'plan.json').write_text(json.dumps(self.metadata, indent=2))
         MeshFigures(self.directory, self.metadata).save()
         return self.directory

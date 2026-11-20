@@ -222,7 +222,7 @@ def scan_part(program, options, parser, name, prefix, stamp):
         report = run_mesh_scan(program, options, deepcopy(scan), vehicle, pose, plan, truth, stamp)
         if (options.controller == 'mesh-height' and options.part == 'bonnet' and not options.plan_only and
                 not options.roi_base and not options.roi_local and report.rois is not None):
-            rescan(program, options, scan, vehicle, pose, plan, truth, report.rois.regions)
+            rescan(program, options, scan, vehicle, pose, plan, truth, report)
         return
     threshold = scan['default_scan']['contact_threshold_n']
     cloud = (vehicle.reference(pose,scan['step_mm']) if options.box else
@@ -307,24 +307,25 @@ def scan_part(program, options, parser, name, prefix, stamp):
         scanner.save_report()
 
 
-def rescan(program, options, scan, vehicle, pose, plan, truth, regions):
-    """After a whole-bonnet mesh-height survey: its ROIs of real_scan.mesh_height.rescan.types joined with their
-    neighbours into BASE rectangles (part_scan/rescan.py), scanned again as --roi-base at the rescan speed, every
-    other mesh-height setting as the survey's; its own report (real_bonnet_mesh_height_roi_<time>)."""
+def rescan(program, options, scan, vehicle, pose, plan, truth, survey):
+    """After a whole-bonnet mesh-height survey: its ROIs of real_scan.mesh_height.rescan.types joined with their near
+    neighbours into BASE rectangles (part_scan/rescan.py), scanned again as --roi-base at the rescan speed and force,
+    every other mesh-height setting as the survey's; its own report (real_bonnet_mesh_height_roi_<time>), stricter and
+    drawn on the mesh (plan.json rescan_of: bonnet_roi_cloud.rescan, part_scan/defect_map.py)."""
     from .mesh_scan import run_mesh_scan
     from .part_scan.rescan import RescanAreas
-    settings = scan['mesh_height']['rescan']
+    settings, regions = scan['mesh_height']['rescan'], survey.rois.regions
     boxes = RescanAreas(settings).boxes(regions)
     found = sum(g['type'] in settings['types'] for g in regions)
     if not boxes:
         program.log(f'정밀 재측정 없음: {"/".join(settings["types"])} ROI가 없습니다')
         return
     program.log(f'정밀 재측정: {"/".join(settings["types"])} ROI {found}개 -> 영역 {len(boxes)}개 BASE [x0, y0, x1, y1] mm '
-                f'{boxes}, {settings["speed_mm_s"]:g} mm/s')
+                f'{boxes}, {settings["speed_mm_s"]:g} mm/s, {settings["force_n"]:g} N')
     again = SimpleNamespace(**{**vars(options), 'roi_base': boxes, 'speed': settings['speed_mm_s'], 'replan': False})
-    run_mesh_scan(program, again, dict(deepcopy(scan), speed_mm_s=settings['speed_mm_s']), vehicle, pose, plan, truth,
-                  datetime.now().strftime('%Y%m%d_%H%M%S'))
-
+    scan = dict(deepcopy(scan), speed_mm_s=settings['speed_mm_s'], rescan_of=survey.directory.name)
+    scan['mesh_height']['force_n'] = settings['force_n']
+    run_mesh_scan(program, again, scan, vehicle, pose, plan, truth, datetime.now().strftime('%Y%m%d_%H%M%S'))
 
 if __name__ == '__main__':
     main()

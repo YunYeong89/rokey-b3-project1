@@ -172,6 +172,18 @@ bonnet_roi_cloud:                  # real mesh-height ROI analysis in BASE, afte
     row_gap_mm: 3.2               # max spacing between joined crossings: one missed row (2.1 until 2026-11-20)
     length_mm: 2.6                # minimum transverse span for confirmation
     single_n: 0.6                 # a lone crossing with this much force evidence is a candidate too
+  rescan:                         # ROI rescans (plan.json rescan_of): crossings by force, the defects drawn on the mesh
+    confirmed_only: false         # candidates kept (confirmed only left 081134 with none)
+    crack:                        # over crack above. Pressed stiffly (3 N/mm) the ball barely dips into a crack: 081134
+                                  # had 3 and 5 crossings with any depth drop on cracks A and B, 7 and 10 with the
+                                  # reaction across the axis changing 0.5 N or more; at 0.5 N joined over rows and lone
+                                  # ones from 0.8 N, its 13 crossings all lay within 2.5 mm of the cracks, none elsewhere
+      force_led: true             # crossings found by the force evidence, the depth only checked (crack_roi.py)
+      force_drop_n: 0.5
+      lateral_n: 0.5
+      depth_mm: -0.02             # no rise between the shoulders beyond this
+      trace_width_mm: 3.0         # spread across a joined trace (the crossings scatter ~1 mm about a crack)
+      single_n: 0.8
 
 real_scan:                          # rokey real_scan: one part of the real vehicle (--car real) by force-controlled rows
   default_scan:                    # default only; force magnitudes are positive, command direction is -axis
@@ -242,12 +254,13 @@ real_scan:                          # rokey real_scan: one part of the real vehi
                                    # rest (061800 grounding at 1.2 N), 0.55 N at 6 mm/s, and rose 0.47 N at 2 mm/s
       ramp_s: 0.3                  # set_desired_force ramp to the trimmed command
     rescan:                        # after a whole-bonnet survey (real_scan.rescan): these ROIs, confirmed and candidates,
-                                   # joined into --roi-base areas and scanned again, only the speed changed
+                                   # joined into --roi-base areas and scanned again; only speed and force changed
       types: [crack]
       speed_mm_s: 2.0              # the survey's cruise_speed_mm_s or --speed otherwise
-      margin_mm: 3.0               # added round each ROI's box first (the shoulders and the ROI's surroundings)
-      merge_mm: 2.0                # widened boxes overlapping or this close on both axes joined (072408: the crack
-                                   # candidates 1-4 mm apart, so ROIs up to 8 mm apart share an area)
+      force_n: 3.0                 # pressing force of the rescan (the survey's force_n otherwise)
+      merge_mm: 3.0                # ROI boxes at most this far apart (gap between the boxes) joined; near ones only
+                                   # (072408: crack A one area, crack B two, A and B 4.6 mm apart kept apart)
+      margin_mm: 3.0               # then added round each area (the shoulders and the ROI's surroundings)
     lift_push:                     # real robot strokes: floating (the probe lifted off the surface) pressed back down
       threshold_n: 0.5             # lifting: the reaction under this for hold_s (0.3 first: pushed only once off)
       hold_s: 0.05                 # 0.2 mm at 4 mm/s (a 1 mm crack crossing: 0.25 s, its drop ~0.25 N from ~1.2 N)

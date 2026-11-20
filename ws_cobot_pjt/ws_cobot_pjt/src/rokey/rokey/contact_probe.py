@@ -84,15 +84,16 @@ class ContactProbe:
         """Angle (deg) from the ZYZ orientation `angles` to the matrix `rotation`."""
         return np.degrees(np.arccos(np.clip((np.trace(rotation_zyz(angles).T @ rotation) - 1) / 2, -1, 1)))
 
-    def move(self, position, rotation, speed=10.0, until=None, acc=50.0):
+    def move(self, position, rotation, speed=10.0, until=None, acc=50.0, *, angular_speed=20.0, angular_acc=60.0):
         """Blocking BASE movel; returns True when `until(pose, wrench)` stopped it early."""
         current, _ = self.robot.get_current_posx()
         position = np.asarray(position, float) - rotation @ self.offset  # the controller's TCP there
         target = [*map(float, position), *angles_zyz(rotation, current[3:])]
         distance = np.linalg.norm(np.subtract(position, current[:3]))
         turn = self.turn_deg(current[3:], rotation)
-        self.robot.amovel(target, [speed, 20.0], [acc, 60.0])
-        deadline = time.monotonic() + max(distance / speed + speed / acc, turn / 20. + 20. / 60.) + 5.0
+        self.robot.amovel(target, [speed, angular_speed], [acc, angular_acc])
+        deadline = time.monotonic() + max(distance / speed + speed / acc,
+                                          turn / angular_speed + angular_speed / angular_acc) + 5.0
         stopped, started = self.wait(deadline, until, f'movel {target}')
         if stopped:
             return True

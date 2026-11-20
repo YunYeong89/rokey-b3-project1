@@ -42,6 +42,8 @@ class MeshRoi(SurveyRoi):
             cloud_settings = {**config['bonnet_roi_cloud'], **(metadata.get('roi_cloud_settings') or {})}
             # The crack criteria always as robot.yaml now: a saved plan's older ones lack the across-axis evidence.
             cloud_settings['crack'] = config['bonnet_roi_cloud']['crack']
+            if metadata.get('rescan_of'):  # an ROI rescan: stricter (bonnet_roi_cloud.rescan)
+                cloud_settings['crack'] = {**cloud_settings['crack'], **config['bonnet_roi_cloud']['rescan']['crack']}
             cloud = CloudRoi(reference, settings.get('ball_radius_mm', config['probe']['tip_radius_mm']),
                              cloud_settings,
                              settings.get('pointcloud', scan['mesh_normal']['pointcloud']))
@@ -136,6 +138,9 @@ class MeshRoi(SurveyRoi):
                 paired_samples=int(self.paired.sum()), cross_pass_samples=int(self.confirmed.sum()),
                 crack_crossings=int(self.crack_crossings.sum()))
         self.limit = max((item['force_n'] for item in self.limits), default=self.settings['force_min_n'])
+        if cloud is not None and metadata.get('rescan_of') and config['bonnet_roi_cloud']['rescan']['confirmed_only']:
+            self.damage_samples = [(region, points) for region, points in self.damage_samples if region['confirmed']]
+            self.regions = [region for region, _ in self.damage_samples]
         for number, region in enumerate(self.regions, 1):
             region['id'] = f'roi_{number:03d}'
             if cloud is None:

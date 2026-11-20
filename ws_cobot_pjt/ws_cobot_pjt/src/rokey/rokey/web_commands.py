@@ -55,7 +55,7 @@ class WebCommands:
     def nodes(self):
         """Node names of the robot programs (RobotProgram(name)), to see ones started from a terminal."""
         return {spec['module'] for spec in self.commands.values()} | {
-            'choose_car', 'scan_surface', 'defect_scan', 'pick_probe', 'pid_surface', 'repair_manager'}
+            'choose_car', 'scan_surface', 'defect_scan', 'pick_probe', 'release_probe', 'pid_surface', 'repair_manager'}
 
     def inspection(self, requests, plan_only, mode):
         if not isinstance(requests, list) or not requests or type(plan_only) is not bool:

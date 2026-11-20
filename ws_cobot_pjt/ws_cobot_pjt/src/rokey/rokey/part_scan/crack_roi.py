@@ -47,10 +47,19 @@ class CrackRoi:
             shoulders = np.minimum(f[:-2 * offset], f[2 * offset:])
             loss = shoulders - f[offset:-offset]
             lateral = np.linalg.norm(t[:, offset:-offset] - (t[:, :-2 * offset] + t[:, 2 * offset:]) / 2, axis=0)
-            hits, _ = find_peaks(drop, height=self.settings['depth_mm'], distance=offset,
-                                 width=(1., self.settings['width_mm'] / self.STEP_MM))
-            hits = hits[((loss[hits] >= self.settings['force_drop_n']) | (lateral[hits] >= self.settings['lateral_n']))
-                        & (shoulders[hits] > contact_threshold)]
+            if self.settings.get('force_led'):
+                # The crossing found by its force evidence, the depth only checked: pressed stiffly the ball is held
+                # on the path (081134, 3 N/mm: 3 and 5 crossings with any depth drop on cracks A and B, but 7 and 10
+                # with the reaction across the axis changing 0.5 N or more).
+                evidence = np.maximum(loss / self.settings['force_drop_n'], lateral / self.settings['lateral_n'])
+                hits, _ = find_peaks(evidence, height=1., distance=offset,
+                                     width=(1., self.settings['width_mm'] / self.STEP_MM))
+                hits = hits[(drop[hits] >= self.settings['depth_mm']) & (shoulders[hits] > contact_threshold)]
+            else:
+                hits, _ = find_peaks(drop, height=self.settings['depth_mm'], distance=offset,
+                                     width=(1., self.settings['width_mm'] / self.STEP_MM))
+                hits = hits[((loss[hits] >= self.settings['force_drop_n']) |
+                             (lateral[hits] >= self.settings['lateral_n'])) & (shoulders[hits] > contact_threshold)]
             if len(hits):
                 peaks.extend(lo + np.searchsorted(distance, s[hits + offset]))
                 contrasts.extend(np.c_[drop[hits], np.maximum(loss[hits], lateral[hits])])
@@ -67,7 +76,7 @@ class CrackRoi:
             i, j = cKDTree(xy).query_pairs(1.5 * step, output_type='ndarray').T
             delta = np.abs(xy[i] - xy[j])
             across = delta[:, 1 - axis]
-            keep = (across >= .5) & (across <= step) & (delta[:, axis] <= across)
+            keep = (across >= .5) & (across <= step) & (delta[:, axis] <= self.settings.get('trace_slope', 1.) * across)
             graph = coo_matrix((np.ones(keep.sum()), (i[keep], j[keep])), shape=(len(at), len(at)))
             count, labels = connected_components(graph, directed=False)
             for group in range(count):
@@ -77,7 +86,7 @@ class CrackRoi:
                 centred = xy[own] - xy[own].mean(0)
                 _, _, vectors = np.linalg.svd(centred, full_matrices=False)
                 length, width = np.ptp(centred @ vectors.T, axis=0)
-                if width <= self.settings['width_mm']:
+                if width <= self.settings.get('trace_width_mm', self.settings['width_mm']):  # spread across the trace
                     opposite = np.unique(heading[at[own]]).size == 2
                     confirmed = len(own) >= 3 and np.ptp(xy[own, 1 - axis]) >= self.settings['length_mm'] and opposite
                     joined[at[own]] = True

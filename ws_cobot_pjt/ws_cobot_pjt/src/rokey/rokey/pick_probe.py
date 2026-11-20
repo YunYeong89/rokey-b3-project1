@@ -1,8 +1,7 @@
-"""Virtual-only probe pickup from the rack of the session plan: home -> above the tip -> down -> grasp ->
-probe TCP/tool -> lift -> home. repair_manager runs the same pickup when the probe is not held.
+"""Pick up the probe from HOME and return to HOME.
 
-Run inside the container while ./run_virtual.sh --car <sedan|suv|sports|random> is up:
-  ros2 run rokey pick_probe
+The real robot uses the taught points in real_scene.yaml, and the virtual robot uses its session plan.
+  ros2 run rokey pick_probe [--plan VIRTUAL_PLAN]
 """
 import argparse
 
@@ -24,9 +23,11 @@ from std_srvs.srv import Trigger
 
 if __package__:
     from .configs import SESSION, load
+    from .real_probe_pickup import RealProbePickup
     from .robot_services import RobotServices
 else:
     from configs import SESSION, load
+    from real_probe_pickup import RealProbePickup
     from robot_services import RobotServices
 
 SESSION_PLAN = SESSION / 'probe_plan.json'
@@ -124,20 +125,35 @@ class ProbePickup:
 
 
 def main():
-    parser=argparse.ArgumentParser(description=__doc__,formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--plan',type=Path,default=SESSION_PLAN)
-    args=parser.parse_args(program_args())
-    if not args.plan.exists():parser.error(f'{args.plan} 없음: ./run_virtual.sh --car sedan (suv, sports, random) 으로 세션을 시작하세요')
-    plan=json.loads(args.plan.read_text())
-    if not plan.get('simulation_only'):parser.error('Expected a simulation-only probe plan')
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('--plan', type=Path, help='가상 로봇의 탐침 배치 계획 파일')
+    args = parser.parse_args(program_args())
     rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
-    node=rclpy.create_node('pick_probe',namespace='dsr01');robot=RobotServices(node,5.)
+    node = rclpy.create_node('pick_probe', namespace='dsr01')
+    config = load('robot')
+    robot = RobotServices(node, config['robot']['service_timeout'])
     try:
-        ProbePickup(node,robot,plan,load('robot')['motion']).run()
+        if robot.get_robot_system() == 0:
+            if args.plan is not None:
+                parser.error('--plan은 가상 로봇에서만 사용할 수 있습니다')
+            RealProbePickup(robot, load('real_scene')['probe'], config['robot']['home_joints_deg']).run()
+        else:
+            path = args.plan or SESSION_PLAN
+            if not path.exists():
+                parser.error(f'{path} 없음: ./run_virtual.sh --car sedan으로 가상 세션을 시작하세요')
+            plan = json.loads(path.read_text())
+            if not plan.get('simulation_only'):
+                parser.error('가상 로봇용 탐침 배치 계획이 필요합니다')
+            ProbePickup(node, robot, plan, config['motion']).run()
     finally:
         try:
-            if robot.motion_active:robot.stop()
-        finally:robot.close();node.destroy_node();rclpy.shutdown()
+            if robot.motion_active:
+                robot.stop()
+        finally:
+            robot.close()
+            node.destroy_node()
+            rclpy.shutdown()
 
 
-if __name__=='__main__':main()
+if __name__ == '__main__':
+    main()

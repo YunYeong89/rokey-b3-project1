@@ -49,6 +49,8 @@ VELJ = 60.0 * SPEED_SCALE                                # 12.0
 ACCJ = 100.0 * SPEED_SCALE                               # 20.0
 VELX = (250.0 * SPEED_SCALE, 80.625 * SPEED_SCALE)       # (50.0, 16.125)
 ACCX = (1000.0 * SPEED_SCALE, 322.5 * SPEED_SCALE)       # (200.0, 64.5)
+# time= 으로 정한 movel 은 시간을 SPEED_SCALE 로 나눠서 같은 비율로 느리게
+T_FORCE_MOVE = 9.33 / SPEED_SCALE                        # 46.65 [s] (분해 DRL 36, 38줄)
 
 GRIP_WAIT = 1.0                                          # 그리퍼 동작 뒤 대기 [s]
 
@@ -60,6 +62,10 @@ class StepFailed(RuntimeError):
     """DSR 명령이 실패(-1)했거나 시작 조건이 맞지 않음."""
 
 
+class StopAfterStep(Exception):
+    """--until N: N 단계까지 끝내고 일부러 멈춤 (에러 아님)."""
+
+
 def _ok(ret, what):
     if ret != 0:
         raise StepFailed(f"{what} 실패 (ret={ret})")
@@ -69,8 +75,8 @@ def _ok(ret, what):
 def grip_close():
     """DO1 ON, DO2 OFF (대기는 부르는 쪽에서)."""
     from DSR_ROBOT2 import set_digital_output, ON, OFF
-    _ok(set_digital_output(1, ON), "set_digital_output(1, ON)")
     _ok(set_digital_output(2, OFF), "set_digital_output(2, OFF)")
+    _ok(set_digital_output(1, ON), "set_digital_output(1, ON)")
 
 
 def grip_open():
@@ -84,7 +90,8 @@ def grip_open():
 class _Run:
     """단계 기록, 힘·순응 상태, 실패 시 정리."""
 
-    def __init__(self, label, total):
+    def __init__(self, label, total, until=None):
+        self.until = until                    # None 이면 끝까지, N 이면 N 단계까지 하고 멈춤
         self.node = getattr(DR_init, "__dsr__node", None)
         if self.node is None:
             raise RuntimeError("DR_init.__dsr__node 가 설정되지 않음 (노드를 먼저 만들어야 함)")
@@ -119,6 +126,8 @@ class _Run:
             return "?"
 
     def begin(self, n, text, caution=None):
+        if self.until is not None and n > self.until:
+            raise StopAfterStep(n - 1)        # 이전 단계 동작은 이미 끝난 상태 (movel/movej 는 끝날 때까지 기다림)
         self.step = f"[{self.label} {n}/{self.total}] {text}"
         self.info(f"{self.step}  (현재 z={self.z()})")
         if caution:
@@ -167,6 +176,23 @@ class _Run:
             self.info("  ③ 순응 제어 꺼져 있음 (해제 생략)")
         self.error(f"  ④ 멈춘 단계: {self.step}  (현재 z={self.z()})")
         self.error("     복귀는 펜던트로 하세요. 그리퍼 상태(보닛/탐침 파지 여부)를 먼저 확인하세요.")
+
+    def stop_here(self, last):
+        """--until 으로 멈출 때: 동작 정지 명령 없이, 켜져 있는 힘·순응만 해제. 홈 이동 없음."""
+        self.warn(f"[{self.label}] --until {self.until}: {last}단계까지 완료, 여기서 멈춤 "
+                  f"(현재 z={self.z()}). 자동 홈 이동 없음")
+        if self.force_on:
+            from DSR_ROBOT2 import release_force
+            ret = release_force(time=0.0)
+            self.force_on = ret != 0
+            self.warn(f"  힘 제어 켜져 있었음 → release_force ret={ret}")
+        if self.compliance_on:
+            from DSR_ROBOT2 import release_compliance_ctrl
+            ret = release_compliance_ctrl()
+            self.compliance_on = ret != 0
+            self.warn(f"  순응 제어 켜져 있었음 → release_compliance_ctrl ret={ret}")
+        self.warn(f"  마지막 단계: {self.step}")
+        self.warn("  그리퍼 상태(보닛/탐침 파지 여부)를 확인하고, 복귀는 펜던트로 하세요.")
 
     def close(self):
         try:
@@ -223,8 +249,11 @@ def _setup(r, virtual):
         r.warn(f"--virtual: Tool/TCP 설정·확인 건너뜀 (가상 로봇에는 '{TOOL_NAME}' / "
                f"'{TCP_NAME}' 없음). 실물에서는 --virtual 쓰지 마세요.")
     else:
-        _ok(set_tool(TOOL_NAME), f"set_tool('{TOOL_NAME}')")
-        _ok(set_tcp(TCP_NAME), f"set_tcp('{TCP_NAME}')")
+        # 실물에서 set_tool/set_tcp 는 제대로 적용돼도 -1 을 돌려줌
+        # → 반환값으로 멈추지 않고, 아래 get_tool/get_tcp 이름 비교로 확인
+        ret_tool = set_tool(TOOL_NAME)
+        ret_tcp = set_tcp(TCP_NAME)
+        r.info(f"set_tool('{TOOL_NAME}') → ret={ret_tool}, set_tcp('{TCP_NAME}') → ret={ret_tcp} (반환값은 무시)")
         tool, tcp = get_tool(), get_tcp()
         if tool != TOOL_NAME or tcp != TCP_NAME:
             raise StepFailed(f"Tool/TCP 불일치: get_tool()={tool!r} (기대 {TOOL_NAME!r}), "
@@ -240,8 +269,8 @@ def _setup(r, virtual):
 
 
 # ---------------------------------------------------------------- 분해
-def disassemble(virtual=False):
-    """m0609_bonnet.drl"""
+def disassemble(virtual=False, until=None):
+    """m0609_bonnet.drl  (until=N: N 단계까지만)"""
     from DSR_ROBOT2 import (movej, movel, wait,
                             task_compliance_ctrl, set_stiffnessx, set_desired_force,
                             release_force, release_compliance_ctrl,
@@ -249,7 +278,7 @@ def disassemble(virtual=False):
                             DR_FC_MOD_ABS)
     from DR_common2 import posx, posj
 
-    r = _Run("분해", 9)
+    r = _Run("분해", 9, until)
     done = False
     try:
         _setup(r, virtual)
@@ -269,22 +298,23 @@ def disassemble(virtual=False):
         r.begin(4, "홈 경유 → 보닛 앞 접근",
                 caution="27줄 홈→보닛 앞 큰 직선 이동(ry -150), 특이점 회피로 경로가 달라질 수 있음")
         _ok(movej(posj(0.00, 0.00, 90.00, 0.00, 90.00, 0.00), radius=0.00, ra=DR_MV_RA_DUPLICATE), "DRL25 movej")
-        _ok(movel(posx(572.25, 2.85, 127.70, 178.60, -150.33, 178.23), radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_ABS, ra=DR_MV_RA_DUPLICATE), "DRL27 movel")
-        _ok(movel(posx(592.25, 2.85, 127.70, 178.60, -150.33, 178.23), radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_ABS, ra=DR_MV_RA_DUPLICATE), "DRL29 movel")
+        _ok(movel(posx(572.25, 2.85, 148.70, 178.60, -150.33, 178.23), radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_ABS, ra=DR_MV_RA_DUPLICATE), "DRL27 movel")
+        _ok(movel(posx(587.25, 2.85, 138.70, 178.60, -150.33, 178.23), radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_ABS, ra=DR_MV_RA_DUPLICATE), "DRL27 movel")
+        _ok(movel(posx(593.25, 2.85, 129.70, 178.60, -150.33, 178.23), radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_ABS, ra=DR_MV_RA_DUPLICATE), "DRL29 movel")
 
-        r.begin(5, "순응 + 힘 3N(+x), 보닛 앞 들기 z+40 (9.3초)")
+        r.begin(5, f"순응 + 힘 3N(+x), 보닛 앞 들기 z+40 ({T_FORCE_MOVE:.1f}초)")
         r.compliance_on = True
         _ok(task_compliance_ctrl(), "DRL31 task_compliance_ctrl")
         _ok(set_stiffnessx([3000.00, 3000.00, 3000.00, 200.00, 200.00, 200.00], time=0.0), "DRL32 set_stiffnessx")
         r.force_on = True
         _ok(set_desired_force([3.00, 0.00, 0.00, 0.00, 0.00, 0.00], [1, 0, 0, 0, 0, 0], time=0.0, mod=DR_FC_MOD_ABS), "DRL34 set_desired_force")
-        # time=9.33 고정: 이미 느려서 SPEED_SCALE 적용 안 함 (DRL 값 그대로)
-        _ok(movel(posx(0.00, 0.00, 40.00, 0.00, 0.00, 0.00), time=9.33, radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_REL, ra=DR_MV_RA_DUPLICATE), "DRL36 movel")
+        # DRL time=9.33 → 9.33 / SPEED_SCALE
+        _ok(movel(posx(0.00, 0.00, 40.00, 0.00, 0.00, 0.00), time=T_FORCE_MOVE, radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_REL, ra=DR_MV_RA_DUPLICATE), "DRL36 movel")
 
-        r.begin(6, "순응 + 힘 유지, x+10 z-10 (9.3초) → 힘·순응 해제",
+        r.begin(6, f"순응 + 힘 유지, x+10 z-10 ({T_FORCE_MOVE:.1f}초) → 힘·순응 해제",
                 caution="힘 제어 축(x, 3N)과 같은 방향으로 x+10 이동 명령. 실제 이동량이 다를 수 있음")
-        # time=9.33 고정: 이미 느려서 SPEED_SCALE 적용 안 함 (DRL 값 그대로)
-        _ok(movel(posx(10.00, 0.00, -10.00, 0.00, 0.00, 0.00), time=9.33, radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_REL, ra=DR_MV_RA_DUPLICATE), "DRL38 movel")
+        # DRL time=9.33 → 9.33 / SPEED_SCALE
+        _ok(movel(posx(10.00, 0.00, -10.00, 0.00, 0.00, 0.00), time=T_FORCE_MOVE, radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_REL, ra=DR_MV_RA_DUPLICATE), "DRL38 movel")
         _ok(release_force(time=0.0), "DRL40 release_force")
         r.force_on = False
         _ok(release_compliance_ctrl(), "DRL42 release_compliance_ctrl")
@@ -293,7 +323,8 @@ def disassemble(virtual=False):
         r.begin(7, "보닛 잡기 (그리퍼 닫기) → 빼내기")
         grip_close()                                                    # DRL 44, 46
         wait(GRIP_WAIT)                                                 # 추가: 그리퍼 대기
-        _ok(movel(posx(-20.00, 0.00, 2.00, 0.00, 0.00, 0.00), radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_REL, ra=DR_MV_RA_DUPLICATE), "DRL48 movel")
+        _ok(movel(posx(-8.00, 0.00, 0.00, 0.00, 0.00, 0.00), radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_REL, ra=DR_MV_RA_DUPLICATE), "DRL48 movel")
+        _ok(movel(posx(-5.00, 0.00, 5.00, 0.00, 0.00, 0.00), radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_REL, ra=DR_MV_RA_DUPLICATE), "DRL48 movel")
         _ok(movel(posx(0.00, 0.00, 20.00, 0.00, 0.00, 0.00), radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_REL, ra=DR_MV_RA_DUPLICATE), "DRL50 movel")
 
         r.begin(8, "헌 보닛 거치대로 이동 → 내리기 (z-100)",
@@ -308,6 +339,9 @@ def disassemble(virtual=False):
 
         r.info(f"[분해] 완료 (현재 z={r.z()})")
         done = True
+    except StopAfterStep as s:
+        r.stop_here(s.args[0])
+        done = True
     finally:
         if not done:
             r.cleanup()
@@ -315,14 +349,14 @@ def disassemble(virtual=False):
 
 
 # ---------------------------------------------------------------- 조립
-def assemble(virtual=False):
-    """m0609_bonnet_assembly.drl"""
+def assemble(virtual=False, until=None):
+    """m0609_bonnet_assembly.drl  (until=N: N 단계까지만)"""
     from DSR_ROBOT2 import (movej, movel, wait,
                             task_compliance_ctrl, set_stiffnessx, release_compliance_ctrl,
                             DR_BASE, DR_MV_MOD_ABS, DR_MV_MOD_REL, DR_MV_RA_DUPLICATE)
     from DR_common2 import posx, posj
 
-    r = _Run("조립", 8)
+    r = _Run("조립", 8, until)
     done = False
     try:
         _setup(r, virtual)
@@ -335,12 +369,12 @@ def assemble(virtual=False):
 
         r.begin(2, "새 보닛 위 → 아래로 접근",
                 caution="17줄 힘 감지 없이 z 25.77까지 하강")
-        _ok(movel(posx(250.89, 225.00, 106.77, 90.66, 179.97, 90.51), radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_ABS, ra=DR_MV_RA_DUPLICATE), "DRL15 movel")
-        _ok(movel(posx(250.89, 225.00, 25.77, 90.66, 179.97, 90.51), radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_ABS, ra=DR_MV_RA_DUPLICATE), "DRL17 movel")
+        _ok(movel(posx(250.89, 223.00, 106.77, 90.66, 179.97, 90.51), radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_ABS, ra=DR_MV_RA_DUPLICATE), "DRL15 movel")
+        _ok(movel(posx(250.89, 223.00, 25.77, 90.66, 179.97, 90.51), radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_ABS, ra=DR_MV_RA_DUPLICATE), "DRL17 movel")
 
         r.begin(3, "부품 옆(z 25.77)에서 rz 90→0 회전하며 파지 위치로",
                 caution="19줄 부품 바로 옆에서 큰 회전 + 직선 이동")
-        _ok(movel(posx(259.34, 225.00, 25.77, 0.20, 171.15, 0.04), radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_ABS, ra=DR_MV_RA_DUPLICATE), "DRL19 movel")
+        _ok(movel(posx(259.34, 223.00, 25.77, 0.20, 171.15, 0.04), radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_ABS, ra=DR_MV_RA_DUPLICATE), "DRL19 movel")
 
         r.begin(4, "새 보닛 잡기 (그리퍼 닫기)")
         grip_close()                                                    # DRL 21, 23
@@ -356,8 +390,8 @@ def assemble(virtual=False):
         r.compliance_on = True
         _ok(task_compliance_ctrl(), "DRL33 task_compliance_ctrl")
         _ok(set_stiffnessx([3000.00, 3000.00, 3000.00, 200.00, 200.00, 200.00], time=0.0), "DRL34 set_stiffnessx")
-        _ok(movel(posx(10.00, 0.00, 0.00, 0.00, 0.00, 0.00), radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_REL, ra=DR_MV_RA_DUPLICATE), "DRL36 movel")
-        _ok(movel(posx(0.00, 0.00, 0.00, 0.00, -10.00, 0.00), radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_REL, ra=DR_MV_RA_DUPLICATE), "DRL38 movel")
+        _ok(movel(posx(10.00, 0.00, 1.00, 0.00, 0.00, 0.00), radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_REL, ra=DR_MV_RA_DUPLICATE), "DRL36 movel")
+        _ok(movel(posx(0.00, 0.00, 0.00, 0.00, -20.00, 0.00), radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_REL, ra=DR_MV_RA_DUPLICATE), "DRL38 movel")
         _ok(release_compliance_ctrl(), "DRL40 release_compliance_ctrl")
         r.compliance_on = False
 
@@ -378,6 +412,9 @@ def assemble(virtual=False):
 
         r.info(f"[조립] 완료 (현재 z={r.z()})")
         done = True
+    except StopAfterStep as s:
+        r.stop_here(s.args[0])
+        done = True
     finally:
         if not done:
             r.cleanup()
@@ -390,7 +427,15 @@ def main(argv=None):
     parser.add_argument("mode", choices=["disassembly", "assembly", "all"])
     parser.add_argument("--virtual", action="store_true",
                         help="가상 로봇: Tool/TCP 설정·확인 건너뜀")
+    parser.add_argument("--until", type=int, metavar="N",
+                        help="N 단계까지만 하고 멈춤 (disassembly 1~9 / assembly 1~8, all 과 같이 못 씀)")
     args = parser.parse_args(argv)
+    if args.until is not None:
+        if args.mode == "all":
+            parser.error("--until 은 disassembly 또는 assembly 하나에만 쓸 수 있음")
+        total = 9 if args.mode == "disassembly" else 8
+        if not 1 <= args.until <= total:
+            parser.error(f"--until 은 1~{total}")
 
     # Ctrl+C 를 rclpy 가 가로채지 않게 → KeyboardInterrupt 로 finally 정리 코드가 돎
     rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
@@ -400,9 +445,9 @@ def main(argv=None):
     rc = 0
     try:
         if args.mode in ("disassembly", "all"):
-            disassemble(virtual=args.virtual)
+            disassemble(virtual=args.virtual, until=args.until)
         if args.mode in ("assembly", "all"):
-            assemble(virtual=args.virtual)
+            assemble(virtual=args.virtual, until=args.until)
         node.get_logger().info(f"=== {args.mode} 완료 ===")
     except KeyboardInterrupt:
         node.get_logger().error("Ctrl+C 로 중단됨")

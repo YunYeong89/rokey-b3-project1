@@ -1,8 +1,10 @@
 /* 관리자·고객 공용 3D 차량 뷰어 (three.js)
  *
  * 3D 모델
- *  static/models/car.glb 가 있으면 그걸 불러오고, 없으면 상자로 만든 임시 차를 그린다.
- *  GLB 준비 규칙 (모델링 담당에게 전달)
+ *  static/models/car.glb (실제 차량, tools/car_to_glb.py) 를 먼저 불러오고, 없으면 차량 모델 코드(예: sedan_1_18)의
+ *  앞부분으로 static/models/<sedan|suv|sports>.glb (로봇 쪽 rokey 차량 모델, --web 시작 때 다시 생성),
+ *  그것도 없으면 상자로 만든 임시 차를 그린다. 차량을 바꾸면 다시 불러오고, 화면 크기는 불러온 모델에 맞춘다.
+ *  GLB 준비 규칙
  *   - 단위 mm, 위쪽이 +Y (glTF 기본)
  *   - 원점 = 차량 좌표계 원점(뒤 왼쪽 모서리 바닥), +X = 차 앞쪽, +Z = 차 오른쪽
  *   - 교체 부품은 따로 분리된 메쉬로, 이름을 bonnet / mirror_l / mirror_r / door_fl / door_fr / door_rl / door_rr 로
@@ -34,7 +36,7 @@ const PLACEHOLDER_LAYOUT = {
   mirrors: { mirror_l: { x: 158, y: -7, z: 46, size: [16, 9, 14] }, mirror_r: { x: 158, y: 117, z: 46, size: [16, 9, 14] } },
 };
 const CAR = { L: 260, W: 110, H: 69 };          // load() 에서 모델 bounding box 로 바뀜
-const MODEL_URL = "/static/models/car.glb";
+const MODEL_DIR = "/static/models/";            // car.glb (실제 차량), 없으면 <sedan|suv|sports>.glb (rokey 차종)
 const PART_CODES = ["bonnet", "mirror_l", "mirror_r", "door_fl", "door_fr", "door_rl", "door_rr"];
 export const COLORS = {
   body: 0x9fb3c8, part: 0xc3d0dd, glass: 0x3a4a5c, tire: 0x2a2f36,
@@ -89,7 +91,7 @@ export function createCarViewer(host, { msgEl = null, onPartClick = null } = {})
   const baseMaterial = new Map();
 
   function setView(name) {
-    const [x, y, z] = VIEWS[name], k = extent.scale * sizeK;
+    const [x, y, z] = VIEWS[name], k = extent.scale * sizeK;   // 시점 거리는 차 크기에 비례 (fitToCar)
     const [tx, ty, tz] = extent.target(CAR);
     controls.target.set(tx, ty, tz);
     camera.position.set(tx + x * k, ty + y * k, tz + z * k);
@@ -141,13 +143,24 @@ export function createCarViewer(host, { msgEl = null, onPartClick = null } = {})
   });
 
   // ---------------------------------------------------------------- 모델
-  async function load() {
+  let loaded = null;
+  async function load(vehicleModel = "sedan") {
+    const type = vehicleType(vehicleModel);
+    if (model && loaded === type) return;
+    loaded = type;
     let glb = null;
-    try {
-      const head = await fetch(MODEL_URL, { method: "HEAD" });
-      if (head.ok) glb = (await new GLTFLoader().loadAsync(MODEL_URL)).scene;
-    } catch (e) { console.warn("car.glb 불러오기 실패, 임시 모델 사용", e); }
+    for (const url of [`${MODEL_DIR}car.glb`, `${MODEL_DIR}${type}.glb`]) {
+      try {
+        const head = await fetch(url, { method: "HEAD" });
+        if (head.ok) { glb = (await new GLTFLoader().loadAsync(url)).scene; break; }
+      } catch (e) { console.warn(`${url} 불러오기 실패`, e); }
+    }
+    if (model) carRoot.remove(model);           // 차량을 바꾸면 다시 불러옴
+    for (const code of Object.keys(parts)) delete parts[code];
+    baseMaterial.clear();
+    proxies.clear();
     model = glb || buildPlaceholderCar();
+    if (!glb) Object.assign(CAR, { L: PLACEHOLDER_LAYOUT.L, W: PLACEHOLDER_LAYOUT.W, H: PLACEHOLDER_LAYOUT.H });
     carRoot.add(model);
     readLayout(glb);
     fitToCar();
@@ -165,7 +178,7 @@ export function createCarViewer(host, { msgEl = null, onPartClick = null } = {})
     }
     if (absent.length) console.warn(`[viewer3d] 모델에 없는 부품: ${absent.join(", ")} → 손상·교체는 반투명 상자로 대신 표시`);
     if (msgEl) {
-      msgEl.textContent = glb ? "" : "임시 모델 (static/models/car.glb 를 넣으면 실제 모델로 바뀜)";
+      msgEl.textContent = glb ? "" : `임시 모델 (static/models/car.glb · ${type}.glb 가 없음)`;
       msgEl.classList.toggle("small-msg", !glb);
     }
     resize();
@@ -325,10 +338,14 @@ export function createCarViewer(host, { msgEl = null, onPartClick = null } = {})
     scene, carRoot, surfaceAt, setRobotExtent, onFrame: (fn) => frameHooks.push(fn),
     /** 차 크기 {L, W, H} [mm] (load 후 모델 기준) */
     dims: () => ({ ...CAR }),
+    size: () => ({ ...CAR }),                   // dims 와 같음 (admin.js 데모 배율)
     /** 차량 좌표계 배치 (PLACEHOLDER_LAYOUT 과 같은 모양) */
     layout: () => layout,
   };
 }
+
+/** 차량 모델 코드 → 3D 모델 종류: "sedan_1_18" → "sedan" */
+export function vehicleType(model) { return String(model || "sedan").split("_")[0]; }
 
 // ================================================================ 유틸
 function eachMesh(obj, fn) { obj.traverse((o) => { if (o.isMesh) fn(o); }); }

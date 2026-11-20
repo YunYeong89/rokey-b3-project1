@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "source": {
+    "kind": "real_controller",
+    "host": "192.168.1.100",
+    "controller_version": "GF02120100",
+    "captured_at": "2026-11-13T14:14:30.864346+09:00"
+  },
+  "units": {
+    "tcp_position": "mm",
+    "tcp_orientation": "deg (Euler ZYZ)",
+    "tool_weight": "kg",
+    "tool_cog": "mm"
+  },
+  "active": {
+    "tcp": "GripperDA_v1",
+    "tool": "Tool Weight"
+  },
+  "tcps": {
+    "GripperDA_v1": {
+      "pos": [
+        0,
+        0,
+        240,
+        0,
+        0,
+        0
+      ]
+    },
+    "GripperDA_v2": {
+      "pos": [
+        0,
+        0,
+        240,
+        0,
+        0,
+        30
+      ]
+    }
+  },
+  "tools": {
+    "Tool Weight": {
+      "weight": 1.27999997,
+      "cog": [
+        5.26000023,
+        30.1800003,
+        27.1900005
+      ],
+      "inertia": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  }
+}

@@ -1,7 +1,7 @@
 """
-자동차 자동 수리 로봇 - 웹 서버 (Flask + SQLite)
+Scan&Fix (자동차 자동 수리 로봇) - 웹 서버 (Flask + SQLite)
 
-실행:  python3 app.py            → http://<PC IP>:5000  (태블릿에서 접속)
+실행:  python3 app.py            → http://<PC IP>:5050  (태블릿에서 접속)
 처음 실행 시 repair.db 를 만들고 기본 계정·부품·차량 + 샘플 데이터(회원·차량·이력)를 넣는다.
   샘플 없이: REPAIR_SAMPLE=0 python3 app.py      처음 상태로: rm repair.db 후 다시 실행
   관리자 admin / admin1234,  사용자(차주) user1 / user1234, user2 / user1234   ← 꼭 바꾸기
@@ -12,13 +12,15 @@
   robot : ROS 노드. HTTP 헤더 X-API-Key (환경변수 REPAIR_API_KEY, 기본 'rokey-robot-key')
 
 차주 알림 메일 (수리 시작 · 종료). 차주 이메일은 관리자 화면 '회원' 탭에서 입력
-  SMTP_USER=보내는Gmail  SMTP_PASS=Gmail앱비밀번호  SITE_URL=http://<PC IP>:5000  python3 app.py
+  SMTP_USER=보내는Gmail  SMTP_PASS=Gmail앱비밀번호  SITE_URL=http://<PC IP>:5050  python3 app.py
   네이버로 보낼 때: SMTP_HOST=smtp.naver.com 추가 (네이버 메일 환경설정에서 POP3/SMTP 사용 켜기)
   MAIL_DRY_RUN=1 이면 실제로 보내지 않고 터미널에 메일 내용만 출력
   위 값들은 web/.env 에 KEY='값' 줄로 적어 두면 python3 app.py 만으로 읽힌다 (.env 는 git 제외).
   터미널에서 직접 준 (빈 값이 아닌) 환경변수가 .env 보다 우선.
 """
+import json
 import logging
+import math
 import os
 import smtplib
 import sqlite3
@@ -27,7 +29,7 @@ from email.message import EmailMessage
 from email.utils import formataddr
 from functools import wraps
 
-from flask import Flask, abort, jsonify, redirect, render_template, request, session, url_for
+from flask import Flask, abort, jsonify, redirect, render_template, request, send_file, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
 
@@ -52,11 +54,14 @@ def load_env_file(path=os.path.join(os.path.dirname(os.path.abspath(__file__)), 
 load_env_file()          # import db 보다 먼저 (db 도 REPAIR_DB 등 환경변수를 읽음)
 
 import db  # noqa: E402
+from robot_files import RobotFiles  # noqa: E402
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("REPAIR_SECRET", "change-this-secret")
 API_KEY = os.environ.get("REPAIR_API_KEY", "rokey-robot-key")
-ROSBRIDGE_URL = os.environ.get("ROSBRIDGE_URL", "")   # 비우면 브라우저가 ws://<접속한 호스트>:9090 사용
+ROSBRIDGE_URL = os.environ.get("ROSBRIDGE_URL", "")   # 비우면 브라우저가 ws://<접속한 호스트>:ROSBRIDGE_PORT 사용
+ROSBRIDGE_PORT = int(os.environ.get("ROSBRIDGE_PORT", 9090))   # run_web.sh --lan: 9091 (lan_relay.py)
+ROSBRIDGE_TLS_PORT = int(os.environ.get("ROSBRIDGE_TLS_PORT", 9443))   # https 페이지의 wss (lan_relay.py TLS)
 app.teardown_appcontext(db.close_db)
 
 # 서비스 이름 (화면 제목 · 메일 제목). SERVICE_NAME 환경변수로 바꿀 수 있음
@@ -70,6 +75,7 @@ def inject_service():
 
 FINISH_STATUSES = {"done", "no_damage", "on_hold", "failed", "stopped"}
 MODES = {"auto", "manual"}
+INSPECTION_PARTS = ("bonnet", "left_door", "right_door")
 
 
 # ================================================================ 차주 알림 메일
@@ -223,7 +229,7 @@ def require(*roles):
             if r is None:
                 if request.path.startswith("/api/"):
                     return jsonify(error="로그인이 필요합니다"), 401
-                return redirect(url_for("login"))
+                return redirect(url_for("login", next=request.full_path))   # 로그인 후 원래 주소(?tab=robot 등)로
             if roles and r not in roles:
                 if request.path.startswith("/api/"):
                     return jsonify(error="권한이 없습니다"), 403
@@ -231,6 +237,13 @@ def require(*roles):
             return fn(*a, **kw)
         return wrapper
     return deco
+
+
+# 로봇 프로그램 결과 파일 · 실시간 힘 그래프 · 점군 (기본 경로: 이 저장소의 ws_cobot_pjt/ws_cobot_pjt, run_web.sh 는 환경변수로 넘김)
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+RobotFiles(os.environ.get("ROKEY_DIR", os.path.join(REPO, "ws_cobot_pjt/ws_cobot_pjt/src/rokey")),
+           os.environ.get("SESSION_DIR", os.path.join(REPO, "ws_cobot_pjt/ws_cobot_pjt/session")),
+           [d for d in os.environ.get("SCENE_DIRS", "").split(os.pathsep) if d]).register(app, require("admin"))
 
 
 def can_see_vehicle(vehicle_id):
@@ -255,6 +268,38 @@ def not_found(_):
 
 
 # ================================================================ 페이지
+@app.get("/ca.crt")
+def local_ca():
+    """run_web.sh --lan 의 로컬 인증 기관. 아이패드 등에 한 번 설치·신뢰하면 https 주소가 경고 없이 열린다."""
+    path = os.environ.get("WEB_CA", "")
+    if not os.path.isfile(path):
+        abort(404)
+    return send_file(path, mimetype="application/x-x509-ca-cert", download_name="rokey-web-ca.crt")
+
+
+def ca_profile(path):
+    """같은 인증 기관을 담은 iOS/iPadOS 구성 프로파일 (.mobileconfig: Safari·AirDrop에서 설치 화면이 뜬다)."""
+    import plistlib, ssl, uuid
+    pem = open(path).read()
+    der = ssl.PEM_cert_to_DER_cert(pem)
+    ident = uuid.uuid5(uuid.NAMESPACE_URL, pem)
+    certificate = {"PayloadType": "com.apple.security.root", "PayloadVersion": 1, "PayloadContent": der,
+                   "PayloadCertificateFileName": "rokey-web-ca.cer", "PayloadDisplayName": "rokey web local CA",
+                   "PayloadIdentifier": f"rokey.web.ca.{ident}.cert", "PayloadUUID": str(uuid.uuid5(ident, "cert"))}
+    return plistlib.dumps({"PayloadType": "Configuration", "PayloadVersion": 1, "PayloadContent": [certificate],
+                           "PayloadDisplayName": "rokey web local CA", "PayloadIdentifier": f"rokey.web.ca.{ident}",
+                           "PayloadUUID": str(ident)})
+
+
+@app.get("/ca.mobileconfig")
+def local_ca_profile():
+    path = os.environ.get("WEB_CA", "")
+    if not os.path.isfile(path):
+        abort(404)
+    return ca_profile(path), 200, {"Content-Type": "application/x-apple-aspen-config",
+                                   "Content-Disposition": "attachment; filename=rokey-web-ca.mobileconfig"}
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     error = None
@@ -264,7 +309,8 @@ def login():
         if u and check_password_hash(u["pw_hash"], request.form.get("password", "")):
             session.clear()
             session.update(user_id=u["id"], user=u["username"], name=u["name"] or u["username"], role=u["role"])
-            return redirect(url_for("home"))
+            target = request.args.get("next", "")
+            return redirect(target if target.startswith("/") and not target.startswith("//") else url_for("home"))
         error = "아이디 또는 비밀번호가 맞지 않습니다."
     return render_template("login.html", error=error)
 
@@ -284,13 +330,43 @@ def home():
 @app.route("/admin")
 @require("admin")
 def admin_page():
-    return render_template("admin.html", name=session["name"], rosbridge_url=ROSBRIDGE_URL)
+    # ROBOT_JOINT_TOPIC 이 없으면 화면이 연결된 로봇(가상/실기)에 맞춰 관절 토픽을 고른다
+    return render_template("admin.html", name=session["name"], rosbridge_url=ROSBRIDGE_URL,
+                           rosbridge_port=ROSBRIDGE_PORT, rosbridge_tls_port=ROSBRIDGE_TLS_PORT,
+                           robot_joint_topic=os.environ.get("ROBOT_JOINT_TOPIC", ""))
 
 
 @app.route("/my")
 @require("user")
 def my_page():
     return render_template("my.html", name=session["name"])
+
+
+@app.route("/api/robot/inspection-plan", methods=("GET", "PUT"))
+@require("admin")
+def inspection_plan():
+    con, user = db.get_db(), session["user_id"]
+    if request.method == "GET":
+        row = con.execute("SELECT plan FROM inspection_plans WHERE user_id = ?", (user,)).fetchone()
+        return jsonify(json.loads(row["plan"]) if row else [
+            dict(part=part, enabled=True, mode="full", regions=[]) for part in INSPECTION_PARTS])
+    plan = request.get_json(silent=True)
+    if (not isinstance(plan, list) or len(plan) != len(INSPECTION_PARTS) or
+            not all(isinstance(item, dict) and set(item) == {"part", "enabled", "mode", "regions"} and
+                    item["part"] in INSPECTION_PARTS and type(item["enabled"]) is bool and
+                    item["mode"] in ("full", "partial") and isinstance(item["regions"], list) for item in plan) or
+            len({item["part"] for item in plan}) != len(INSPECTION_PARTS)):
+        return jsonify(error="검사 부품과 순서를 확인하세요"), 400
+    for item in plan:
+        for box in item["regions"]:
+            if (not isinstance(box, list) or len(box) != 4 or
+                    not all(type(v) in (int, float) and math.isfinite(v) for v in box) or
+                    box[2] <= box[0] or box[3] <= box[1]):
+                return jsonify(error="부분 탐색 좌표를 확인하세요"), 400
+    with con:
+        con.execute("INSERT INTO inspection_plans (user_id, plan) VALUES (?, ?) "
+                    "ON CONFLICT (user_id) DO UPDATE SET plan = excluded.plan", (user, json.dumps(plan)))
+    return jsonify(plan)
 
 
 # ================================================================ 회원 (관리자)
@@ -624,4 +700,4 @@ def list_alarms():
 
 if __name__ == "__main__":
     db.init_db()
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=False)
+    app.run(host=os.environ.get("HOST", "0.0.0.0"), port=int(os.environ.get("PORT", 5050)), debug=False, threaded=True)

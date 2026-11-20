@@ -1,0 +1,14 @@
+name: cobot-native
+channels:
+  - robostack-jazzy
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.12
+  - numpy
+  - gz-sim=8
+  - gz-transport13-python
+  - ros-jazzy-rviz2
+  - ros-jazzy-rclpy
+  - ros-jazzy-robot-state-publisher
+  - pyyaml

@@ -42,8 +42,8 @@ python3 app.py
 - **처음 상태로 되돌리기**: `rm repair.db` 후 다시 `python3 app.py`
 - **샘플 없이 실행** (실제 로봇 시연용, 기본 계정·부품·차량 2대만): `rm repair.db` 후 `REPAIR_SAMPLE=0 python3 app.py`
 
-- http://localhost:5000 → 로그인하면 권한에 따라 관리자 / 고객 화면으로 이동
-- 태블릿: 같은 와이파이에서 http://<PC IP>:5000 (`hostname -I`)
+- http://localhost:5050 → 로그인하면 권한에 따라 관리자 / 고객 화면으로 이동
+- 태블릿: 같은 와이파이에서 http://<PC IP>:5050 (`hostname -I`)
 - three.js, roslibjs 를 CDN 에서 받으므로 인터넷 연결 필요
 
 | 계정 | 비밀번호 | 권한 | 차량 |

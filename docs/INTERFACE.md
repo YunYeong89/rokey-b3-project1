@@ -8,7 +8,7 @@
 ```
 [태블릿 웹] ──rosbridge(ws:9090)──▶ [ROS2] ──▶ 공정 관리 노드 ──▶ 스캔·교체 노드 ──▶ M0609
      ▲                                              │
-     └──────── Flask REST API (http:5000) ◀─────────┘  (단계·판정·결과 기록)
+     └──────── Flask REST API (http:5050) ◀─────────┘  (단계·판정·결과 기록)
 ```
 
 | 경로 | 무엇을 | 방식 |
@@ -22,7 +22,7 @@
 
 | 항목 | 값 |
 |---|---|
-| 웹 서버 (Flask) | `http://<웹 PC IP>:5000` |
+| 웹 서버 (Flask) | `http://<웹 PC IP>:5050` |
 | rosbridge | `ws://<로봇 PC IP>:9090` |
 | 로봇 API 키 | 헤더 `X-API-Key: rokey-robot-key` (환경변수 `REPAIR_API_KEY`) |
 

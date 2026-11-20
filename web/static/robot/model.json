@@ -1,0 +1,7 @@
+{
+  "name": "M0609 + OnRobot RG2",
+  "model_url": "/static/robot/m0609_rg2.urdf",
+  "fixed_frame": "base_link",
+  "tcp_frame": "tool0",
+  "version": "4ee2c2590238"
+}

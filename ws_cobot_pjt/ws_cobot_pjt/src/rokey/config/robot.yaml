@@ -1,0 +1,480 @@
+# Robot program parameters (mm, deg, s, N). Virtual sessions take the probe TCP/tool names and the tip
+# radius from /workspace/session/probe_plan.json; the real robot uses the values below.
+robot:
+  home_joints_deg: [0.0, 0.0, 90.0, 0.0, 90.0, 0.0]
+  service_timeout: 5.0
+
+probe:                              # real robot: TP-registered names
+  tcp_name: ProbeTCP                # TCP at the bottom of the tip sphere
+  tool_name: ProbeToolWeight
+  tip_radius_mm: 2.5                # probe v3 5 mm ball (meshes/probe_v3_5mm.stl)
+  body_radius_mm: 30.0              # probe body + RG2 fingers around the tip axis ...
+  body_clearance_mm: 30.0           # ... start this far above the tip: no touch next to a taller surface
+
+motion:                             # general motion
+  joint_speed: 60.0                 # deg/s
+  joint_acc: 120.0
+  linear_speed: 100.0               # mm/s
+  linear_acc: 200.0
+  angular_speed: 60.0               # deg/s
+  angular_acc: 120.0
+  approach_speed: 30.0              # final descent / lift near parts and the probe holder
+  approach_acc: 100.0
+  approach_height_mm: 60.0          # pickup: above the docked tip before the final descent
+
+scan:                               # contact motion
+  speed: 5.0                        # mm/s, stepping along the surface
+  acc: 100.0
+  search_speed: 5.0                 # mm/s, guarded descent to contact
+  press_force: 1.5                  # N along TOOL +Z
+  touch_threshold: 0.5              # N, overwritten by calibration_result.json when present
+  clearance_mm: 15.0                # travel height above the expected surface between touches
+  search_depth_mm: 8.0              # how far below the expected surface a touch may go
+
+calibration:                        # rokey calibration (probe held, free space then the table)
+  lift_mm: 50.0                     # free-space motions start this far above home
+  span_mm: 40.0                     # sweep half-length
+  sweep_speeds: [10.0, 30.0, 50.0]
+  stroke_mm: 30.0                   # compliant vertical strokes like a contact search
+  strokes: 3                        # per touch speed
+  touch_speeds: [5.0, 10.0]
+  threshold_margin: 1.5             # touch threshold = margin x debounced motion-noise level
+  min_threshold_n: 0.3
+  reference_xy_mm: [300.0, -110.0]  # free table spot for repeated touches (BASE), outside the vehicle zone
+  reference_touches: 20
+
+vehicle_zone:                       # where the vehicle is placed (BASE): nominal pose and tolerance
+  table_z_mm: 0.0
+  center_mm: [318.0, 318.0]         # 450 mm out at 45 deg: clear of the home tip (368, 6, ~150) and the probe rack
+                                    # (native/scene.json: right of the robot, (250, -400))
+  yaw_deg: 135.0                    # long axis across the reach (tool-down reach r 310..620 mm up to the travel
+                                    # height, checked by IK); front/back is unknown (yaw + 180 also tried)
+  position_tolerance_mm: 20.0
+  yaw_tolerance_deg: 10.0
+  max_height_mm: 165.0              # tallest vehicle type (suv 161 mm): travel between touches stays above it
+
+inspection:                         # damage thresholds in units of the calibrated height sigma
+  height_sigma_mm: 0.2              # overwritten by calibration_result.json
+  min_height_sigma_mm: 0.1          # floor: the 1 mm reference height map is not more exact than this
+  suspect_sigma: 4.5                # 1.5 sigma x 3 (INTERFACE.md section 6, provisional)
+  dent_sigma: 9.0                   # 3 sigma x 3
+  crack_step_mm: 1.0                # sudden extra step between neighbouring points along a path
+  missing_mm: 5.0                   # contact this far below the reference counts as missing
+  missing_fraction: 0.5             # part missing when at least this share of its points are
+  median_window: 3                  # dz median filter along a path (denoising)
+  line_spacing_mm: 7.0               # raster (scaled with the vehicles, ~600 points on a bonnet)
+  point_spacing_mm: 4.0
+  edge_margin_mm: 2.0               # paths stay this far (plus the tip radius) inside the part edge
+  small_part_mm2: 400.0             # smaller parts (mirrors) get single touches instead of rubbing ...
+  small_part_spacing_mm: 3.0        # ... on this grid, the tip radius inside their edge
+  replaceable: [bonnet, mirror_l, mirror_r]
+
+db:
+  url: http://host.docker.internal:5050
+  api_key: rokey-robot-key
+
+choose_car:                         # vehicle identification (hypothesis grid over vehicle_zone)
+  grid_mm: 5.0                      # coarse position step; also the half-width of the fine grid
+  grid_deg: 5.0
+  fine_mm: 1.0
+  fine_deg: 0.5
+  candidate_mm: [10.0, 5.0]         # touch candidate spacing (type phase, pose phase)
+  sigma_mm: [3.0, 1.0]              # height likelihood sigma (coarse grid error, fine)
+  type_confidence: 0.99
+  min_touches: 5
+  max_touches: 20
+  pose_std_mm: 1.0
+  pose_std_deg: 0.5
+
+contact_test:                       # rokey contact_overshoot: force-controlled approach onto a block below home
+  surface_z_mm: 20.0                # block top (BASE); the simulation scene puts the block at the home TCP x, y
+  block_size_mm: 80.0               # square side (simulation block)
+  start_above_mm: 30.0              # movel from home down to this far above the surface, then force control
+  force_n: -1.5                     # final desired force along BASE z (negative: down onto the block)
+  approach_force_n: -1.0            # desired force until contact (above the touch threshold; sets the approach speed)
+  ramp_s: 0.5                       # after contact: approach -> final force over this time (controller limit 0..1 s)
+  hold_s: 5.0                       # recorded after contact
+  timeout_s: 60.0                   # no contact within this time -> abort (simulation approach ~1.25 mm/s at -1 N)
+  hemisphere_center_mm: [380.0, -100.0]   # hemisphere on the table (simulation: the --car scene adds it); IK-checked
+  hemisphere_radius_mm: 40.0              # for strokes along BASE y with the tool on the normal up to +-40 deg
+  friction: 0.3                     # simulation: block and hemisphere surface friction (Gazebo default 1.0; a
+                                    # vertical +z stroke up a 40 deg slope needs ~23 N normal force at 1.0)
+  block_defects:                    # simulation block top damage for rokey defect_scan: block-local mm from its
+                                    # centre (BASE axes), off the centre column |x| < 8 mm used by contact_overshoot
+                                    # and contact_scrape. The crack tapers from start to end; the dent is cos^2.
+    crack: {start_mm: [-30.0, -28.0], end_mm: [-14.0, 28.0], width_mm: [2.0, 0.5], depth_mm: 1.0,
+            tip_mm: 3.0, chamfer_mm: 0.25}   # closes to zero width over tip_mm at both ends; 45 deg edge chamfer
+    dent: {centre_mm: [20.0, -12.0], radius_mm: 10.0, depth_mm: 1.0}
+
+defect_scan:                        # rokey defect_scan: surface_follow hybrid raster over the whole block top
+  pitch_mm: 1.0                     # row spacing; rows along BASE x, from the bottom-left (-x, -y) corner upward
+  speed_mm_s: 4.0                   # feed along the rows (75 rows x 74 mm: ~24 min at 4 mm/s)
+  force_n: 1.5
+  margin_mm: 3.0                    # tip-sphere centre this far inside the block edge (the ball must not roll off)
+  grid_mm: 1.0                      # graph map cell
+
+scrape_test:                        # rokey contact_scrape: strokes along BASE y over the block and the hemisphere
+  force_n: 1.5                      # pressing force: along BASE -z (z mode) or along the tool axis (normal mode)
+  approach_force_n: 1.0             # until contact (above the touch threshold), then ramped to force_n
+  ramp_s: 0.5                       # set_desired_force transition, 0..1 s
+  speed_mm_s: 2.0                   # stroke speed
+  block_stroke_mm: 50.0             # across the block centre
+  hemisphere_angle_deg: 40.0        # strokes cover the dome normals from -angle to +angle
+  normal_step_deg: 2.0              # normal mode: the tool is re-aimed and the force axis re-latched every step
+  approach_gap_mm: 10.0             # the force-controlled approach starts this far off the surface
+  hold_s: 1.0                       # pressing still before and after each stroke
+  timeout_s: 30.0                   # no contact within this time -> abort
+
+performance_scan:                  # real_scan --box: healthy plane plans, source mesh used only for contact/evaluation
+  min_path_mm: 5.0
+  pitch_mm: 1.0
+  speed_mm_s: 10.0
+  force_n: 0.5
+  approach_force_n: 0.5
+  stiffness: [20000.0, 20000.0, 10.0, 200.0, 200.0, 200.0]  # XY maximum; Z remains force-controlled
+  truth_step_mm: 0.25
+  analysis_cell_mm: 1.0
+  tolerance_mm: 0.1
+  full_damage_mm: 5.0
+  calibration_roi_mm: [-10.0, -10.0, 10.0, 10.0]  # known healthy centre; analysis only, raw clouds retained
+  record_pose_wrench: true
+  mesh_height_regions_mm:          # known locations only; cloud and planning heights stay on the healthy plane
+    crack:
+      - [-95.0, -3.0, -15.0, 24.0]
+      - [-93.0, 18.0, -23.0, 42.0]
+      - [-93.0, 34.0, -20.0, 62.0]
+      - [-95.0, 63.0, -39.0, 91.0]
+    dent:
+      - [8.0, 8.0, 42.0, 42.0]
+      - [2.0, 51.0, 48.0, 98.0]
+
+bonnet_roi_cloud:                  # real mesh-height ROI analysis in BASE, after recording the scan
+  grid_mm: 1.0
+  smooth_mm: 2.5
+  max_tilt_deg: 15.0
+  max_normal_change_deg: 14.3       # variation across the ball footprint
+  baseline_ring_mm: [4.5, 8.0]      # nearby cells in the same travel direction, outside the local feature
+  candidate_tilt_deg: 10.0        # nominal surface must remain measurable throughout ROI evidence
+  confirm_normal_change_deg: 10.5  # limit for both dent and crack ROI evidence
+  confirm_depth_mm: 0.15          # ball centre below the local reference
+  confirm_force_drop_n: 0.60      # local normal reaction decrease
+  confirm_travel_mm: 0.35         # continuous paired response in one stroke
+  crack:                          # (crack_roi.py) always as here, not as a saved plan's
+    shoulder_mm: 1.0              # nearby healthy reference footprint on each side of a crossing
+    depth_mm: 0.02                # local depth between the shoulders (0.045 until 2026-11-20: the 5 mm / 2 mm balls
+                                  # read the ~1 mm cracks 0.02-0.08 mm deep)
+    force_drop_n: 0.25            # force evidence: the normal reaction dropping this much ...
+    lateral_n: 0.25               # ... or the reaction across the press axis changing this much (both cracks
+                                  # 0.26-1.26 N on 2026-11-20; the normal reaction rose or fell by run)
+    max_normal_change_deg: 8.0    # reference cloud noise: no crossing where the nominal surface turns more under
+                                  # the ball (character-line flanks 9-10 deg: 0.3 N false crossings)
+    width_mm: 1.4
+    row_gap_mm: 3.2               # max spacing between joined crossings: one missed row (2.1 until 2026-11-20)
+    length_mm: 2.6                # minimum transverse span for confirmation
+    single_n: 0.6                 # a lone crossing with this much force evidence is a candidate too
+  rescan:                         # ROI rescans (plan.json rescan_of): crossings by force, the defects drawn on the mesh
+    confirmed_only: false         # candidates kept (confirmed only left 081134 with none)
+    crack:                        # over crack above. Pressed stiffly (3 N/mm) the ball barely dips into a crack: 081134
+                                  # had 3 and 5 crossings with any depth drop on cracks A and B, 7 and 10 with the
+                                  # reaction across the axis changing 0.5 N or more; at 0.5 N joined over rows and lone
+                                  # ones from 0.8 N, its 13 crossings all lay within 2.5 mm of the cracks, none elsewhere
+      force_led: true             # crossings found by the force evidence, the depth only checked (crack_roi.py)
+      force_drop_n: 0.5
+      lateral_n: 0.5
+      depth_mm: -0.02             # no rise between the shoulders beyond this
+      trace_width_mm: 3.0         # spread across a joined trace (the crossings scatter ~1 mm about a crack)
+      single_n: 0.8
+
+real_scan:                          # rokey real_scan: one part of the real vehicle (--car real) by force-controlled rows
+  default_scan:                    # default only; force magnitudes are positive, command direction is -axis
+    contact_threshold_n: 0.2       # contact/data classification, below the 0.5 N target
+    real_survey_max_speed_mm_s: 5.0  # physical robot survey strokes, including --speed overrides
+    real_force_n: 3.0              # physical robot contact search, survey, and detail; directed into the surface
+    real_contact_offset_n: 1.5     # physical robot: reaction rise over the reading before force control that
+                                   # counts as contact (force control alone adds ~0.7-1.0 N: 0.2 N made a
+                                   # contact 10 mm above the bonnet)
+    real_search_speed_mm_s: 4.0    # physical robot: position-controlled search down to contact (stopped by the rise
+    real_search_depth_mm: 5.0      # above), at most this far below the planned surface; then force control at contact
+    bonnet_standoff_margin_mm: 1.0 # small wrist-reach margin at the height used to back off the bonnet
+    bonnet_travel_margin_mm: 7.0   # wrist-reach margin at the lifted Cartesian entry and exit only
+    survey:
+      force_n: 0.5
+    detail:
+      force_n: 0.5
+      speed_mm_s: 2.0
+      pitch_mm: 0.5
+    roi:
+      depth_min_mm: 0.15
+      force_min_n: 0.15
+      noise_sigma: 4.0
+      min_run_mm: 0.3
+      pad_mm: 2.0
+      link_mm: 1.5
+  mesh_height:                     # --controller mesh-height: fixed TCP, mesh depth path, force along one BASE axis,
+                                   # no PD: bonnet from above (BASE -Z), door from -x (BASE +X)
+    cruise_speed_mm_s: 2.0         # stroke speed in mm/s (DSR movesx, constant)
+    crease_deg: 180.0              # rows run over creases (the character lines): the tool follows no normal, so no
+                                   # raster break at a normal turn (mesh_normal: 35 deg, which split every bonnet row
+                                   # into three at y +-20); openings and max_surface_step_mm still break
+    door_axis: [-1.0, 0.0, 0.0]    # door: the side the probe comes from (BASE), pressed along +X. Only the door
+                                   # facing the robot: vehicle yaw 90 deg (left door) or -90 deg (right door) in
+                                   # real_scene.yaml, as --car demo_left / demo_right
+    door_tool_tilt_deg: 25.0       # door: tilt toward down to keep the wrist reachable and the gripper clear of the lower panel
+    linear_acceleration_mm_s2: 8.0 # stream path timing and servo reference: raster turns (r 0.7 mm) at ~2 mm/s
+                                   # (mesh_normal's 40: 4 mm/s; 114347 path 1 had 4x the force spikes and 3x the
+                                   # contact loss within 0.6 s of a turn). DSR mesh-height keeps its movesx timing.
+    force_n: 2.4                   # pressing force along the BASE axis (real robot: set_desired_force from the grounding
+                                   # on; 1.5 until 2026-11-20, then 1.0 with the path started at the grounded contact,
+                                   # 0.8 with the path extra_depth_mm below it, 1.2: the extra depth added no force,
+                                   # the TCP rose 0.95 mm under force control; 1.5 for full contact (070300, 1.5 N/mm:
+                                   # p5/p50/p95 0.20/1.51/3.17 N, 6.9 % under record_threshold_n); 2.4 with 3 N/mm,
+                                   # pressed harder throughout: 3 N/mm x 0.8 mm, as the lift push
+                                   # 0.7 until 2026-11-19: the stream (114347) lost contact on 38 % of path 2
+                                   # (5th percentile -0.9 N); 1.5 keeps its 95th (~3.1 N) under max_force_n
+    contact_threshold_n: 0.5       # contact search: the rise ending the position-controlled descent (real robot)
+    record_threshold_n: 0.3        # a stroke sample counts as contact (ROI analysis of samples.csv) above this reaction
+    cloud_threshold_n: -.inf       # real robot: the drawn measured cloud (RViz, web) above this reaction: every stroke
+                                   # sample (-0.3 until 2026-11-20: ~94 % of 062732 at 6 mm/s)
+    telemetry_average: 5           # real robot strokes: RT samples (100 Hz) averaged over this many for the wrench
+                                   # (50 ms; the RT wrench twice as noisy as the service read)
+    press_settle_s: 2.0            # real robot: still at the approach gap before the zero reading and the search
+    ground_s: 4.0                  # real robot: force trimmed after the ramp (force_trim), contact checked over the last
+                                   # quarter (2.0 untrimmed until 2026-11-20)
+    extra_depth_mm: 0.3            # position-only spline from the contact found during the search (0.5 until
+                                   # 2026-11-20: 5.0-5.9 N, 033819 path 2 ended 0.15 mm past it; 1.5 in 031424 still
+                                   # lost 93 %: the force control, not the path, sets the height)
+    extra_depth_speed_mm_s: 0.5    # real robot: velocity cap for the position-only descent
+    press_limit_n: 5.0             # real robot: the position-only descent ends early at this reaction along the axis
+                                   # (6.4-6.6 N at 0.3 mm in 072408; 075045 and 075132 reached the probe guard's 8 N)
+    force_trim:                    # real robot grounding and strokes: the force command trimmed so the median reaction
+                                   # holds force_n (MeshHeightDsr.retrim), the trim kept from path to path
+      period_s: 1.0                # median window and update period (a 1 mm crack crossing: 0.17 s at 6 mm/s)
+      gain: 0.5                    # share of the period's shortfall added to the trim
+      max_n: 1.5                   # trim limit either way: under a fixed command the median fell 1.1-1.2 N short at
+                                   # rest (061800 grounding at 1.2 N), 0.55 N at 6 mm/s, and rose 0.47 N at 2 mm/s
+      ramp_s: 0.3                  # set_desired_force ramp to the trimmed command
+    rescan:                        # after a whole-bonnet survey (real_scan.rescan): these ROIs, confirmed and candidates,
+                                   # joined into --roi-base areas and scanned again; only speed and force changed
+      types: [crack]
+      speed_mm_s: 2.0              # the survey's cruise_speed_mm_s or --speed otherwise
+      force_n: 3.0                 # pressing force of the rescan (the survey's force_n otherwise)
+      merge_mm: 3.0                # ROI boxes at most this far apart (gap between the boxes) joined; near ones only
+                                   # (072408: crack A one area, crack B two, A and B 4.6 mm apart kept apart)
+      margin_mm: 3.0               # then added round each area (the shoulders and the ROI's surroundings)
+    lift_push:                     # real robot strokes: floating (the probe lifted off the surface) pressed back down
+      threshold_n: 0.5             # lifting: the reaction under this for hold_s (0.3 first: pushed only once off)
+      hold_s: 0.05                 # 0.2 mm at 4 mm/s (a 1 mm crack crossing: 0.25 s, its drop ~0.25 N from ~1.2 N)
+      depth_mm: 0.8                # pressed this much further: + the axis stiffness x depth (3 N/mm: +2.4 N)
+      release_n: 0.8               # back to the trimmed command once the reaction is over this
+      ramp_s: 0.1                  # set_desired_force ramp of the push and the release
+    bonnet_entry_margin_mm: 8.0    # minimum distance from the mesh edge at the first contact of each path
+    bonnet_entry_tilt_deg: 12.0    # maximum mesh tilt across the probe footprint at first contact
+    position_stiffness_scale: 1.0  # stream: restores (scale - 1) x the measured error across BASE Z (z: force); 1 off.
+                                   # 3.0 (2026-11-19, 123837) zigzagged: +-0.24 mm at 1.25 Hz, lateral speed rms
+                                   # 1.35 mm/s (0.5 off), z and force swinging with it, against +-0.25 mm slow drift off
+    stiffness: [20000.0, 20000.0, 3000.0, 200.0, 200.0, 200.0]  # real robot task compliance (BASE; N/m, N m/rad)
+                                   # 3 N/mm along the press axis (bonnet Z; MeshHeightDsr swaps X and Z for a door).
+                                   # DSR keeps z on the motion target with it, so the force follows height errors
+                                   # (2 N/mm: 2.5-4.6 N at 1.0 N set, the bonnet 0.5-1.5 mm above the mesh, untrimmed).
+                                   # Softer floated more, at 4 mm/s trimmed: x 575.5-586.4, 1.2 N: 0.5 N/mm (065824)
+                                   # 12.0 % under 0.3 N (concave 29 %), 1 N/mm (064319) 8.5 % (concave 21 %); x 572.5-
+                                   # 577.3: 1.5 N/mm at 1.5 N (070300) 6.9 % (concave 13-15 %, p95 3.17 N), 1 N/mm at
+                                   # 1.2 N (064319) 8.5 % (concave 22 %); 0.1 N/mm (030615-031424, untrimmed) 91-100 %.
+    checkpoint_max_mm: 10.0
+    position_interp_error_mm: 0.1
+  mesh_normal:                     # --controller mesh-normal: TCP pose stream with TCP-axis force control
+    force_n: 0.7                   # mesh-normal: pressing force along the TCP axis (as mesh_height; was the
+                                   # default survey's 0.5 N); mesh_height's own values replace these in mesh-height
+    contact_threshold_n: 0.5       # mesh-normal: contact search rise (as mesh_height; the stream ramps instead)
+    record_threshold_n: 0.3        # mesh-normal: a sample counts as contact (measured point) above this reaction
+    cruise_speed_mm_s: 6.0         # ball-centre cruise; local acceleration/turn limits still apply
+    contact_preload_mm: 0.02       # nominal geometric indentation; force control adds its axial displacement
+    planning_source: mesh
+    pointcloud:
+      grid_mm: 1.5
+      turn_radius_mm: 0.7
+      occlusion_tolerance_mm: 0.2 # skip selected-part cells covered by neighbouring part clouds
+      smooth_mm: 2.0
+      surface_sample_mm: 0.5
+      clearance_margin_mm: 0.1
+      clearance_tolerance_mm: 0.1  # ball support sampled 4x finer than surface_sample_mm: a fine sample more than
+                                   # this above the chord of its neighbours becomes a sample (steps, ridges), so the
+                                   # stroke never dips below the support; no stroke is split
+      gap_fill_mm: 1.5
+      edge_margin_mm: 1.0
+      ik_step_mm: 10.0             # sparse IK; no tool/arm collision or transit checks
+      ik_angle_deg: 15.0
+      joint_jump_deg: 25.0
+      checkpoint_max_mm: 15.0
+      normal_step_deg: 8.0
+      normal_interp_error_deg: 3.0
+      position_interp_error_mm: 0.1
+      position_interpolator: pchip
+    checkpoint_max_mm: 10.0
+    normal_step_deg: 3.0
+    normal_interp_error_deg: 1.0
+    position_interp_error_mm: 0.1
+    turn_radius_mm: 0.7             # mesh raster turns rounded (driven through, no stop) like the point-cloud plan
+    normal_smooth_mm: 8.0           # both planners: the tool axis is the surface normal smoothed along the stroke like a
+    normal_smoothing_tolerance_deg: 20.0  # curved surface, softly limited off it (bonnet: max 14 deg); the ball centre
+                                    # stays on the surface offset. 5 deg (hard) cut the smoothing off on curved stretches
+    offset_check_mm: 0.2            # mesh plan: interpolated ball centre off the mesh offset (0.1 = the spline fit
+                                    # tolerance rejected 49 borderline strokes; the force control takes the depth)
+    crease_deg: 35.0
+    max_surface_step_mm: 2.0
+    surface_offset_mm: 0.0          # fixed outward geometric offset; never adjusted from force feedback
+    ball_penetration_mm: 0.2       # geometric collision tolerance at the intended spherical contact
+    validation_step_mm: 0.5
+    validation_angle_deg: 0.5
+    clearance_step_mm: 5.0
+    command_hz: 50.0
+    stream_speed_mm_s: 20.0          # accepted --speed ceiling; actual stream limit follows --speed
+    approach_speed_mm_s: 10.0       # near-surface DSR approach/retract, independent of detection --speed
+    linear_acceleration_mm_s2: 40.0
+    acceleration_smoothing_s: 0.1   # speed changes eased exponentially (acceleration 1 - e^(-t/0.1 s)), not stepped
+    angular_speed_deg_s: 16.0
+    angular_acceleration_deg_s2: 16.0
+    joint_speed_deg_s: 20.0
+    joint_acceleration_deg_s2: 40.0
+    progress_error_mm: 0.8
+    progress_angle_deg: 3.0
+    settle_position_mm: 0.3
+    settle_angle_deg: 0.8
+    position_stiffness_scale: 3.0   # position-error restoration only; not DSR compliance stiffness in N/m
+    position_feedback_limit_mm: 1.0   # native maximum 2.0; 0.5 left no margin (TCP error p95 0.6 mm)
+    pd:
+      enabled: true
+      position_kp: 0.25            # multiplier on (position_stiffness_scale - 1); avoid amplifying the joint servo
+      position_kd_s: 0.02
+      orientation_kp: 0.5
+      orientation_kd_s: 0.02
+      derivative_filter_s: 0.03
+      position_feedback_speed_mm_s: 4.0   # 2.0 slew-limited the correction 19 % of the time
+      angular_feedback_limit_deg: 2.0
+      angular_feedback_speed_deg_s: 4.0
+      command_angular_acceleration_deg_s2: 32.0   # native command limiter (reference + correction); the plan keeps
+      command_joint_acceleration_deg_s2: 55.0     # 16 / 40 (native maximum 120 / 57); limited 22 % at 16 / 40
+      settle_hold_s: 0.5           # stationary endpoint samples for evaluating residual error; no I term
+    stall_timeout_s: 5.0
+    stall_motion_mm: 0.2
+    point_decimation: 4            # measured cloud: one of every four points sample_mm apart (every one until
+                                   # 2026-11-18: a quarter of those points now); records stay full rate
+    resume:                        # a stalled / stopped detection stream does not end the scan:
+      lift_mm: 3.0                 # lift off along the tool axis, back down onto the stroke where it stopped,
+      ramp_s: 1.0                  # detect on from there (stroke time eased in over ramp_s);
+      attempts: 3                  # after this many stops without progress (< 1 s) the rest of the path is skipped
+  spacing_mm: 0.7                   # reference cloud: about one point per spacing^2 on the part's mesh (no window holes)
+  axes:                             # fixed probe axes per part (BASE, the side the probe comes from), as on the block;
+    bonnet: [[0, 0, 1]]             # no normal vectors: the tool keeps this axis while scanning
+    bumper: [[0, 0, 1]]
+    door: [[0, 1, 0], [0, -1, 0]]   # both doors: real_scan the vehicle's left one, then the right one (--side)
+    body: [[0, 0, 1], [0, 1, 0], [0, -1, 0]]
+  step_mm: 0.5                      # height grid along an axis and path point spacing along a row (planning only:
+                                    # the strokes run through the row ends, points are measured during the movel)
+  pitch_mm: 1.5                     # row spacing (a multiple of step_mm); one straight grid pass left-right (BASE y)
+                                    # from above / horizontal (x) from a side, then one across it (vertical), each one
+                                    # path in contact riding the slopes (lifted only between)
+  edge_margin_mm:                   # rows stay this far from an empty cell (part edge, window opening)
+    default: 4.0                    # the bumper is ~15 mm deep from above: 4 mm would leave one row
+    bumper: 1.0
+  measurable:                       # cells the scan lines may run over (part_scan/planner.py), then every 0.5 mm line
+                                    # checked as a straight move: report <time>_plan.png draws what is left
+    tilt_deg: {default: 60.0, door: 45.0}   # steeper: walls (3-30 mm steps) a fixed-axis press cannot climb
+    skin_mm: {door: 5.0}            # outer skin only: at most this far below the outermost surface within
+    skin_window_mm: 20.0            # this distance (the door's lower edge turns under, up to 36 mm behind it)
+    joint_jump_deg: 5.0             # a line breaks where its IK fails or a joint moves more than this per 0.5 mm
+    min_segment_mm: 3.0             # shorter measurable segments on the selected lines are left out
+  min_path_mm: 50.0                 # shorter paths are dropped (small cut-off regions: a lift and approach each)
+  report:                           # default controller: images/real_<part>_<time>/report.png and raw CSV/PLY
+    window: 9                       # legacy ROI residual estimator: centred mean samples, independently per path
+    gaussian_sigma_s: 0.02          # offline raw/Gaussian comparison; never used by the motion controller
+    outlier_sigma: 3.0              # outlier: deviation from the reference surface (less its median) beyond this
+    outlier_min_mm: 0.3             # many robust sigmas (1.4826 MAD), and at least this far
+  check_mm: 3.0                     # tool clearance checked on this grid of the row points
+  ik_mm: 4.0                        # reachability (URDF IK from HOME, arm links clear) on this grid of the clear points
+  ik:                               # part_scan/kinematics.py RobotChain and the arm clearance
+    ik_position_mm: 0.5
+    ik_angle_deg: 0.5
+    joint_margin_deg: 3.0
+    joint_step_deg: 8.0
+    minimum_singular_value: 0.001
+    transfer_position_mm: 0.1      # tighter IK at lifted approach and exit waypoints
+    transfer_minimum_singular_value: 0.005  # keep Cartesian transfers away from full extension
+    arm_radii_mm: [60.0, 55.0, 50.0, 45.0, 40.0]   # capsules between the joint origins (shoulder .. flange)
+  obstacle_mm: 2.5                  # vehicle (all parts) sampled at this spacing for the clearance check
+  tool:                             # tool body along its axis from the tip, [from, to, radius] mm incl. margin, flat
+    - [5.0, 14.0, 3.0]              # ends, the ball excluded: shaft,
+    - [14.0, 67.0, 23.0]            # probe body (30 x 30 mm),
+    - [55.0, 272.0, 47.0]           # RG2 fingers and body,
+    - [272.0, 420.0, 52.0]          # flange and wrist
+  table_margin_mm: 5.0
+  robot_base_mm: [110.0, 260.0]     # robot base column kept clear of the tool (radius, height); the probe rack
+                                    # plate (session probe plan) and the whole vehicle are obstacles too
+  standoff_mm: 60.0                 # approach / exit point off the path ends along the axis (tool down up to it)
+  gap_mm: 10.0                      # the force-controlled approach starts this far off the surface
+  approach_force_n: 1.0             # DSR task compliance + desired force along -axis until contact (debounced
+  force_n: 2.0                      # reaction above scan.touch_threshold), then ramped to force_n over ramp_s; 2 N
+                                    # pushes a ball at an edge a third less than 3 N and frees it sooner, and at
+                                    # 5 mm/s still follows slopes down to ~27 deg (force >= 800 N s/m x speed x tan):
+                                    # all but 0.5 % of the bonnet's / 0.6 % of the doors' measurable cells
+  stiffness: [20000.0, 20000.0, 20000.0, 200.0, 200.0, 200.0]  # task compliance (BASE; N/m, N m/rad) while
+                                    # scanning: the axes across the probe stiff (a 60 deg slope drags the ball 0.2 mm,
+                                    # not 1.2 mm at 3000) so it is not pushed off an edge; the force axis is force-
+                                    # controlled (its value unused); 20000 is the controller maximum
+  ramp_s: 0.5
+  hold_s: 0.5                       # pressing still before the strokes
+  timeout_s: 30.0                   # no contact within this time -> abort
+  speed_mm_s: 5.0                   # stroke speed (movel through the row ends; the force is only measured); uphill
+                                    # the reaction rises by 800 N s/m x speed x tan (45 deg: +4.0 N); readings ~200 Hz
+                                    # are 0.025 mm apart at 5 mm/s (= sample_mm), sparser beyond
+  sample_mm: 0.025                  # measured cloud: a contact point at least this far from the last one kept; half
+                                    # the points of keeping every reading (the last bonnet run at 3 mm/s: 0.015 mm
+                                    # apart, 48 % kept); the report's samples (force graphs, CSV) keep every reading
+  point_decimation: 8               # keep one of every eight spatially eligible points (2 until 2026-11-18: a quarter
+                                    # of those points now); force/pose CSV and /scan/samples stay full rate
+
+force_offset:                       # rokey force_offset: the held probe's force-estimate offset, away from everything
+  height_mm: 200.0                  # straight above HOME to this BASE z (HOME tip ~150 mm; no lift if already
+                                    # higher), the tool down as in the scan
+  settle_s: 1.0                     # still before each average
+  seconds: 3.0                      # average per state: position control, then compliance + 0 N force along z
+
+motion_offset:                      # rokey motion_offset: force-estimate offset while moving, in the air over a part
+  air_mm: 15.0                      # lines this far above the part's highest reference point (BASE z)
+  vertical_mm: 10.0                 # +-z moves at each line crossing (lowest point air_mm - vertical_mm above)
+  quantiles: [0.15, 0.5, 0.85]      # line positions over the part's reference points, along x and along y
+  rest_s: 0.3                       # still reading before each move (direction 0)
+  reach_margin_mm: 10.0             # every pose this far inside the outer reach (far lines pulled in)
+
+force_model:                        # rokey force_model_collect / force_model_fit (rokey/force_model): joint-space
+                                    # physical model of the controller's wrench-estimate error (vehicle removed)
+  stations_mm:                      # BASE TCP positions over the work area (tool down at HOME's orientation); the
+    - [450.0, -100.0, 220.0]        # holder (200 x 200 mm plate at x 650, posts to 125 mm) stays below min_z_mm
+    - [450.0, 100.0, 220.0]
+    - [540.0, -50.0, 210.0]
+    - [540.0, 50.0, 210.0]
+  validation_mm: [500.0, 0.0, 250.0]  # held-out station with other motions (diagonals, a tilted sweep)
+  min_z_mm: 200.0                   # every TCP target at least this high (75 mm over the holder posts)
+  min_flange_z_mm: 300.0            # and tool0 (flange) at least this high (gripper + probe hang 283 mm below it)
+  tilts_deg: [15.0, 30.0]           # gravity holds: tilted about the tip at each azimuth, and tool down
+  azimuths_deg: [0.0, 90.0, 180.0, 270.0]
+  spins_deg: [-90.0, 90.0]          # gravity holds: turned about the tool axis (centre of mass off the axis)
+  speeds_mm_s: [5.0, 20.0]          # out-and-back sweeps
+  sweep_directions: ['+x', '-x', '+y', '-y', '+z']  # no -z: never below the station (probe held)
+  span_mm: 30.0
+  hold_s: 2.0                       # each hold recorded from the stop (the reading settles over ~0.3-1 s)
+  rest_s: 1.5                       # still, recorded, after every sweep move (memory of the last direction)
+  reach_margin_mm: 10.0             # every target this far inside the outer reach (else skipped)
+  epsilons_rad_s: [0.002, 0.005, 0.01, 0.02]  # Coulomb tanh widths compared on held-out stations
+  memory_s: [0.1, 0.3, 1.0, 3.0]    # time constants of the friction memory (low-passed direction) compared
+  ridge: 1.0e-4                     # on standardized columns, relative to the sample count
+  moment_weight_m: 10.0             # moments (N m) x this -> N in the fit (0.1 m lever)
+  wrench_weights: [1.0, 1.0, 1.0, 0.0, 0.0, 0.0]  # fit BASE Fx, Fy and Fz with equal weight
+  minimum_singular_value: 0.02      # samples nearer a singularity are left out of fits
+  max_fit_samples: 20000            # evenly thinned for the fit
+  kalman:                           # force_model/kalman.py after the physics model, per BASE axis: r = F + b + v
+    noise_n: 0.06                   # reading noise v (motion_offset recording: 0.057 N sample to sample)
+    force_rate_n2_s: 1.0            # contact force F random walk (~2.8 Hz bandwidth against noise_n)
+    bias_rate_n2_s: 7.0e-4          # bias b random walk: the drift the model leaves (~0.2 N per minute)
+    free_n: 0.02                    # "no contact" pseudo-measurement F = 0 where contact is known absent
+    initial_n: 1.0                  # initial F and b standard deviation

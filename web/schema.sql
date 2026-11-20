@@ -81,3 +81,8 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS idx_events_job ON events(job_id);
 CREATE INDEX IF NOT EXISTS idx_findings_job ON findings(job_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_vehicle ON jobs(vehicle_id);
+
+CREATE TABLE IF NOT EXISTS inspection_plans (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    plan    TEXT NOT NULL
+);

@@ -58,12 +58,36 @@ def close_db(_=None):
         db.close()
 
 
+# 예전 repair.db (부품 분류·로봇 교체·위치, findings.z 가 없던 스키마) 를 지우지 않고 그대로 쓰도록 열을 더한다
+NEW_COLUMNS = {"parts": [("category", "TEXT"), ("robot_ok", "INTEGER NOT NULL DEFAULT 0 CHECK (robot_ok IN (0, 1))"),
+                         ("location", "TEXT")],
+               "findings": [("z", "REAL")]}
+
+
+def migrate_parts(con):
+    """빠진 열 추가 + 부품 목록(PARTS) 채우기. 이미 있던 부품의 재고와 작업 기록은 그대로."""
+    added = False
+    for table, columns in NEW_COLUMNS.items():
+        have = {row[1] for row in con.execute(f"PRAGMA table_info({table})")}
+        for name, kind in columns:
+            if name not in have:
+                con.execute(f"ALTER TABLE {table} ADD COLUMN {name} {kind}")
+                added = True
+    if added and con.execute("SELECT COUNT(*) FROM users").fetchone()[0]:
+        con.executemany("INSERT OR IGNORE INTO parts (code, name, category, robot_ok, location, stock, min_stock) "
+                        "VALUES (?, ?, ?, ?, ?, 2, 1)", PARTS)
+        con.executemany("UPDATE parts SET category = ?, robot_ok = ?, location = ? WHERE code = ? AND category IS NULL",
+                        [(cat, ok, loc, c) for c, _, cat, ok, loc in PARTS])
+
+
 def init_db(seed=True):
     con = sqlite3.connect(DB_PATH)
     con.execute("PRAGMA foreign_keys = ON")
     with open(os.path.join(BASE, "schema.sql"), encoding="utf-8") as f:
         con.executescript(f.read())
     migrate(con)
+    with con:
+        migrate_parts(con)
     if seed and con.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0:
         with con:
             insert_base(con)

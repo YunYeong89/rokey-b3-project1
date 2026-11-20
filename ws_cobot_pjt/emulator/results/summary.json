@@ -1,0 +1,131 @@
+{
+  "amd64_60": {
+    "duration_s": 60,
+    "failures": 0,
+    "max_excursion_deg": 2,
+    "final_error_deg": 0,
+    "skipped_10ms_slots": 10,
+    "passed": true,
+    "interval_ms": {
+      "count": 5990,
+      "mean_ms": 10.01671360968285,
+      "p50_ms": 9.977105,
+      "p99_ms": 12.273421,
+      "max_ms": 42.2585
+    },
+    "lateness_ms": {
+      "count": 5991,
+      "mean_ms": 1.0875652857619784,
+      "p50_ms": 0.842767,
+      "p99_ms": 2.4229789999999998,
+      "max_ms": 40.6392
+    },
+    "pose_call_ms": {
+      "count": 5991,
+      "mean_ms": 0.0007412316808546198,
+      "p50_ms": 0.000625,
+      "p99_ms": 0.001875,
+      "max_ms": 0.118375
+    },
+    "version_request_ms": {
+      "count": 59,
+      "mean_ms": 0.9340626440677964,
+      "p50_ms": 0.891833,
+      "p99_ms": 1.9705404000000002,
+      "max_ms": 2.03383
+    },
+    "monitoring_interval_ms": {
+      "count": 571,
+      "mean_ms": 105.51856269702273,
+      "p50_ms": 105.134,
+      "p99_ms": 115.1383,
+      "max_ms": 174.508
+    }
+  },
+  "box64_60": {
+    "duration_s": 60,
+    "failures": 0,
+    "max_excursion_deg": 2,
+    "final_error_deg": 0,
+    "skipped_10ms_slots": 14,
+    "passed": true,
+    "interval_ms": {
+      "count": 5986,
+      "mean_ms": 10.023749738222541,
+      "p50_ms": 9.97898,
+      "p99_ms": 12.31404,
+      "max_ms": 48.0147
+    },
+    "lateness_ms": {
+      "count": 5987,
+      "mean_ms": 1.2308330562886258,
+      "p50_ms": 1.15384,
+      "p99_ms": 2.4391208000000013,
+      "max_ms": 38.1816
+    },
+    "pose_call_ms": {
+      "count": 5987,
+      "mean_ms": 0.001426300651411383,
+      "p50_ms": 0.000834,
+      "p99_ms": 0.00225,
+      "max_ms": 2.63767
+    },
+    "version_request_ms": {
+      "count": 59,
+      "mean_ms": 1.0356581186440679,
+      "p50_ms": 0.938667,
+      "p99_ms": 3.0127336000000042,
+      "max_ms": 4.53383
+    },
+    "monitoring_interval_ms": {
+      "count": 570,
+      "mean_ms": 105.68154912280707,
+      "p50_ms": 105.1725,
+      "p99_ms": 114.4309399999999,
+      "max_ms": 227.295
+    }
+  },
+  "rosetta_pinned_60": {
+    "duration_s": 60,
+    "failures": 0,
+    "max_excursion_deg": 2,
+    "final_error_deg": 0,
+    "skipped_10ms_slots": 9,
+    "passed": true,
+    "interval_ms": {
+      "count": 5991,
+      "mean_ms": 10.015347850108494,
+      "p50_ms": 9.995,
+      "p99_ms": 12.300920000000001,
+      "max_ms": 41.9637
+    },
+    "lateness_ms": {
+      "count": 5992,
+      "mean_ms": 1.4204810035046747,
+      "p50_ms": 1.7332049999999999,
+      "p99_ms": 2.4686786,
+      "max_ms": 32.2103
+    },
+    "pose_call_ms": {
+      "count": 5992,
+      "mean_ms": 0.0006797570093457991,
+      "p50_ms": 0.000584,
+      "p99_ms": 0.001834,
+      "max_ms": 0.017125
+    },
+    "version_request_ms": {
+      "count": 59,
+      "mean_ms": 0.8530607627118646,
+      "p50_ms": 0.860916,
+      "p99_ms": 1.0598628,
+      "max_ms": 1.06963
+    },
+    "monitoring_interval_ms": {
+      "count": 572,
+      "mean_ms": 105.31772342657341,
+      "p50_ms": 105.113,
+      "p99_ms": 111.30348999999984,
+      "max_ms": 145.462
+    }
+  }
+}

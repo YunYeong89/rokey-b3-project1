@@ -2,7 +2,7 @@
  *
  * 흐름
  *  [수리 시작] → POST /api/jobs {vehicle_id, mode, parts} → rosbridge /repair/command 로
- *     {"cmd":"start","job_id","vehicle_id","mode":"auto|manual","parts":[...]} 발행
+ *     {"cmd":"start","job_id":123} 발행 (모드·부품은 DB에서 조회)
  *  로봇 쪽 공정 관리 노드가 단계마다 API 로 DB 에 기록하고 /repair/status 로 실시간 값을 보낸다.
  *  화면은 (1) /repair/status 로 측정 점·힘을 실시간 표시, (2) /api/jobs/<id> 를 주기적으로 읽어 단계·결과 표시.
  *  데모 모드에서는 브라우저 안 시뮬레이터가 로봇 대신 같은 API 를 호출한다.
@@ -13,10 +13,11 @@
  * 로봇팔 3D (robot3d.js): 실제 모드는 /dsr01/joint_states 구독, 데모 모드는 시뮬레이터가 탐침 경로를 준다.
  */
 import { createCarViewer } from "./viewer3d.js";
+import { robotControl } from "./robot_control.js";
 import { createRobotArm } from "./robot3d.js";
 
 const state = {
-  job: null, pollTimer: null, points: [], ros: null, cmdTopic: null, rosOk: false,
+  job: null, pollTimer: null, points: [], rosOk: false,
   demo: false, demoCancel: false, mode: "auto",
   running: false, fz: [], robotMsg: null, alarms: [], alarmSeen: 0,
 };
@@ -55,7 +56,7 @@ function renderPartPick(ps) {
 async function loadVehicles() {
   const vs = await api("GET", "/api/vehicles");
   $("#vehicleSel").innerHTML = vs.map((v) =>
-    `<option value="${v.id}">${esc(v.name)} · ${esc(v.owner_name || "차주 없음")}</option>`).join("");
+    `<option value="${v.id}" data-model="${esc(v.model)}">${esc(v.name)} · ${esc(v.owner_name || "차주 없음")}</option>`).join("");
   return vs;
 }
 
@@ -298,6 +299,8 @@ async function showVehicle() {
   const sel = $("#vehicleSel");
   $("#viewerTitle").textContent = sel.selectedOptions[0] ? sel.selectedOptions[0].textContent : "차량";
   if ($("#startBtn").disabled || !sel.value) return;
+  await viewer.load(sel.selectedOptions[0].dataset.model);    // 차종에 맞는 모델 (car.glb 우선)
+  computeScanGeometry(viewer.layout());                       // 다른 모델이면 스캔 구역도 그 배치로
   try {
     let job = await api("GET", `/api/jobs/current?vehicle_id=${sel.value}`);
     if (!job) {
@@ -325,8 +328,12 @@ function setRunning(on) {
 
 // ------------------------------------------------------------ 시작 / 정지
 $("#startBtn").addEventListener("click", async () => {
-  if (!state.demo && !state.rosOk) {
-    alert("로봇(rosbridge)에 연결되지 않았습니다.\n로봇 없이 확인하려면 '데모 모드'를 켜세요."); return;
+  if (!state.demo && (!robotControl.ready || robotControl.status?.busy)) {
+    alert("ROS 제어 노드와 로봇이 준비되어야 하며, 다른 기능 실행 중에는 수리를 시작할 수 없습니다."); return;
+  }
+  if (!state.demo && robotControl.status?.mode === "virtual"
+      && !["sedan", "suv", "sports"].includes(robotControl.status?.scene)) {
+    alert("수리 공정은 sedan/suv/sports 장면에서 실행하세요. 실차 모델은 로봇 탭의 부품 스캔을 사용하세요."); return;
   }
   const parts = state.mode === "manual" ? pickedParts() : [];
   if (state.mode === "manual" && !parts.length) { alert("교체할 부품을 1개 이상 고르세요."); return; }
@@ -345,41 +352,60 @@ $("#startBtn").addEventListener("click", async () => {
   }
   setRunning(true); renderJob(job); startPolling(job.id);
   if (state.demo) runDemo(job);
-  else state.cmdTopic.publish(new ROSLIB.Message({ data: JSON.stringify(
-    { cmd: "start", job_id: job.id, vehicle_id: job.vehicle_id, mode: job.mode, parts: job.requested }) }));
+  else {
+    try { robotControl.repair({ cmd: "start", job_id: job.id }); }
+    catch (e) {
+      await api("POST", `/api/jobs/${job.id}/finish`, { status: "failed", summary: e.message });
+      alert(e.message);
+    }
+  }
 });
 
-// 상단 바 정지 버튼(모든 탭)과 수리 탭 정지 버튼이 같은 동작
+// 상단 바 정지 버튼(모든 탭)과 수리 탭 정지 버튼이 같은 동작: 로봇 정지(web_control) + 진행 중 작업 정지
 async function stopJob() {
-  if (!state.job || state.job.status !== "running") return;
-  if (state.demo) { state.demoCancel = true; robot.cancel(); }
-  else if (state.rosOk) state.cmdTopic.publish(new ROSLIB.Message({ data: JSON.stringify({ cmd: "stop", job_id: state.job.id }) }));
-  try { await api("POST", `/api/jobs/${state.job.id}/finish`, { status: "stopped", summary: "관리자가 정지 버튼을 누름" }); } catch (e) { }
+  const running = state.job && state.job.status === "running";
+  if (state.demo) {
+    if (!running) return;
+    state.demoCancel = true; robot.cancel();
+  } else {
+    try { robotControl.stop(); }              // 웹에서 시작한 작업 중지 + 로봇 move_stop (web_control)
+    catch (e) { alert(e.message); }
+    if (running) try { robotControl.repair({ cmd: "stop", job_id: state.job.id }); } catch (e) { }
+  }
+  if (running) try { await api("POST", `/api/jobs/${state.job.id}/finish`, { status: "stopped", summary: "관리자가 정지 버튼을 누름" }); } catch (e) { }
 }
 $("#stopBtn").addEventListener("click", stopJob);
 $("#estopBtn").addEventListener("click", stopJob);
 
 // ------------------------------------------------------------ rosbridge
+// robot_control.js 의 연결 하나를 함께 쓴다: web_control 상태·명령, /repair/status, 로봇팔 관절값 (http/https·LAN 주소 공통)
 function connectRos() {
-  if (typeof ROSLIB === "undefined") { if (!state.demo) setRosPill("off", "roslib 없음 (인터넷 확인)"); return; }
-  const ros = new ROSLIB.Ros({ url: APP.rosbridgeUrl || `ws://${location.hostname}:9090` });
-  state.ros = ros;
-  ros.on("connection", () => {
-    state.rosOk = true; state.robotMsg = null; if (!state.demo) setRosPill("on", "로봇 연결됨");
+  let jointTopic;
+  const attachArm = () => {
+    jointTopic = robotControl.jointTopic();
+    robot.attachRos(robotControl.ros, jointTopic);
+  };
+  robotControl.addEventListener("connection", () => {
+    state.robotMsg = null; attachArm(); updateRobotState();
+  });
+  robotControl.addEventListener("close", () => {
+    state.robotMsg = null; robot.onRosClose(); updateRobotState();               // 마지막 자세 유지 + 반투명
+  });
+  if (robotControl.connected) attachArm();
+  robotControl.addEventListener("state", async () => {
+    if (robotControl.connected && jointTopic !== robotControl.jointTopic()) {
+      state.robotMsg = null;
+      attachArm();
+    }
+    state.rosOk = robotControl.ready;
+    if (!state.demo) setRosPill(state.rosOk ? "on" : "off", !robotControl.live ? "ROS 제어 노드 응답 대기"
+      : !state.rosOk ? "로봇 준비 대기" : robotControl.status.busy ? "로봇 실행 중" : "로봇 제어 준비됨");
     updateRobotState();
-    state.cmdTopic = new ROSLIB.Topic({ ros, name: "/repair/command", messageType: "std_msgs/String" });
-    state.cmdTopic.advertise();   // 미리 광고해 두지 않으면 첫 명령이 유실될 수 있음
-    robot.attachRos(ros);         // /dsr01/joint_states → 로봇팔 3D
-    new ROSLIB.Topic({ ros, name: "/repair/status", messageType: "std_msgs/String", throttle_rate: 50 })
-      .subscribe((m) => { if (!state.demo) { try { onStatus(JSON.parse(m.data)); } catch (e) { } } });
+    const status = robotControl.status;
+    if (!state.demo && status?.event === "rejected" && status.rejected_job === state.job?.id)
+      console.warn(status.error);
   });
-  ros.on("error", () => { });
-  ros.on("close", () => {
-    state.rosOk = false; state.robotMsg = null; updateRobotState();
-    robot.onRosClose();           // 마지막 자세 유지 + 반투명
-    if (!state.demo) setRosPill("off", "로봇 연결 안 됨");
-    setTimeout(connectRos, 3000);
-  });
+  robotControl.addEventListener("repair", (event) => { if (!state.demo) onStatus(event.detail); });
 }
 function setRosPill(cls, text) { const p = $("#rosState"); p.className = "pill " + cls; p.textContent = text; }
 $("#demoMode").addEventListener("change", (e) => {
@@ -740,6 +766,8 @@ $("#alarmRefresh").addEventListener("click", openAlarms);
   if (cur) {
     $("#vehicleSel").value = cur.vehicle_id;
     $("#viewerTitle").textContent = $("#vehicleSel").selectedOptions[0]?.textContent || cur.vehicle_name;
+    await viewer.load(cur.model);
+    computeScanGeometry(viewer.layout());
     setRunning(true); renderJob(cur); startPolling(cur.id);
   } else {
     await showVehicle();

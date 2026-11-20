@@ -52,6 +52,9 @@ vehicle_zone:                       # where the vehicle is placed (BASE): nomina
   position_tolerance_mm: 20.0
   yaw_tolerance_deg: 10.0
   max_height_mm: 165.0              # tallest vehicle type (suv 161 mm): travel between touches stays above it
+  fixed:                            # the vehicle always stands here: the repair process uses this pose instead of
+    type: sedan                     # choose_car touches (virtual robot: the session scene's own pose, scene_truth)
+    pose_base_mm_deg: [318.0, 318.0, 135.0]   # x, y [mm], yaw [deg] (BASE): measure on the cell and enter here
 
 inspection:                         # damage thresholds in units of the calibrated height sigma
   height_sigma_mm: 0.2              # overwritten by calibration_result.json

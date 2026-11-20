@@ -282,6 +282,28 @@ def identify(program):
     return result
 
 
+def fixed(program):
+    """The fixed vehicle pose instead of touches: the virtual session's scene (scene_truth.json) or robot.yaml
+    vehicle_zone.fixed. Same session/vehicle.json and /repair/vehicle as identify()."""
+    from std_msgs.msg import String
+    zone, types = program.config['vehicle_zone'], load('vehicles')['types']
+    truth = read_session('scene_truth.json') if program.mode == 'virtual' else None
+    if truth and truth.get('type') in types:
+        kind, pose, table_z, source = truth['type'], truth['pose_base_mm_deg'], truth['table_z_mm'], 'scene_truth'
+    else:
+        spec = zone['fixed']
+        kind, pose, table_z, source = spec['type'], spec['pose_base_mm_deg'], zone['table_z_mm'], 'robot.yaml'
+    if kind not in types:
+        raise ValueError(f'고정 차량 종류 {kind} 없음 (vehicles.yaml types: {", ".join(types)})')
+    result = {'type': kind, 'confident': True, 'type_probability': 1.0,
+              'pose_base_mm_deg': [float(v) for v in pose], 'table_z_mm': float(table_z),
+              'pose_std_mm_deg': [0.0, 0.0, 0.0], 'rms_mm': 0.0, 'touches': [], 'source': source}
+    path = write_session('vehicle.json', result)
+    program.vehicle.publish(String(data=json.dumps(result)))
+    program.log(f'{kind} at {result["pose_base_mm_deg"]} (fixed, {source}) -> {path}')
+    return result
+
+
 def run():
     if __package__:
         from .program import RobotProgram

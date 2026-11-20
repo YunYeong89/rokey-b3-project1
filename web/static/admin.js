@@ -190,28 +190,21 @@ function onStatus(msg) {
   if (msg.type === "point") {
     state.points.push(msg);
     viewer.addPoint(msg);
-    $("#statPts").textContent = state.points.length;
-    const d = Math.min(...state.points.map((p) => p.dz));
-    $("#statDepth").textContent = d < -0.05 ? Math.abs(d).toFixed(2) : "–";
   } else if (msg.type === "wrench") {
     const fz = Number(msg.fz);
     if (!Number.isFinite(fz)) return;
-    $("#statFz").textContent = fz.toFixed(1);
     state.fz.push(fz);
     if (state.fz.length > FZ_MAX) state.fz.splice(0, state.fz.length - FZ_MAX);
     scheduleFz();
-  } else if (msg.type === "flush") {
-    $("#statFlush").textContent = Number(msg.mm).toFixed(2);
   } else if (msg.type === "robot") {
     if (["idle", "moving", "error"].includes(msg.state)) { state.robotMsg = msg; updateRobotState(); }
   }
 }
 
-// 측정 점·힘 그래프·통계 초기화 (새 수리 시작 / 차량 변경 시)
+// 측정 점·힘 기록 초기화 (새 수리 시작 / 차량 변경 시)
 function resetLive() {
   state.points = []; viewer.clearPoints();
   state.fz = []; drawFz();
-  ["#statPts", "#statFz", "#statDepth", "#statFlush"].forEach((s) => ($(s).textContent = s === "#statPts" ? "0" : "–"));
 }
 
 // ------------------------------------------------------------ 힘(Fz) 실시간 선 그래프 (canvas, 라이브러리 없음)
@@ -289,8 +282,6 @@ function showJob(j) {                         // 화면에 작업 표시만 (진
   state.job = j;
   $("#progBar").style.width = paintSteps("#steps", j) + "%";
   renderStatusCard(j);
-  const rf = j ? j.replacements.filter((r) => r.flush_mm != null).pop() : null;
-  if (rf) $("#statFlush").textContent = Number(rf.flush_mm).toFixed(2);
   repaint();
 }
 function renderJob(j) {
@@ -366,8 +357,13 @@ $("#startBtn").addEventListener("click", async () => {
     try { robotControl.repair({ cmd: "start", job_id: job.id }); }
     catch (e) {
       await api("POST", `/api/jobs/${job.id}/finish`, { status: "failed", summary: e.message });
-      alert(e.message);
+      alert(e.message); return;
     }
+    // 수리 시작과 함께 실시간 힘 그래프도 켠다 (이미 켜져 있으면 그대로, 실패해도 수리는 계속)
+    try {
+      if (!robotControl.status?.graph)
+        robotControl.graph(true, !!document.querySelector("[data-graph-compensated]")?.checked);
+    } catch (e) { console.warn("힘 그래프 시작 실패:", e.message); }
   }
 });
 

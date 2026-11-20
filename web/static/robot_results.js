@@ -13,6 +13,7 @@ export class RobotResults {
     this.chartRoot = card.querySelector("[data-graph-chart]");
     this.chart = new ForceChart(this.chartRoot);
     this.graphError = card.querySelector("[data-graph-error]");
+    this.graphSection = card.querySelector("[data-graph-section]");   // 제목·버튼·그래프: 켜져 있을 때만 (수리 시작이 켬)
     this.select.addEventListener("change", () => {
       this.pinned = this.select.value !== this.runs?.[0]?.run;  // the newest run is followed unless another is chosen
       this.render();
@@ -76,6 +77,7 @@ export class RobotResults {
     this.graphButton.disabled = !robotControl.live;
     this.compensated.disabled = on;
     this.chartRoot.hidden = !on && !this.chart.fresh;  // also a draw_graph started from a terminal
+    if (this.graphSection) this.graphSection.hidden = this.chartRoot.hidden;
     if (!on && status?.graph_log) this.graphError.textContent = status.graph_log;
   }
 }

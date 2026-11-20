@@ -75,7 +75,6 @@
 
 
 /* 수리 (예전 수리 탭): 수리 시작 카드는 오른쪽 맨 위, 측정 요약은 로봇 화면 아래, 진행 로그는 맨 아래 전체 폭 */
-.robot-stats { margin:0; padding:10px 14px 14px; }
 .robot-repair-card { margin-bottom:0; }
 .robot-repair-card h2 { margin-top:0; }
 .robot-side .robot-repair-card h3 { margin:14px 0 8px; }

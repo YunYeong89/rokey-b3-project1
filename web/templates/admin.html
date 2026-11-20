@@ -39,7 +39,7 @@
     <div class="robot-layout">
       <div class="robot-main">  <!-- 왼쪽: 로봇 3D → 부품 탐색(수동) → 힘 그래프·결과 → 진행 로그, 간격 없이 이어짐 -->
         <div class="card robot-scene-card">
-          <div class="cardhead"><h2>M0609 + RG2</h2><span data-robot-status class="pill off">연결 대기</span></div>
+          <div class="cardhead"><h2>실시간 현황 <small>M0609 + RG2</small></h2><span data-robot-status class="pill off">연결 대기</span></div>
           <div class="robot-meta"><span>Fixed frame: base_link</span><span>길이: m · 관절: deg</span>
             <span class="robot-axis"><b>X</b><b>Y</b><b>Z</b></span></div>
           <div class="robot-canvas" data-robot-viewer><div class="robot-message" data-robot-message>로봇 탭에서 모델과 관절값을 불러옵니다.</div></div>
@@ -50,12 +50,6 @@
             <button class="btn ghost-dark small" data-robot-view="side">측면</button>
             <button class="btn ghost-dark small" data-robot-view="top">위에서</button>
             <span class="note">드래그: 회전 · 우클릭: 이동 · 휠: 확대</span>
-          </div>
-          <div class="stats robot-stats">
-            <div><b id="statPts">0</b><span>측정 점</span></div>
-            <div><b id="statFz">–</b><span>현재 Fz [N]</span></div>
-            <div><b id="statDepth">–</b><span>최대 깊이 [mm]</span></div>
-            <div><b id="statFlush">–</b><span>재검사 단차 [mm]</span></div>
           </div>
         </div>
         <!-- 부품 탐색: 수리 카드에서 수동 모드를 고른 경우에만 표시 (admin.js) -->
@@ -97,14 +91,16 @@
           <p class="form-msg err" data-inspection-error role="alert"></p>
         </section>
         <div class="card robot-results" data-robot-results>
-          <div class="robot-results-head">
-            <h3>실시간 힘 그래프</h3>
-            <button class="btn primary small" data-graph-toggle disabled>실시간 힘 그래프 시작</button>
-            <label class="robot-check"><input type="checkbox" data-graph-compensated>보정 모델 겹쳐 보기</label>
+          <div class="graph-section" data-graph-section hidden>  <!-- 수리 시작으로 힘 그래프가 켜졌을 때만 -->
+            <div class="robot-results-head">
+              <h3>실시간 힘 그래프</h3>
+              <button class="btn primary small" data-graph-toggle disabled>실시간 힘 그래프 시작</button>
+              <label class="robot-check"><input type="checkbox" data-graph-compensated>보정 모델 겹쳐 보기</label>
+            </div>
+            <p class="note">외력 Fx·Fy·Fz, |F|·Fn, TCP 위치, 경로별 |F| (최근 30초, 브라우저에서 연속으로 그림 · 마우스를 올리면 값 표시). 화면 확인용이며 따로 저장하지 않습니다.</p>
+            <p class="form-msg err" data-graph-error role="alert"></p>
+            <div class="force-chart" data-graph-chart hidden></div>
           </div>
-          <p class="note">외력 Fx·Fy·Fz, |F|·Fn, TCP 위치, 경로별 |F| (최근 30초, 브라우저에서 연속으로 그림 · 마우스를 올리면 값 표시). 화면 확인용이며 따로 저장하지 않습니다.</p>
-          <p class="form-msg err" data-graph-error role="alert"></p>
-          <div class="force-chart" data-graph-chart hidden></div>
           <div class="robot-results-head">
             <h3>실행 결과</h3>
             <select data-run-select aria-label="실행 기록"></select>

@@ -428,12 +428,7 @@ async function runDemo(job) {
   let errored = false;
   onStatus({ type: "robot", state: "moving", message: "데모 수리 중" });
   try {
-    await ev("calibrate", "차량 기준점 3곳 터치");
-    if (robot.visible) { for (const [x, y] of CALIB_POINTS) { await touch("top", x, y); check(); } }
-    else await sleep(600);
-    check();
-    onStatus({ type: "wrench", fz: -5.1 });
-    await ev("calibrate", "차량 좌표계 설정 완료"); await sleep(300); check();
+    await sleep(300); check();          // 차량은 고정 위치: 기준점 터치 없이 바로 시작
 
     let toReplace;
     if (job.mode === "manual") {
@@ -529,9 +524,9 @@ const DOOR_ORDER = ["door_rl", "door_fl", "door_fr", "door_rr"];   // 로봇 쪽
 const TOP_NAMES = { trunk: "트렁크", roof: "지붕", bonnet: "보닛" };   // 윗면 스캔 구역 (뒤 → 앞 순서, 배치에 있는 것만)
 const INSET = { top: 4, doorX: 5, doorZ: 3 };                      // 부품 가장자리에서 안쪽으로 [mm]
 /** 스캔 구역·부품 위치 (차량 좌표계 mm) — viewer.load() 후 차 배치(viewer.layout())로 계산 → 모델을 바꿔도 그대로.
- *  TOP_AREAS: 윗면 구역 (구역 사이는 들어 올려서 넘음) / DOOR_AREA: 문 (옆면 y, 높이 z) / CALIB_POINTS: 기준점 터치 (윗면 x, y)
+ *  TOP_AREAS: 윗면 구역 (구역 사이는 들어 올려서 넘음) / DOOR_AREA: 문 (옆면 y, 높이 z)
  *  PART_SPOT: 교체 단계에서 로봇이 가 볼 부품 위치 [면, u, v] (top: x, y / left·right: x, 높이 z) */
-let TOP_AREAS = [], DOOR_AREA = {}, CALIB_POINTS = [], PART_SPOT = {};
+let TOP_AREAS = [], DOOR_AREA = {}, PART_SPOT = {};
 function computeScanGeometry(lay) {
   const inset = ([a, b], m) => [a + m, b - m];
   const mid = ([a, b]) => (a + b) / 2;
@@ -539,8 +534,6 @@ function computeScanGeometry(lay) {
     .map(([k, name]) => ({ code: k, name, x: inset(lay.parts[k].x, INSET.top), y: inset(lay.parts[k].y, INSET.top) }));
   DOOR_AREA = Object.fromEntries(Object.entries(lay.doors || {}).map(([k, d]) =>
     [k, { x: inset(d.x, INSET.doorX), y: d.y, z: inset(d.z, INSET.doorZ), face: d.y < lay.W / 2 ? "left" : "right" }]));
-  const first = TOP_AREAS[0], last = TOP_AREAS[TOP_AREAS.length - 1];
-  CALIB_POINTS = first ? [[first.x[0] + 12, first.y[0] + 10], [last.x[1] - 8, last.y[0] + 8], [last.x[1] - 8, last.y[1] - 8]] : [];
   PART_SPOT = {};
   const b = lay.parts?.bonnet;
   if (b) PART_SPOT.bonnet = ["top", mid(b.x), mid(b.y)];

@@ -1,7 +1,8 @@
 /* 관리자·사용자 화면 공통 함수 */
 "use strict";
 
-const STAGES = ["calibrate", "scan", "detect", "stock", "replace", "inspect", "done"];
+// 차량은 항상 고정 위치라 "차량 위치 확인(calibrate)" 단계는 화면에 없음 (그 단계 이벤트는 로그에만 남음)
+const STAGES = ["scan", "detect", "stock", "replace", "inspect", "done"];
 // 부품 이름 (db.py PARTS 와 같게). 고객 화면은 /api/parts 권한이 없어서 여기 둔다
 const PART_NAMES = {
   bonnet: "보닛", door_fl: "앞문(좌)", door_fr: "앞문(우)", door_rl: "뒷문(좌)", door_rr: "뒷문(우)",

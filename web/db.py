@@ -307,7 +307,7 @@ def _targets(rng, status):
 def _build_job(rng, mode, status):
     j, name = _Job(), PART_NAME
     targets = _targets(rng, status)
-    stop_at = rng.choice(["calibrate", "scan", "replace"] if mode == "auto" else ["calibrate", "replace"]) \
+    stop_at = rng.choice(["scan", "replace"] if mode == "auto" else ["replace"]) \
         if status == "stopped" else None
 
     def stopped():
@@ -317,10 +317,6 @@ def _build_job(rng, mode, status):
     j.ev("start", "수리 시작 (자동 모드)" if mode == "auto" else f"수리 시작 (수동 모드: {', '.join(targets)})", weight=0)
     if mode == "manual":
         j.findings += [(c, None, None, None, None, "requested") for c in targets]
-    j.ev("calibrate", "차량 기준점 3곳 터치", weight=2)
-    if stop_at == "calibrate":
-        return stopped()
-    j.ev("calibrate", "차량 좌표계 설정 완료", weight=0.5)
 
     if mode == "auto":
         dents = []

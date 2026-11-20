@@ -243,7 +243,9 @@ def require(*roles):
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RobotFiles(os.environ.get("ROKEY_DIR", os.path.join(REPO, "ws_cobot_pjt/ws_cobot_pjt/src/rokey")),
            os.environ.get("SESSION_DIR", os.path.join(REPO, "ws_cobot_pjt/ws_cobot_pjt/session")),
-           [d for d in os.environ.get("SCENE_DIRS", "").split(os.pathsep) if d]).register(app, require("admin"))
+           [*(d for d in os.environ.get("SCENE_DIRS", "").split(os.pathsep) if d),
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "static/robot/scene")]   # 고정 실차 메시 (마지막)
+           ).register(app, require("admin"))
 
 
 def can_see_vehicle(vehicle_id):

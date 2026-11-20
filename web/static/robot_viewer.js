@@ -5,7 +5,9 @@ import URDFLoader from "./vendor/urdf-loader/URDFLoader.js";
 
 const CLOUD_COLORS = { reference: 0x5a96ff, measured: 0xff6e1e };
 // 장면 마커 중 "차량·시편 메시" 표시로 숨길 것 (native/scene.py). 탐침·거치대·바닥은 위치 확인용으로 그대로 둔다
-const OBJECT_MESHES = new Set(["vehicle", "holder", "contact_block", "hemisphere"]);
+const OBJECT_MESHES = new Set(["vehicle", "holder", "contact_block", "hemisphere", "fixed_vehicle"]);
+// 시뮬레이터 없이 그리는 고정 실차 (robot_files.py /api/robot/fixed-scene). 시뮬레이션 장면이 오면 그것으로 바꾼다
+const FIXED_NS = "fixed_vehicle";
 
 /** RViz-style robot display. All model transforms use ROS meters/radians and Z-up. */
 export class RobotViewer {
@@ -100,9 +102,16 @@ export class RobotViewer {
     this.robot.updateMatrixWorld(true);
   }
 
-  /** Simulation scene (visualization_msgs/MarkerArray in base_link): the selected map, none without one. */
-  applyScene(message) {
+  /** Simulation scene (visualization_msgs/MarkerArray in base_link): the selected map, none without one.
+   *  fixed: the real cell's vehicle at its measured pose, drawn until a simulation scene arrives. */
+  applyScene(message, { fixed = false } = {}) {
     this.sceneObjects ??= new Map();
+    if (fixed && this.simScene) return;
+    if (!fixed && !this.simScene) {
+      this.simScene = true;
+      for (const [key, object] of this.sceneObjects)
+        if (object.userData.ns === FIXED_NS) { this.scene.remove(object); this.sceneObjects.delete(key); }
+    }
     for (const marker of message.markers) {
       const key = `${marker.ns}/${marker.id}`;
       if (!this.sceneObjects.has(key)) {

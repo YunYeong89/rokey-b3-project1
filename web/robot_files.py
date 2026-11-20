@@ -4,8 +4,12 @@
   GET /api/robot/files/<folder>/<path> one file of images or pointcloud (images/force_live.png: the live force graph)
   GET /api/robot/clouds/<name>         the running program's RViz cloud, session/clouds/<name>.npy (float32 BASE m)
   GET /api/robot/scene/<name>.stl      a mesh of the simulation scene (/dsr01/sim_scene markers reference
-                                       scene/<name>.stl), found by name in the scene directories, first match"""
+                                       scene/<name>.stl), found by name in the scene directories, first match
+  GET /api/robot/fixed-scene           the real cell without a simulation: the team vehicle at its measured pose
+                                       (rokey config/real_scene.yaml vehicle), as /sim_scene markers (meshes
+                                       static/robot/scene/real_<part>.stl, made by rokey RealVehicle().export)"""
 from pathlib import Path
+import math
 import re
 
 from flask import abort, jsonify, request, send_file, send_from_directory
@@ -13,6 +17,7 @@ from flask import abort, jsonify, request, send_file, send_from_directory
 RUN = re.compile(r'^(.+?_\d{8}_\d{6})')
 KINDS = {'.png': 'image', '.csv': 'data', '.json': 'data', '.ply': 'cloud'}
 CLOUDS = ('reference', 'measured')
+VEHICLE_PARTS = ('body', 'door', 'bonnet', 'bumper', 'other')   # real_vehicle.py part_colors
 
 
 class RobotFiles:
@@ -77,8 +82,31 @@ class RobotFiles:
                 return send_file(match, max_age=0)
         abort(404)
 
+    def fixed_scene(self):
+        """The team vehicle where it always stands (real_scene.yaml), in the MarkerArray JSON of /sim_scene."""
+        import yaml
+        try:
+            cell = yaml.safe_load((self.rokey / 'config/real_scene.yaml').read_text())['vehicle']
+            spec = yaml.safe_load((self.rokey / 'config/vehicles.yaml').read_text())['real']
+        except (OSError, KeyError, TypeError) as error:
+            return jsonify(error=f'실차 배치 설정을 읽을 수 없습니다: {error}'), 404
+        x, y, yaw = cell['pose_base_mm_deg']
+        z = cell['base_z_mm'] if cell.get('base_z_mm') is not None else cell.get('table_z_mm', 0.0) + spec.get('lift_mm', 0.0)
+        body = [float(v) for v in spec.get('color', (0.36, 0.42, 0.30))]
+        colors = {'body': body, 'door': [min(v * 1.25, 1) for v in body], 'bonnet': [min(v * 1.5, 1) for v in body],
+                  'bumper': [0.16, 0.16, 0.17], 'other': [0.07, 0.07, 0.08]}
+        half = math.radians(yaw) / 2
+        markers = [dict(ns='fixed_vehicle', id=index, type=10, mesh_resource=f'scene/real_{part}.stl',
+                        pose=dict(position=dict(x=x / 1000, y=y / 1000, z=z / 1000),
+                                  orientation=dict(x=0.0, y=0.0, z=math.sin(half), w=math.cos(half))),
+                        scale=dict(x=0.001, y=0.001, z=0.001),
+                        color=dict(r=colors[part][0], g=colors[part][1], b=colors[part][2], a=1.0))
+                   for index, part in enumerate(VEHICLE_PARTS)]
+        return jsonify(markers=markers, pose_base_mm_deg=[x, y, yaw], base_z_mm=z)
+
     def register(self, app, guard):
         app.add_url_rule('/api/robot/scene/<name>', 'robot_scene', guard(self.scene))
+        app.add_url_rule('/api/robot/fixed-scene', 'robot_fixed_scene', guard(self.fixed_scene))
         app.add_url_rule('/api/robot/runs', 'robot_runs', guard(lambda: jsonify(self.runs())))
         app.add_url_rule('/api/robot/files/<folder>/<path:name>', 'robot_file', guard(self.file))
         app.add_url_rule('/api/robot/clouds/<name>', 'robot_cloud', guard(self.cloud))

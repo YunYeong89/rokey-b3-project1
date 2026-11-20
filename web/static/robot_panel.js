@@ -64,11 +64,21 @@ export class RobotPanel {
       this.message.textContent = "";
       this.message.hidden = true;
       this.panel.dataset.modelLoaded = "true";
+      this.loadFixedScene();
     } catch (error) {
       this.message.textContent = `로봇 모델 로딩 실패: ${error.message}`;
       this.message.classList.add("error");
       console.error(error);
     }
+  }
+
+  /** 시뮬레이터 없이도 차량을 보이게: 실측 배치(real_scene.yaml)의 팀 차량. 가상 세션 장면이 오면 그쪽이 우선 */
+  async loadFixedScene() {
+    try {
+      const response = await fetch("/api/robot/fixed-scene");
+      if (response.ok) this.viewer.applyScene(await response.json(), { fixed: true });
+      else console.warn("고정 실차 장면 없음", (await response.json().catch(() => ({}))).error);
+    } catch (error) { console.warn(error); }
   }
 
   followMode() {

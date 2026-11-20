@@ -59,6 +59,15 @@ API_KEY = os.environ.get("REPAIR_API_KEY", "rokey-robot-key")
 ROSBRIDGE_URL = os.environ.get("ROSBRIDGE_URL", "")   # 비우면 브라우저가 ws://<접속한 호스트>:9090 사용
 app.teardown_appcontext(db.close_db)
 
+# 서비스 이름 (화면 제목 · 메일 제목). SERVICE_NAME 환경변수로 바꿀 수 있음
+SERVICE_NAME = os.environ.get("SERVICE_NAME", "Scan&Fix")
+SERVICE_TAGLINE = "로봇이 스캔하고, 판정하고, 교체합니다"
+
+
+@app.context_processor
+def inject_service():
+    return {"service_name": SERVICE_NAME, "service_tagline": SERVICE_TAGLINE}
+
 FINISH_STATUSES = {"done", "no_damage", "on_hold", "failed", "stopped"}
 MODES = {"auto", "manual"}
 
@@ -131,7 +140,7 @@ def _build_mail(con, job_id, kind):
     names = lambda sql: [r[0] for r in con.execute(sql, (job_id,))]
     hello = f"{j['owner_name'] or '차주'} 님, 차량 {j['vehicle']}"
     if kind == "start":
-        subject = f"[자동차 수리] {j['vehicle']} 수리를 시작했습니다"
+        subject = f"[{SERVICE_NAME}] {j['vehicle']} 수리를 시작했습니다"
         if j["mode"] == "manual":
             parts = names("""SELECT p.name FROM findings f JOIN parts p ON p.code = f.part_code
                              WHERE f.job_id = ? AND f.decision = 'requested' ORDER BY f.id""")
@@ -142,7 +151,7 @@ def _build_mail(con, job_id, kind):
                  "진행 상황은 아래 링크에서 실시간으로 볼 수 있습니다."]
     else:
         text = FINISH_TEXT[kind]
-        subject = f"[자동차 수리] {j['vehicle']} {text.split('.')[0]}"
+        subject = f"[{SERVICE_NAME}] {j['vehicle']} {text.split('.')[0]}"
         lines = [f"{hello}: {text}.", "", f"종료 시각: {j['finished_at']}"]
         if kind == "done":
             parts = names("""SELECT p.name FROM replacements r JOIN parts p ON p.code = r.part_code
@@ -155,7 +164,7 @@ def _build_mail(con, job_id, kind):
 
     msg = EmailMessage()
     msg["Subject"] = subject
-    msg["From"] = formataddr(("자동차 수리 로봇", SMTP_USER or "dry-run@localhost"))
+    msg["From"] = formataddr((SERVICE_NAME, SMTP_USER or "dry-run@localhost"))
     msg["To"] = j["email"]
     msg.set_content("\n".join(lines))
     return msg

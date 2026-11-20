@@ -104,6 +104,8 @@ input[type=checkbox] { width: auto; display: inline; margin: 0; }
 .login-card { background: #fff; width: 100%; max-width: 380px; padding: 32px; border-radius: 14px; }
 .login-card .brand { color: var(--brand); margin-bottom: 18px; }
 .login-card h1 { font-size: 22px; margin-bottom: 20px; }
+.login-card h1.brand { font-size: 26px; margin-bottom: 6px; }
+.login-card .tagline { margin: 0 0 22px; color: var(--muted); font-size: 14px; }
 .login-card .btn { width: 100%; margin-top: 8px; }
 .err { background: #fbe4e4; color: #8d2525; padding: 10px; border-radius: 8px; font-size: 14px; }
 .hint { text-align: center; color: var(--muted); font-size: 12px; margin-top: 18px; }

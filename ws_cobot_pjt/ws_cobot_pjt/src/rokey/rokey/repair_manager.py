@@ -2,13 +2,15 @@
 recording every stage in the repair DB:
 
   calibrate  probe pickup (simulation, when not held), calibration when there is no result for this mode
-             (or --calibrate), choose_car
+             (or --calibrate), choose_car. A manual job of taught parts only (replace_parts.TAUGHT: the bonnet)
+             skips calibration and choose_car: those parts are replaced at pendant-taught positions.
   scan       scan_surface over the replaceable parts (auto mode) -> detect: findings, no damage -> no_damage
   stock      check_db for the parts to replace (auto: dent/missing, manual: the requested parts) -> on_hold
   replace    replace_parts per part -> inspect -> replacement record, consume on success -> done / failed
 
 A stop command stops the robot at once and records nothing more (the web records `stopped`); an error is
-recorded, the job fails and the robot goes home.
+recorded, the job fails and the robot goes home (not after a taught replacement stopped part-way: it may hold
+a part next to the vehicle).
   ros2 run rokey repair_manager [--calibrate]          (or ros2 launch rokey repair.launch.py)
 """
 import argparse
@@ -24,7 +26,7 @@ if __package__:
     from .robot_namespace import robot_topic
     from .force_data import CalibrationRun
     from .repair_db import RepairDB
-    from .replace_parts import PartReplacer
+    from .replace_parts import TAUGHT, PartReplacer
     from .scan_surface import scan_parts
 else:
     from calibration import calibrate
@@ -34,7 +36,7 @@ else:
     from robot_namespace import robot_topic
     from force_data import CalibrationRun
     from repair_db import RepairDB
-    from replace_parts import PartReplacer
+    from replace_parts import TAUGHT, PartReplacer
     from scan_surface import scan_parts
 
 
@@ -103,24 +105,29 @@ class RepairManager:
                     self.event(self.stage, str(error), 'error')
                     self.db.finish(job_id, 'failed', str(error))
                 finally:
-                    program.home()
+                    if not getattr(error, 'no_home', False):
+                        program.home()
             return 1
         finally:
             program.robot.cancelled = False
 
     def process(self, job):
         program, job_id = self.program, job['job_id']
-        self.event('calibrate', f'job {job_id} ({job.get("mode", "auto")}): probe, calibration, vehicle identification')
-        self.hold_probe()
-        result = read_session('calibration_result.json')
-        if self.always_calibrate or not result or result['mode'] != program.mode:
-            calibrate(program)
-        vehicle = identify(program)
-        self.event('calibrate', f'vehicle {vehicle["type"]} at {[round(v, 1) for v in vehicle["pose_base_mm_deg"]]} '
-                                f'({len(vehicle["touches"])} touches, rms {vehicle["rms_mm"]:.2f} mm)')
-        if job.get('mode') == 'manual':
-            parts = self.db.requested_parts(job_id)
+        manual = job.get('mode') == 'manual'
+        parts = self.db.requested_parts(job_id) if manual else None
+        if manual and parts and all(part in TAUGHT for part in parts):
+            self.event('calibrate', f'job {job_id} (manual {parts}): 티칭 좌표 교체라 보정·차량 인식 생략, 탐침 확인')
+            self.hold_probe()   # the bonnet disassembly starts by putting the held probe on its holder
         else:
+            self.event('calibrate', f'job {job_id} ({job.get("mode", "auto")}): probe, calibration, vehicle identification')
+            self.hold_probe()
+            result = read_session('calibration_result.json')
+            if self.always_calibrate or not result or result['mode'] != program.mode:
+                calibrate(program)
+            vehicle = identify(program)
+            self.event('calibrate', f'vehicle {vehicle["type"]} at {[round(v, 1) for v in vehicle["pose_base_mm_deg"]]} '
+                                    f'({len(vehicle["touches"])} touches, rms {vehicle["rms_mm"]:.2f} mm)')
+        if not manual:
             self.event('scan', f'parts {program.config["inspection"]["replaceable"]}')
             scan = scan_parts(program, program.config['inspection']['replaceable'])
             self.event('detect', f'findings {scan["findings"]}')
@@ -135,7 +142,7 @@ class RepairManager:
         available, missing = StockChecker(self.db).check(parts)
         if missing:
             raise Stopped('on_hold', f'재고 없음: {", ".join(missing)}')
-        replacer, failed = PartReplacer(program), []
+        replacer, failed = PartReplacer(program, self.event), []
         for part in parts:
             self.event('replace', part)
             outcome = replacer.replace(part)

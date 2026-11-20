@@ -28,7 +28,7 @@ $$(".tab").forEach((b) => b.addEventListener("click", () => {
   $$(".tab").forEach((x) => x.classList.toggle("active", x === b));
   $$(".panel").forEach((p) => p.classList.toggle("active", p.id === "tab-" + b.dataset.tab));
   ({ stock: loadParts, history: loadJobs, members: loadMembers, alarms: openAlarms }[b.dataset.tab] || (() => {}))();
-  if (b.dataset.tab === "repair") requestAnimationFrame(() => { viewer.resize(); drawFz(); });
+  if (b.dataset.tab === "robot") requestAnimationFrame(() => { viewer.resize(); drawFz(); });   // 로봇·수리 탭의 차량 3D
 }));
 
 // ------------------------------------------------------------ 모드 / 부품 선택
@@ -375,6 +375,8 @@ async function stopJob() {
   if (running) try { await api("POST", `/api/jobs/${state.job.id}/finish`, { status: "stopped", summary: "관리자가 정지 버튼을 누름" }); } catch (e) { }
 }
 $("#stopBtn").addEventListener("click", stopJob);
+// 로봇 탭의 '로봇 정지' 버튼도 진행 중인 수리를 같이 멈춘다 (로봇 정지 명령은 robot_control.js 가 보냄)
+$$("[data-task-stop]").forEach((b) => b.addEventListener("click", () => { if (state.job?.status === "running") stopJob(); }));
 $("#estopBtn").addEventListener("click", stopJob);
 
 // ------------------------------------------------------------ rosbridge

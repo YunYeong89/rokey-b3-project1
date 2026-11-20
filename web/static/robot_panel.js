@@ -109,5 +109,7 @@ export class RobotPanel {
 const panel = new RobotPanel(document.querySelector("#tab-robot"));
 export default panel;
 window.addEventListener("DOMContentLoaded", () => {
-  if (new URLSearchParams(location.search).get("tab") === "robot") document.querySelector('[data-tab="robot"]').click();
+  // ?tab=stock 등은 그 탭, 없거나 예전 수리 탭 주소(?tab=repair)면 로봇·수리 탭 (로봇 화면은 탭을 누를 때 시작)
+  const want = new URLSearchParams(location.search).get("tab");
+  ((/^\w+$/.test(want || "") && document.querySelector(`.tab[data-tab="${want}"]`)) || document.querySelector('[data-tab="robot"]')).click();
 });

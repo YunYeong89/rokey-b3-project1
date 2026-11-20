@@ -71,8 +71,17 @@
 @media(max-width:760px) { .inspection-layout { grid-template-columns:1fr; } }
 @media(max-width:480px) { .inspection-fields { grid-template-columns:1fr; gap:5px; } }
 
-.robot-layout > .robot-side { grid-row:span 2; }  /* the results card sits right under the viewer */
-@media(max-width:1000px) { .robot-results { grid-column:auto; }.robot-layout > .robot-side { grid-row:auto; } }
+.robot-layout > .robot-side { grid-row:span 3; }  /* robot viewer, vehicle (repair) and results cards on the left */
+@media(max-width:1000px) { .robot-results, .robot-car-card { grid-column:auto; }.robot-layout > .robot-side { grid-row:auto; } }
+
+/* 수리 (예전 수리 탭): 수리 시작 카드는 오른쪽 맨 위, 차량 3D(수리 결과·데모)는 로봇 화면 아래, 진행 로그는 맨 아래 전체 폭 */
+.robot-stats { margin:0; padding:10px 14px 14px; }
+.robot-car-card { grid-column:1; min-width:0; margin-bottom:0; }
+.robot-car-card .viewer { height:380px; }
+.robot-repair-card { margin-bottom:0; }
+.robot-repair-card h2 { margin-top:0; }
+.robot-side .robot-repair-card h3 { margin:14px 0 8px; }
+.robot-log-card { margin-top:16px; }
 @media(max-width:1000px) { .robot-layout { grid-template-columns:1fr; }.robot-side { grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); }.robot-canvas { height:60vh; min-height:360px; } }
 
 /* Web teleop popup (robot_teleop.js): height left, BASE x-y arrows right; held keys show filled. */

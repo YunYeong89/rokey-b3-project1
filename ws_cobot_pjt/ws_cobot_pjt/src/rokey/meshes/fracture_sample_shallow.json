@@ -1,0 +1,31 @@
+{
+  "source": "fracture_sample.stl",
+  "source_sha256": "262052ba7778c6f1ce023675996298a23cf0efcc83d176d7f992f4b8515cce19",
+  "mesh": "fracture_sample_shallow.stl",
+  "sha256": "8f866bee742386e6783b863b7351c6354b02f2fbaa1f8b5af3084414142dd538",
+  "units": "mm",
+  "source_up": "+Y",
+  "specimen_size_mm": [
+    200.0,
+    200.0,
+    10.0
+  ],
+  "width_series": {
+    "widths_mm": [
+      2.5,
+      2.0,
+      1.5,
+      1.0,
+      0.5
+    ],
+    "old_depth_mm": 5.0,
+    "depth_mm": 0.5,
+    "local_bounds_mm": [
+      -95.0,
+      65.0,
+      -40.0,
+      90.0
+    ]
+  },
+  "changed_vertex_occurrences": 330
+}

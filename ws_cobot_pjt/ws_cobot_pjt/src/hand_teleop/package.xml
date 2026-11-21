@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>hand_teleop</name>
+  <version>0.0.0</version>
+  <description>Webcam hand-skeleton teleoperation of the M0609 TCP and the RG2 opening (Gazebo session and real robot)</description>
+  <maintainer email="mail@mail.com">BL</maintainer>
+  <license>MIT</license>
+
+  <depend>rclpy</depend>
+  <depend>dsr_msgs2</depend>
+  <exec_depend>onrobot_rg_msgs</exec_depend>
+  <exec_depend>rokey</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-scipy</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

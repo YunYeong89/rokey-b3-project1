@@ -1,0 +1,10 @@
+name: hand-teleop                   # macOS camera side only (no ROS): conda env create -f environment.yml
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.12
+  - pip
+  - pip:
+      - mediapipe>=0.10.14           # brings opencv-contrib-python and numpy
+      - scipy

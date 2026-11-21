@@ -344,11 +344,12 @@ export function createRobotArm(viewer, { msgEl = null } = {}) {
   // ------------------------------------------------------------ 실제 모드 (rosbridge)
   let topic = null, rosConnected = false, lastJointAt = 0;
   const rosLive = () => rosConnected && performance.now() - lastJointAt < ROS_JOINTS.staleMs;
-  function attachRos(ros) {
+  function attachRos(ros, jointTopic = ROS_JOINTS.topic) {
     if (topic) topic.unsubscribe();
     rosConnected = true;
+    lastJointAt = -Infinity;
     topic = new ROSLIB.Topic({
-      ros, name: ROS_JOINTS.topic, messageType: ROS_JOINTS.type,
+      ros, name: jointTopic, messageType: ROS_JOINTS.type,
       throttle_rate: Math.round(1000 / ROS_JOINTS.rateHz), queue_length: 1,
     });
     topic.subscribe((m) => {

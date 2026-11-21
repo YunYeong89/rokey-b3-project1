@@ -1,0 +1,33 @@
+# The real cell for real_scan on the real robot (rokey/scan_scene.py); the virtual session writes its own scene.
+# Fill in the real cell placement measurements before scanning.
+vehicle:                        # the team vehicle assembly (vehicles.yaml real)
+  pose_base_mm_deg: [650.0, 0.0, 180.0]  # [x, y, yaw] of the vehicle frame in BASE (mm, deg), from RViz
+  base_z_mm: 82.36               # vehicle frame origin in BASE (wheel bottoms): 214 mm top - 135.27 mm vehicle
+                                 # (78.73) + 3.63 mm, the mean contact height over the plan on the real bonnet
+                                 # (+3.48, +3.55, +3.86 mm near x 588 mm, 2026-11-19)
+  table_z_mm: 0.0                # table top in BASE, from the RViz holder base (mm)
+probe:
+  tcp_mm_deg: [0.0, 0.0, 282.5, 0.0, 0.0, 0.0]  # flange-to-TCP [x, y, z, a, b, c] that real_scan detects with
+                                  # (not read from the pendant): the controller still moves and reports its active
+                                  # TCP, and the probe converts commands and readings by the difference (tool frame).
+                                  # 283.0 until 2026-11-19: 0.5 mm shorter (measured points sat ~0.5 mm low).
+                                  # The force/motion offsets were measured with the v3 5 mm probe.
+  holder_mesh: meshes/probe_holder.stl  # team probe holder (3D-models 2def9b2), Z-up about its base-plate bottom
+                                  # centre: the planning obstacle is its extents, 180 x 45.4 x 65 mm (x along its length)
+  holder_pose_base_mm_deg: [350.0, -150.0, 0.0, 0.0]  # [x, y, z, yaw] of its base-plate bottom centre in BASE
+                                  # (mm, deg; z the table top, yaw of its long side from BASE x). Measured
+                                  # 2026-11-19: along +x, the screw hole nearer the robot (mesh x -75, y 0; holes
+                                  # at x +-75) centred at BASE (275, -150) -> centre (275 + 75, -150)
+  tool_weight_name: Tool Weight v2  # TP measurement with open RG2 jaws, camera and bracket mounted, and no probe
+                                  # A null value uses probe.tool_name from robot.yaml.
+  held_width_mm: [26.0, 31.0]    # RG2 reported 28.6 mm with the probe held on 2026-11-19
+  pickup_tcp_name: GripperDA_v1_probe
+  pickup_approach_base_mm: [349.9876, -225.0713, 142.0636]  # approach XYZ in BASE
+  pickup_grasp_base_mm_deg: [351.1421, -222.9998, 19.6879, 144.3733, -179.6075, -127.4605]  # BASE XYZ mm and ZYZ deg
+  pickup_lift_mm: 200.0
+  release_z_offset_mm: 6.0  # release this far above the taught grasp, in BASE +Z
+
+inspection_poses:                 # optional measured [BASE X mm, Y mm, yaw deg, base Z mm] overrides
+  bonnet: null                    # use the vehicle pose above
+  left_door: null                 # use demo_left from vehicles.yaml
+  right_door: null                # use demo_right from vehicles.yaml

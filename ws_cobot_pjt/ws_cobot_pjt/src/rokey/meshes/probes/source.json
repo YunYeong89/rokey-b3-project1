@@ -1,0 +1,140 @@
+{
+  "repository": "https://github.com/YunYeong89/rokey-b3-project1",
+  "commit": "fc172b5ebc2db32c52b1776bc212e2d826ef3d7b",
+  "archive": "탐침STL.zip",
+  "archive_git_blob": "3c6d3fa448ab4c6088d47c0cc1b2db3a80f0b5b6",
+  "units": "mm",
+  "original_meshes": [
+    {
+      "archive_path": "탐침_v2.1.stl",
+      "file": "probes/probe_v2_1.stl",
+      "sha256": "d030c327e53b103cacda2f8d92aa21449eb44ce86abad4a8060e2666ed7b876a"
+    },
+    {
+      "archive_path": "탐침_v2.2.stl",
+      "file": "probes/probe_v2_2.stl",
+      "sha256": "9101bd00e3e3eb0b133475031eab17e04754de173b927400aebaf07d383de66e"
+    },
+    {
+      "archive_path": "탐침_v2.stl",
+      "file": "probes/probe_v2.stl",
+      "sha256": "d14cf32a5425f7607068a6913f6c3f3195728bac904d3ff8fbfa7f56a59db634"
+    },
+    {
+      "archive_path": "탐침_v1.1.stl",
+      "file": "probes/probe_v1_1.stl",
+      "sha256": "84f0d93932340e9566c74f14b14e07d603c2115706db621d4a225afec0205d5c"
+    },
+    {
+      "archive_path": "탐침_v1.2.stl",
+      "file": "probes/probe_v1_2.stl",
+      "sha256": "fca8e5511c9d8f66d91d2ff4d773546d943398629a50018901fef36b504dff24"
+    },
+    {
+      "archive_path": "탐침_v1.stl",
+      "file": "probes/probe_v1.stl",
+      "sha256": "66ccfbc9c04d36fbae51505285fc4da74528838d67f61391382b9777552e3f83"
+    }
+  ],
+  "active_mesh": "probe_v2_1.stl",
+  "active_sha256": "83fa074fc9b189dbda035925933c07a1f7bc80d15b962ca4762546cf4a3efdbc",
+  "source_to_tip_frame": [
+    [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      -1.0,
+      0.0
+    ],
+    [
+      0.0,
+      1.0,
+      0.0,
+      -30.0
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "tip_sphere": {
+    "centre_mm": [
+      -0.0,
+      -0.0,
+      -55.737386
+    ],
+    "radius_mm": 2.0
+  },
+  "holder": {
+    "file": "gripper_tip_holder.stl",
+    "source": "existing local mesh; no holder in repository archive"
+  },
+  "mass_kg": {
+    "value": 0.039,
+    "source": "existing simulation setting; not supplied by repository"
+  },
+  "active_grasp": {
+    "closing_axis": "x",
+    "from_top_mm": 9,
+    "groove_floor_width_mm": 20,
+    "groove_depth_mm": 5,
+    "groove_span_mm": 21,
+    "flat_groove_z_mm": [
+      2,
+      20
+    ],
+    "floor_clearance_mm": 0.2
+  },
+  "v3_5mm": {
+    "repository": "https://github.com/YunYeong89/rokey-b3-project1",
+    "branch": "3D-models",
+    "commit": "24c94e726711088ff1515760a086344af57b1ed8",
+    "archive": "탐침_v3.zip",
+    "archive_path": "탐침_v3_5mm.stl",
+    "file": "probes/probe_v3_5mm.stl",
+    "sha256": "e991a6c69ab0659a6b2f3e72e01b1a1f0820405390d515502bb417271a52798e",
+    "scene_file": "probe_v3_5mm.stl",
+    "scene_frame": "(x, -z, y - 30) mm: tip frame as probe_v2_*, tip at z -54.5",
+    "ball_radius_mm": 2.5,
+    "ball_centre_mm": [
+      0.0,
+      0.0,
+      -52.0
+    ]
+  },
+  "v3_2mm": {
+    "repository": "https://github.com/YunYeong89/rokey-b3-project1",
+    "branch": "3D-models",
+    "commit": "24c94e726711088ff1515760a086344af57b1ed8",
+    "archive": "탐침_v3.zip",
+    "archive_path": "탐침_v3_2mm.stl",
+    "file": "probes/probe_v3_2mm.stl",
+    "sha256": "26e1b094172c4e63e1f47806f7b7be55c9f5d726f1b41ca306b068665f73e436",
+    "scene_file": "probe_v3_2mm.stl",
+    "scene_frame": "(x, -z, y - 30) mm: tip frame, tip at z -53.0",
+    "ball_radius_mm": 1.0,
+    "ball_centre_mm": [0.0, 0.0, -52.0]
+  },
+  "probe_holder": {
+    "repository": "https://github.com/YunYeong89/rokey-b3-project1",
+    "branch": "3D-models",
+    "commit": "2def9b2c11e5c324cc457fa75d11152e9c95af58",
+    "archive": "탐침 홀더.zip",
+    "archive_path": "탐침 홀더.stl",
+    "sha256": "a77f491d4ca6dec41172ffc98bc19e65c2daf9b884388958902ba981ea44a21c",
+    "file": "probe_holder.stl",
+    "frame": "Z-up (x, -z, y) mm, base plate bottom centre at the origin",
+    "size_mm": [
+      180.0,
+      45.38,
+      65.0
+    ]
+  }
+}

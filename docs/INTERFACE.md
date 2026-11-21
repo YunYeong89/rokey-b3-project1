@@ -8,7 +8,7 @@
 ```
 [태블릿 웹] ──rosbridge(ws:9090)──▶ [ROS2] ──▶ 공정 관리 노드 ──▶ 스캔·교체 노드 ──▶ M0609
      ▲                                              │
-     └──────── Flask REST API (http:5000) ◀─────────┘  (단계·판정·결과 기록)
+     └──────── Flask REST API (http:5050) ◀─────────┘  (단계·판정·결과 기록)
 ```
 
 | 경로 | 무엇을 | 방식 |
@@ -22,7 +22,7 @@
 
 | 항목 | 값 |
 |---|---|
-| 웹 서버 (Flask) | `http://<웹 PC IP>:5000` |
+| 웹 서버 (Flask) | `http://<웹 PC IP>:5050` |
 | rosbridge | `ws://<로봇 PC IP>:9090` |
 | 로봇 API 키 | 헤더 `X-API-Key: rokey-robot-key` (환경변수 `REPAIR_API_KEY`) |
 
@@ -56,7 +56,7 @@
 - 문: 왼쪽 문 `y = 0`, 오른쪽 문 `y = 110` (옆면), `x` = 문 길이 방향, `z` = 바닥에서 높이 `(협의, 실측 후 수정)`
 - 임시 모델 기준 문 범위: 뒷문 x 72~118, 앞문 x 120~165, 높이 z 13~38 mm
 
-**단계 이름 (stage)**: `calibrate` → `scan` → `detect` → `stock` → `replace` → `inspect` → `done`
+**단계 이름 (stage)**: `scan` → `detect` → `stock` → `replace` → `inspect` → `done`
 수동 모드는 `scan`, `detect` 생략
 
 **판정 (decision)**: `dent` 찌그러짐 · `missing` 부품 없음 · `suspect` 의심 · `requested` 수동 지정(웹이 기록)
@@ -115,7 +115,6 @@
 
 **자동 모드**
 ```
-event(calibrate) → [3점 터치]
 event(scan)      → [표면 스캔(연속 접촉): 탐침을 붙인 채 지그재그 라인, 일정 간격마다 /repair/status point]
                     [의심 구역은 같은 방식으로 더 촘촘한 라인]
 event(detect)    → findings([...])
@@ -126,7 +125,9 @@ event(detect)    → findings([...])
 event(done) → finish("done") 또는 finish("failed")
 ```
 
-**수동 모드**: `requested_parts()`로 부품 목록을 읽고 `calibrate` 다음 바로 재고 확인부터 같은 순서.
+**수동 모드**: `requested_parts()`로 부품 목록을 읽고 바로 재고 확인부터 같은 순서.
+
+차량은 항상 고정 위치라 차량 위치 확인(3점 터치) 단계는 없다. `calibrate` 이벤트가 오면 로그에만 남고 진행 단계 표시에는 나오지 않는다.
 
 **에러**: 예외가 나면 `event(stage, 내용, "error")` → `finish("failed", 내용)`. 로봇은 안전 위치로.
 

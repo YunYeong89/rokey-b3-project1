@@ -1,0 +1,109 @@
+.robot-layout { display:grid; grid-template-columns:minmax(0,1fr) 330px; gap:16px; align-items:start; }
+.robot-main { display:flex; flex-direction:column; gap:16px; min-width:0; }  /* 왼쪽 창들은 사이드바 길이와 상관없이 바로 이어짐 */
+.robot-main > .card { margin-bottom:0; }
+.robot-scene-card { min-width:0; padding:0; overflow:hidden; }
+.robot-scene-card .cardhead { padding:14px 18px; }
+.robot-canvas { height:70vh; min-height:460px; position:relative; background:#18212c; }
+.robot-canvas canvas { display:block; width:100%; height:100%; }
+.robot-message { position:absolute; z-index:2; top:16px; left:16px; color:#dce9f9; background:#253345e6; padding:9px 12px; border-radius:6px; pointer-events:none; }
+.robot-message.error { color:#ffb8b8; }
+.robot-tools { display:flex; flex-wrap:wrap; gap:6px; padding:10px 14px; background:#233043; }
+.robot-side { display:grid; gap:14px; }
+.robot-side h3 { margin-top:0; }
+.robot-side label { display:block; margin:8px 0; }
+.robot-side input[type=text], .robot-side select { width:100%; box-sizing:border-box; margin-top:4px; }
+.robot-side .robot-check { display:flex; align-items:center; gap:8px; }
+.robot-side .robot-check input { width:auto; }
+.robot-meta { display:flex; flex-wrap:wrap; gap:12px; font-size:12px; color:#6b7f95; padding:0 18px 12px; }
+.robot-joints { font-variant-numeric:tabular-nums; font-size:11px; }
+.robot-joints td:first-child { overflow-wrap:anywhere; }
+.robot-joints td:last-child { white-space:nowrap; text-align:right; }
+.robot-pose { font:12px ui-monospace,monospace; white-space:pre-wrap; word-spacing:3px; }
+.robot-task-buttons { display:flex; gap:8px; margin-top:12px; }
+.robot-task-log { max-height:240px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font-size:11px; }
+.robot-side input[type=number] { width:100%; box-sizing:border-box; margin-top:4px; }
+.robot-axis { display:inline-flex; gap:8px; font-size:12px; }
+.robot-axis b:nth-child(1) { color:#eb5c5c; }.robot-axis b:nth-child(2) { color:#40bf78; }.robot-axis b:nth-child(3) { color:#619bff; }
+.robot-results { min-width:0; }
+.robot-results h3 { margin:0; }
+.robot-results-head { display:flex; flex-wrap:wrap; align-items:center; gap:10px 14px; margin-top:6px; }
+.robot-results-head select { min-width:0; max-width:100%; }
+.force-chart { margin-bottom:14px; }
+.force-status { margin:0 0 8px; }
+.force-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.force-panel { min-width:0; border:1px solid var(--line); border-radius:8px; padding:8px 10px 4px; background:#fff; }
+.force-head { display:flex; justify-content:space-between; gap:8px; font-size:12px; color:var(--ink); }
+.force-unit { color:var(--muted); }
+.force-legend { display:flex; flex-wrap:wrap; gap:4px 12px; min-height:16px; margin:3px 0 2px; font-size:11px; color:var(--ink); }
+.force-key { display:inline-flex; align-items:center; gap:5px; }
+.force-key i { display:inline-block; width:16px; border-top:2px solid; }
+.force-key i.dashed { border-top-style:dashed; }
+.force-plot { position:relative; }
+.force-plot canvas { display:block; width:100%; touch-action:none; }
+.force-tip { position:absolute; top:0; left:0; pointer-events:none; background:#fff; border:1px solid var(--line); border-radius:6px; box-shadow:0 2px 8px rgba(28,37,48,.12); padding:5px 8px; font-size:11px; color:var(--ink); white-space:nowrap; font-variant-numeric:tabular-nums; }
+.force-tip div { display:flex; align-items:center; gap:6px; }
+.force-tip b { margin-left:auto; padding-left:10px; }
+.force-tip i { width:8px; height:8px; border-radius:50%; }
+@media(max-width:700px) { .force-grid { grid-template-columns:1fr; } }
+.robot-run-images { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px; margin-top:10px; font-size:12px; color:var(--muted); }
+.robot-run-images a { display:grid; gap:4px; color:var(--ink); text-decoration:none; overflow-wrap:anywhere; }
+.robot-run-images img { width:100%; aspect-ratio:4/3; object-fit:contain; background:#fff; border:1px solid var(--line); border-radius:6px; }
+.robot-run-files { display:flex; flex-wrap:wrap; gap:6px 16px; margin-top:12px; font-size:12px; }
+.robot-run-files a { color:var(--brand); overflow-wrap:anywhere; }
+
+.inspection-card { min-width:0; }  /* robot viewer 아래 (수동 모드만) */
+.inspection-fields, .inspection-layout { display:grid; gap:14px; }
+.inspection-fields { grid-template-columns:repeat(3,minmax(0,1fr)); margin-bottom:12px; }
+.inspection-layout { grid-template-columns:minmax(0,1.6fr) minmax(0,1fr); align-items:start; }
+.inspection-selection canvas { display:block; width:100%; height:240px; border:1px solid var(--line);
+  border-radius:8px; background:#f2f6fa; cursor:crosshair; touch-action:none; }
+.inspection-order { border:1px solid var(--line); border-radius:8px; padding:12px; }
+.inspection-order ol { padding-left:24px; margin:8px 0; }
+.inspection-order li { margin:4px 0; }
+.inspection-order li div { display:flex; gap:4px; align-items:center; }
+.inspection-order li label { display:flex; gap:6px; align-items:center; margin:0 auto 0 0; }
+.inspection-order li input[type=checkbox] { width:auto; }
+.inspection-order li select { margin:4px 0; }
+.inspection-order li li { color:var(--muted); font-size:12px; }
+.inspection-regions { display:flex; flex-wrap:wrap; gap:4px 24px; padding-left:22px; margin:8px 0; }
+.inspection-regions li { padding-right:4px; color:var(--muted); font-size:12px; }
+.inspection-regions li button { margin-left:5px; }
+.inspection-state { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:12px; }
+.inspection-card [data-inspection-error]:empty { display:none; }
+@media(max-width:760px) { .inspection-layout { grid-template-columns:1fr; } }
+@media(max-width:480px) { .inspection-fields { grid-template-columns:1fr; gap:5px; } }
+
+
+/* 수리 (예전 수리 탭): 수리 시작 카드는 오른쪽 맨 위, 측정 요약은 로봇 화면 아래, 진행 로그는 맨 아래 전체 폭 */
+.robot-repair-card { margin-bottom:0; }
+.robot-repair-card h2 { margin-top:0; }
+.robot-side .robot-repair-card h3 { margin:14px 0 8px; }
+
+@media(max-width:1000px) { .robot-layout { grid-template-columns:1fr; }.robot-side { grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); }.robot-canvas { height:60vh; min-height:360px; } }
+
+/* Web teleop popup (robot_teleop.js): height left, BASE x-y arrows right; held keys show filled. */
+.teleop-pop { position:fixed; right:max(16px, env(safe-area-inset-right, 0px)); bottom:24px; z-index:60;
+  width:min(380px, calc(100vw - 32px)); box-sizing:border-box; padding:12px 16px 10px; background:var(--card);
+  color:var(--ink); border:1px solid var(--line); border-radius:12px; box-shadow:0 12px 32px #1c253040; }
+.teleop-head { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+.teleop-head .note { flex:1; margin:0; }
+.teleop-close { border:0; background:none; font-size:20px; line-height:1; cursor:pointer; color:var(--muted); }
+.teleop-body { display:grid; grid-template-columns:auto 1fr; gap:18px; align-items:center; margin-bottom:10px; }
+.teleop-height { display:grid; gap:8px; }
+.teleop-pad { display:grid; justify-content:end; gap:6px; grid-template-columns:repeat(3, 64px);
+  grid-template-rows:repeat(3, 56px); grid-template-areas:". up ." "left centre right" ". down ."; }
+.teleop-centre { grid-area:centre; display:grid; place-items:center; font-size:11px; color:var(--muted); }
+.teleop-key { display:grid; place-items:center; min-width:64px; min-height:56px; padding:4px; border:1px solid var(--line);
+  border-radius:10px; background:#f4f7fa; color:var(--ink); font-size:18px; line-height:1.1; cursor:pointer;
+  touch-action:none; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
+.teleop-key small { display:block; font-size:10px; color:var(--muted); }
+.teleop-key.held { background:var(--brand); color:var(--brand-ink); border-color:var(--brand); }
+.teleop-key.held small { color:var(--brand-ink); }
+.teleop-key:disabled, .teleop-step:disabled { opacity:.45; cursor:not-allowed; }
+.teleop-row { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:8px 0; }
+.teleop-row > .note { margin:0; min-width:56px; }
+.teleop-row > span:not(.note) { display:flex; gap:6px; }
+.teleop-row .teleop-key { min-width:72px; min-height:40px; font-size:13px; }
+.teleop-step { padding:6px 10px; border:1px solid var(--line); border-radius:8px; background:#fff; color:var(--ink); cursor:pointer; }
+.teleop-step.selected { border-color:var(--brand); color:var(--brand); font-weight:600; }
+@media (max-width:420px) { .teleop-pad { grid-template-columns:repeat(3, 56px); } .teleop-key { min-width:56px; } }

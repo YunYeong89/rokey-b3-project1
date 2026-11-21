@@ -5,6 +5,7 @@ recording every stage in the repair DB:
              (or --calibrate), the vehicle at its fixed pose (choose_car.fixed: no identification touches). A manual
              job of taught parts only (replace_parts.TAUGHT: the bonnet) skips calibration and the vehicle pose:
              those parts are replaced at pendant-taught positions.
+  plan       auto mode, real vehicle: real_scan's mesh path plan (its cache or a new plan), read from its output
   scan       auto mode. The real vehicle (real robot, or a virtual session of the real assembly): real_scan
              (--controller mesh-height, as the web part inspection) per REAL_SCAN_PARTS -> detect: its result.json
              damage summary, a confirmed dent / crack ROI -> finding and replace, candidates only -> suspect.
@@ -21,6 +22,7 @@ a part next to the vehicle).
 import argparse
 import json
 import os
+import re
 import sys
 import threading
 
@@ -48,6 +50,7 @@ else:
     from scan_surface import scan_parts
 
 
+PLAN_LINE = re.compile(r'mesh plan (cache hit|checked and cached): ([\d.]+) s')  # mesh_scan.run_mesh_scan
 REAL_SCAN_PARTS = ('bonnet',)  # real vehicle: parts scanned in auto mode (only the bonnet can be replaced so far)
 CLOSE_TIMEOUT_S = 5.0  # --job-id: exit anyway when the ROS shutdown hangs (the job is already recorded)
 
@@ -194,11 +197,28 @@ class RepairManager:
         ros_args = ['--ros-args', '-r', f'__ns:={program.node.get_namespace()}']
         findings, replace = [], []
         for part in REAL_SCAN_PARTS:
-            self.event('scan', f'{part}: 실차 스캔 (real_scan, mesh-height) 시작')
+            self.event('plan', f'{part}: 경로 계획 (real_scan, mesh-height)')
+            planned = []
+
+            def line(text, part=part, planned=planned):
+                """real_scan's 'mesh plan cache hit / checked and cached: N s' line: the plan stage ends and the
+                scan starts. A later plan (the bonnet ROI rescan) stays in the scan stage."""
+                plan = PLAN_LINE.search(text)
+                if not plan:
+                    return
+                how = '캐시 사용' if plan[1] == 'cache hit' else '새로 계산'
+                if planned:
+                    self.event('scan', f'{part}: 재스캔 경로 {how} ({float(plan[2]):.1f} s)')
+                else:
+                    self.event('plan', f'{part}: 경로 계획 완료 — {how} ({float(plan[2]):.1f} s)')
+                    self.event('scan', f'{part}: 실차 스캔 시작')
+                planned.append(plan[1])
+
             before = set(images.glob(f'real_{part}_*'))
             code = PartReplacer.run_child([sys.executable, '-u', '-m', 'rokey.real_scan', '--part', part,
                                            '--controller', 'mesh-height',
-                                           *(['--inspection-position'] if program.mode == 'real' else []), *ros_args])
+                                           *(['--inspection-position'] if program.mode == 'real' else []), *ros_args],
+                                          line)
             if code != 0:
                 raise RuntimeError(f'{part} 스캔 실패 (real_scan 종료 코드 {code})')
             runs = sorted(path for path in set(images.glob(f'real_{part}_*')) - before if (path / 'result.json').exists())

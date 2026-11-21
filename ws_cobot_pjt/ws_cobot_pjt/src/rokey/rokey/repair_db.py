@@ -2,14 +2,28 @@
 from robot.yaml `db` (environment REPAIR_DB_URL / REPAIR_API_KEY override them)."""
 import json
 import os
+import socket
 import urllib.error
+import urllib.parse
 import urllib.request
 
 
 class RepairDB:
     def __init__(self, url, api_key, timeout=5.0):
-        self.url = os.environ.get('REPAIR_DB_URL', url).rstrip('/')
+        self.url = self.reachable(os.environ.get('REPAIR_DB_URL', url).rstrip('/'))
         self.key, self.timeout = os.environ.get('REPAIR_API_KEY', api_key), timeout
+
+    @staticmethod
+    def reachable(url):
+        """robot.yaml's host.docker.internal names the host PC from inside the Docker container only; run directly on
+        Ubuntu (sodreal + ros2 run) that name does not resolve and the web server is on this PC: localhost."""
+        parts = urllib.parse.urlsplit(url)
+        if parts.hostname == 'host.docker.internal':
+            try:
+                socket.getaddrinfo(parts.hostname, None)
+            except socket.gaierror:
+                return parts._replace(netloc=parts.netloc.replace('host.docker.internal', 'localhost')).geturl()
+        return url
 
     def request(self, method, path, body=None, allow=()):
         data = None if body is None else json.dumps(body).encode()

@@ -317,7 +317,7 @@ function stopPolling() { if (state.pollTimer) clearInterval(state.pollTimer); st
 function setRunning(on) {
   state.running = on;
   $("#startBtn").disabled = on; $("#stopBtn").disabled = !on;
-  $("#vehicleSel").disabled = on; $("#demoMode").disabled = on;
+  $("#vehicleSel").disabled = on;
   $$("#modeSeg .seg-btn, #partPick input").forEach((x) => (x.disabled = on));
   updateRobotState();
 }
@@ -415,7 +415,8 @@ function connectRos() {
   robotControl.addEventListener("repair", (event) => { if (!state.demo) onStatus(event.detail); });
 }
 function setRosPill(cls, text) { const p = $("#rosState"); p.className = "pill " + cls; p.textContent = text; }
-$("#demoMode").addEventListener("change", (e) => {
+// 상단 데모 모드 체크박스는 화면에서 뺐음 (state.demo 는 항상 false, 시뮬레이터 코드는 남겨 둠)
+$("#demoMode")?.addEventListener("change", (e) => {
   state.demo = e.target.checked;
   robot.setSource(state.demo ? "demo" : "ros");
   if (state.demo) setRosPill("demo", "데모 모드 (로봇 없음)");

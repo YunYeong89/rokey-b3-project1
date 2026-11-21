@@ -296,6 +296,27 @@ export function createCarViewer(host, { msgEl = null, onPartClick = null } = {})
   }
   function clearPoints() { pointsGroup.clear(); }
 
+  // ---------------------------------------------------------------- 실시간 측정점 (실차 스캔, 차주 화면)
+  let scanCloud = null;
+  /** points: [x, y, z, ...] mm, 이 뷰어의 축 (x 앞, y 위, z 오른쪽, 원점 뒤·왼쪽·바닥) 이고 실차 크기 기준.
+   *  size: 실차 [L, H, W] mm → 불러온 모델 크기(CAR)에 맞춰 축마다 배율 (car.glb 는 실차의 약 1.15배). 빈 배열이면 지움 */
+  function setScanCloud(points, size) {
+    if (!points?.length || !size) {
+      if (scanCloud) scanCloud.visible = false;
+      return;
+    }
+    if (!scanCloud) {
+      scanCloud = new THREE.Points(new THREE.BufferGeometry(),
+        new THREE.PointsMaterial({ color: 0xe0352b, size: 2, sizeAttenuation: false, depthTest: false }));
+      scanCloud.renderOrder = 2;   // 차체에 가려지지 않게 (표면에 붙은 점이라 깊이 비교로 반쯤 사라짐)
+      carRoot.add(scanCloud);
+    }
+    scanCloud.scale.set(CAR.L / size[0], CAR.H / size[1], CAR.W / size[2]);
+    scanCloud.geometry.setAttribute("position", new THREE.Float32BufferAttribute(points, 3));
+    scanCloud.geometry.computeBoundingSphere();
+    scanCloud.visible = true;
+  }
+
   // ---------------------------------------------------------------- 표면 찾기 (연속 스캔용)
   /** 차량 표면 점과 바깥 법선 (차량 로컬 = carRoot 좌표, Y 위쪽)
    *  face "top": (u, v) = 차량 (x, y), 위에서 아래로 / "left"·"right": (u, v) = 차량 (x, z), 옆에서 차 쪽으로 */
@@ -335,7 +356,7 @@ export function createCarViewer(host, { msgEl = null, onPartClick = null } = {})
   }
 
   return {
-    load, paint, addPoint, clearPoints, setView, resize,
+    load, paint, addPoint, clearPoints, setScanCloud, setView, resize,
     scene, carRoot, surfaceAt, setRobotExtent, onFrame: (fn) => frameHooks.push(fn),
     /** 차 크기 {L, W, H} [mm] (load 후 모델 기준) */
     dims: () => ({ ...CAR }),

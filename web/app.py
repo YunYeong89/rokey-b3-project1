@@ -21,13 +21,17 @@ Scan&Fix (자동차 자동 수리 로봇) - 웹 서버 (Flask + SQLite)
 import json
 import logging
 import math
+import html
 import os
+import secrets
 import smtplib
 import sqlite3
 import threading
 from email.message import EmailMessage
 from email.utils import formataddr
 from functools import wraps
+
+from itsdangerous import BadSignature, URLSafeTimedSerializer
 
 from flask import Flask, abort, jsonify, redirect, render_template, request, send_file, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -57,7 +61,27 @@ import db  # noqa: E402
 from robot_files import RobotFiles  # noqa: E402
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("REPAIR_SECRET", "change-this-secret")
+
+
+def _secret_key():
+    """REPAIR_SECRET, else a random key kept in web/.secret_key (git 제외): the old fixed default was public in the
+    repository, so anyone could forge a login cookie or a mail login link."""
+    if os.environ.get("REPAIR_SECRET"):
+        return os.environ["REPAIR_SECRET"]
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".secret_key")
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        key = secrets.token_hex(32)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write(key)
+        return key
+
+
+app.secret_key = _secret_key()
+app.config["TEMPLATES_AUTO_RELOAD"] = True   # debug=False 라도 templates/*.html 수정이 새로고침만으로 반영
 API_KEY = os.environ.get("REPAIR_API_KEY", "rokey-robot-key")
 ROSBRIDGE_URL = os.environ.get("ROSBRIDGE_URL", "")   # 비우면 브라우저가 ws://<접속한 호스트>:ROSBRIDGE_PORT 사용
 ROSBRIDGE_PORT = int(os.environ.get("ROSBRIDGE_PORT", 9090))   # run_web.sh --lan: 9091 (lan_relay.py)
@@ -85,6 +109,7 @@ SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.gmail.com")   # 네이버: smtp.na
 SMTP_PORT = int(os.environ.get("SMTP_PORT", "465"))         # SSL
 SITE_URL = os.environ.get("SITE_URL", "").rstrip("/")
 MAIL_DRY_RUN = os.environ.get("MAIL_DRY_RUN") == "1"
+MAIL_LINK_DAYS = int(os.environ.get("MAIL_LINK_DAYS", "7"))   # 메일의 "결과 보기" 바로 로그인 링크 유효 기간
 
 mail_log = logging.getLogger("repair.mail")
 mail_log.setLevel(logging.INFO)
@@ -165,15 +190,31 @@ def _build_mail(con, job_id, kind):
             lines.append(f"교체한 부품: {', '.join(dict.fromkeys(parts))}" if parts else f"내용: {j['summary'] or '-'}")
         elif kind == "on_hold" and j["summary"]:
             lines.append(f"사유: {j['summary']}")
-    if SITE_URL:
-        lines += ["", f"결과 보기: {SITE_URL}/my"]
+    link = f"{SITE_URL}/m/{_mail_links().dumps({'u': j['owner_id'], 'j': job_id})}" if SITE_URL else None
+    if link:
+        lines += ["", f"결과 보기 (로그인 없이 바로 열림, {MAIL_LINK_DAYS}일 동안): {link}"]
 
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = formataddr((SERVICE_NAME, SMTP_USER or "dry-run@localhost"))
     msg["To"] = j["email"]
     msg.set_content("\n".join(lines))
+    # 같은 내용의 HTML: "결과 보기" 버튼을 누르면 바로 내 차량 화면 (텍스트만 보는 메일 프로그램은 위 링크)
+    body = "".join(f"<p style='margin:0 0 6px'>{html.escape(line)}</p>" if line else "<br>"
+                   for line in lines if not line.startswith("결과 보기"))
+    if link:
+        body += (f"<p style='margin:18px 0'><a href='{html.escape(link)}' style='background:#2f6fd6;color:#fff;"
+                 "padding:10px 18px;border-radius:6px;text-decoration:none;font-weight:600'>결과 보기</a></p>"
+                 f"<p style='color:#777;font-size:12px'>로그인 없이 바로 열립니다 ({MAIL_LINK_DAYS}일 동안 유효). "
+                 "다른 사람에게 전달하지 마세요.</p>")
+    msg.add_alternative(f"<div style='font-family:sans-serif;font-size:14px;line-height:1.6'>{body}</div>",
+                        subtype="html")
     return msg
+
+
+def _mail_links():
+    """Signed, expiring login links for the owner (secret_key), so the mail's button opens the page directly."""
+    return URLSafeTimedSerializer(app.secret_key, salt="mail-login")
 
 
 MAIL_LABEL = {"start": "수리 시작 알림"}
@@ -241,11 +282,12 @@ def require(*roles):
 
 # 로봇 프로그램 결과 파일 · 실시간 힘 그래프 · 점군 (기본 경로: 이 저장소의 ws_cobot_pjt/ws_cobot_pjt, run_web.sh 는 환경변수로 넘김)
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-RobotFiles(os.environ.get("ROKEY_DIR", os.path.join(REPO, "ws_cobot_pjt/ws_cobot_pjt/src/rokey")),
+robot_files = RobotFiles(os.environ.get("ROKEY_DIR", os.path.join(REPO, "ws_cobot_pjt/ws_cobot_pjt/src/rokey")),
            os.environ.get("SESSION_DIR", os.path.join(REPO, "ws_cobot_pjt/ws_cobot_pjt/session")),
            [*(d for d in os.environ.get("SCENE_DIRS", "").split(os.pathsep) if d),
             os.path.join(os.path.dirname(os.path.abspath(__file__)), "static/robot/scene")]   # 고정 실차 메시 (마지막)
-           ).register(app, require("admin"))
+           )
+robot_files.register(app, require("admin"))
 
 
 def can_see_vehicle(vehicle_id):
@@ -315,6 +357,21 @@ def login():
             return redirect(target if target.startswith("/") and not target.startswith("//") else url_for("home"))
         error = "아이디 또는 비밀번호가 맞지 않습니다."
     return render_template("login.html", error=error)
+
+
+@app.route("/m/<token>")
+def mail_login(token):
+    """메일 "결과 보기" 링크: 서명·기간 확인 후 그 차주로 로그인하고 내 차량 화면으로. 만료·위조면 로그인 화면"""
+    try:
+        data = _mail_links().loads(token, max_age=MAIL_LINK_DAYS * 86400)
+    except BadSignature:   # SignatureExpired 포함
+        return redirect(url_for("login", next="/my"))
+    u = db.get_db().execute("SELECT * FROM users WHERE id = ?", (data.get("u"),)).fetchone()
+    if u is None or u["role"] != "user":   # 차주 계정만 (관리자 권한은 링크로 주지 않음)
+        return redirect(url_for("login", next="/my"))
+    session.clear()
+    session.update(user_id=u["id"], user=u["username"], name=u["name"] or u["username"], role=u["role"])
+    return redirect(url_for("my_page"))
 
 
 @app.route("/logout")
@@ -607,6 +664,32 @@ def current_job():
         where.append("j.vehicle_id = ?"); args.append(int(request.args["vehicle_id"]))
     j = db.get_db().execute(JOB_SQL + " WHERE " + " AND ".join(where) + " ORDER BY j.id DESC LIMIT 1", args).fetchone()
     return jsonify(job_detail(j["id"]) if j else None)
+
+
+@app.get("/api/jobs/<int:job_id>/cloud")
+@require()
+def job_cloud(job_id):
+    """진행 중인 작업의 실시간 측정점 (차주 화면 3D): 차량 좌표 mm (car.glb 축), 실차 크기와 함께.
+    본인 차량 작업만, 진행 중일 때만 (끝난 작업은 204). 바뀌지 않았으면 304"""
+    j = job_or_404(job_id)
+    if j["status"] != "running":
+        return "", 204
+    from datetime import datetime
+    started = datetime.strptime(j["started_at"], "%Y-%m-%d %H:%M:%S").timestamp()
+    try:
+        cloud = robot_files.vehicle_cloud(started)
+    except (OSError, KeyError, ValueError) as error:
+        return jsonify(error=f"측정점을 읽을 수 없습니다: {error}"), 500
+    if cloud is None:
+        return jsonify(points=[], size=None)
+    points, size, mtime = cloud
+    tag = f'"{job_id}-{mtime:.3f}"'
+    if request.headers.get("If-None-Match") == tag:
+        return "", 304
+    response = jsonify(points=points, size=size)
+    response.headers["ETag"] = tag
+    response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 @app.get("/api/jobs/<int:job_id>")

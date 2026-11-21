@@ -5,6 +5,9 @@
   GET /api/robot/clouds/<name>         the running program's RViz cloud, session/clouds/<name>.npy (float32 BASE m)
   GET /api/robot/scene/<name>.stl      a mesh of the simulation scene (/dsr01/sim_scene markers reference
                                        scene/<name>.stl), found by name in the scene directories, first match
+  vehicle_cloud(started)              the running scan's measured points in the vehicle frame for the owner's car view
+                                       (app.py /api/jobs/<id>/cloud): mm, glTF axes of car.glb (x front from the rear, y up,
+                                       z right from the left side) at the real vehicle's size; the page scales to its model
   GET /api/robot/fixed-scene           the real cell without a simulation: the team vehicle at its measured pose
                                        (rokey config/real_scene.yaml vehicle), as /sim_scene markers (meshes
                                        static/robot/scene/real_<part>.stl, made by rokey RealVehicle().export)"""
@@ -86,7 +89,8 @@ class RobotFiles:
         """The team vehicle where it always stands (real_scene.yaml), in the MarkerArray JSON of /sim_scene."""
         import yaml
         try:
-            cell = yaml.safe_load((self.rokey / 'config/real_scene.yaml').read_text())['vehicle']
+            real = yaml.safe_load((self.rokey / 'config/real_scene.yaml').read_text())
+            cell = real['vehicle']
             spec = yaml.safe_load((self.rokey / 'config/vehicles.yaml').read_text())['real']
         except (OSError, KeyError, TypeError) as error:
             return jsonify(error=f'실차 배치 설정을 읽을 수 없습니다: {error}'), 404
@@ -102,7 +106,53 @@ class RobotFiles:
                         scale=dict(x=0.001, y=0.001, z=0.001),
                         color=dict(r=colors[part][0], g=colors[part][1], b=colors[part][2], a=1.0))
                    for index, part in enumerate(VEHICLE_PARTS)]
-        return jsonify(markers=markers, pose_base_mm_deg=[x, y, yaw], base_z_mm=z)
+        return jsonify(markers=markers, pose_base_mm_deg=[x, y, yaw], base_z_mm=z,
+                       probe_tcp_mm_deg=(real.get('probe') or {}).get('tcp_mm_deg'))   # the held probe in the viewer
+
+    MAX_POINTS = 6000   # owner's view: enough to see the strokes, small enough to poll every 2 s
+
+    def vehicle_frame(self):
+        """(pose x, y, yaw [mm, deg], base z, bounds min/max [mm]) of the real vehicle: real_scene.yaml and the
+        vehicle-frame meshes static/robot/scene/real_*.stl (x front, y left, z up), cached by file times."""
+        files = [self.rokey / 'config/real_scene.yaml', self.rokey / 'config/vehicles.yaml',
+                 *sorted(p for d in self.scene_dirs if d.is_dir() for p in d.glob('real_*.stl'))]
+        stamp = tuple(f.stat().st_mtime for f in files if f.exists())
+        if getattr(self, '_frame', (None,))[0] != stamp:
+            import numpy as np
+            import yaml
+            cell = yaml.safe_load(files[0].read_text())['vehicle']
+            spec = yaml.safe_load(files[1].read_text())['real']
+            z = cell['base_z_mm'] if cell.get('base_z_mm') is not None else cell.get('table_z_mm', 0.0) + spec.get('lift_mm', 0.0)
+            low, high = np.full(3, np.inf), np.full(3, -np.inf)
+            for path in files[2:]:
+                data = path.read_bytes()
+                vertices = np.frombuffer(data, dtype=[('n', '<f4', 3), ('v', '<f4', (3, 3)), ('a', '<u2')],
+                                         count=int.from_bytes(data[80:84], 'little'), offset=84)['v'].reshape(-1, 3)
+                low, high = np.minimum(low, vertices.min(0)), np.maximum(high, vertices.max(0))
+            self._frame = stamp, (*cell['pose_base_mm_deg'], z, low, high)
+        return self._frame[1]
+
+    def vehicle_cloud(self, started):
+        """Measured contact points of the scan running since `started` (epoch s), or None: session/clouds/measured.npy
+        (BASE m) -> vehicle frame -> car.glb axes [mm]. Returns (flat float list, real size [L, H, W] mm, file time)."""
+        import numpy as np
+        path = self.session / 'clouds' / 'measured.npy'
+        try:
+            stat = path.stat()
+        except FileNotFoundError:
+            return None
+        if stat.st_mtime < started:   # a previous job's points (each scan clears the file when it starts)
+            return None
+        points = np.load(path).astype(float)[:, :3] * 1000.
+        x, y, yaw, z, low, high = self.vehicle_frame()
+        c, s = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
+        d = points - [x, y, z]
+        local = np.c_[c * d[:, 0] + s * d[:, 1], -s * d[:, 0] + c * d[:, 1], d[:, 2]]   # Rz(-yaw)
+        if len(local) > self.MAX_POINTS:
+            local = local[np.linspace(0, len(local) - 1, self.MAX_POINTS).astype(int)]
+        gltf = np.c_[local[:, 0] - low[0], local[:, 2] - low[2], high[1] - local[:, 1]]
+        size = [float(high[0] - low[0]), float(high[2] - low[2]), float(high[1] - low[1])]
+        return np.round(gltf, 1).ravel().tolist(), size, stat.st_mtime
 
     def register(self, app, guard):
         app.add_url_rule('/api/robot/scene/<name>', 'robot_scene', guard(self.scene))

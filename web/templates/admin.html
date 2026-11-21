@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{ service_name }} · 정비 관제</title>
+<title>{{ service_name }}</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='robot.css') }}">
 <script src="{{ url_for('static', filename='vendor/roslib/roslib.min.js') }}"></script>
@@ -17,7 +17,7 @@
 </head>
 <body>
 <header class="top">
-  <div class="brand"><span class="dot"></span> {{ service_name }} · 정비 관제 <span class="role-tag">관리자</span></div>
+  <div class="brand"><span class="dot"></span> {{ service_name }} <span class="role-tag">관리자</span></div>
   <nav class="tabs">
     <button class="tab active" data-tab="robot">로봇·수리</button>
     <button class="tab" data-tab="stock">재고</button>
@@ -28,7 +28,6 @@
   <div class="conn">
     <span id="robotState" class="robot-state off" title="로봇 상태"><i></i><span>연결 끊김</span></span>
     <span id="rosState" class="pill off">로봇 연결 안 됨</span>
-    <label class="demo"><input type="checkbox" id="demoMode"> 데모 모드</label>
     <span class="user">{{ name }}</span>
     <a href="{{ url_for('logout') }}" class="btn ghost small">로그아웃</a>
   </div>
@@ -146,6 +145,7 @@
         <p id="jobTime" class="note"></p>
         <h3>진행 단계</h3>
         <ol id="steps" class="steps">
+          <li data-stage="plan">경로 계획 <small>자동만</small></li>
           <li data-stage="scan">표면 스캔(연속 접촉) <small>자동만</small></li>
           <li data-stage="detect">손상 판정 <small>자동만</small></li>
           <li data-stage="stock">재고 확인</li>
@@ -179,7 +179,8 @@
           <h3>표시</h3>
           <label class="robot-check"><input type="checkbox" checked data-robot-display="visual">로봇 외형</label>
           <label class="robot-check"><input type="checkbox" data-robot-display="collision">충돌 형상</label>
-          <label class="robot-check"><input type="checkbox" data-robot-display="frames">링크 좌표축</label>
+          <label class="robot-check"><input type="checkbox" checked data-robot-display="probe">탐침 (그리퍼에 파지)</label>
+          <label class="robot-check"><input type="checkbox" data-robot-display="frames">좌표축 (원점·TCP·링크)</label>
           <label class="robot-check"><input type="checkbox" checked data-robot-display="grid">격자 (0.1 m)</label>
           <label class="robot-check"><input type="checkbox" checked data-robot-objects>차량 메시</label>
           <label class="robot-check"><input type="checkbox" checked data-robot-cloud="reference">기준 점군 (계획 후: 측정 가능 영역)</label>

@@ -21,9 +21,8 @@ export class RobotPanel {
       this.viewer.setObjectsVisible(event.target.checked));
     panel.querySelectorAll("[data-robot-cloud]").forEach((input) =>
       input.addEventListener("change", () => this.viewer.setCloudVisible(input.dataset.robotCloud, input.checked)));
-    this.rosStatus = panel.querySelector("[data-ros-connection]");
     robotControl.addEventListener("state", () => this.followMode());
-    panel.querySelector("[data-robot-connect]").addEventListener("click", () => {
+    this.status.addEventListener("click", () => {   // 3D 카드의 연결 상태 표시를 누르면 다시 연결 (ROS 연결 카드 대신)
       robotControl.reconnect();
       this.connect();
     });
@@ -53,14 +52,6 @@ export class RobotPanel {
       const frame = this.panel.querySelector("[data-robot-frame]");
       frame.replaceChildren(...Object.keys(robot.links).map((name) => new Option(name, name)));
       frame.value = this.viewer.tcpFrame;
-      const names = Object.keys(robot.joints).filter((name) => robot.joints[name].jointType !== "fixed");
-      const rows = this.panel.querySelector("[data-robot-joints]");
-      rows.replaceChildren(...names.map((name) => {
-        const row = document.createElement("tr");
-        const label = document.createElement("td"), value = document.createElement("td");
-        label.textContent = name; value.textContent = "—"; value.dataset.joint = name;
-        row.append(label, value); return row;
-      }));
       this.message.textContent = "";
       this.message.hidden = true;
       this.panel.dataset.modelLoaded = "true";
@@ -106,14 +97,8 @@ export class RobotPanel {
     const states = { connecting: "연결 중", waiting: "연결됨 · 관절값 대기", error: "연결 오류", disconnected: "연결 끊김" };
     this.status.textContent = receiving ? "관절값 수신 중" : (this.connection === "waiting" && Number.isFinite(age)
       ? "관절 데이터 수신 중단" : states[this.connection] || "연결 대기");
-    this.status.className = `pill ${receiving ? "on" : "off"}`;
-    this.rosStatus.textContent = robotControl.live ? "연결됨" : robotControl.connected ? "로봇 응답 대기" : "연결 대기";
-    this.rosStatus.className = `pill ${robotControl.live ? "on" : "off"}`;
+    this.status.className = `pill pill-button ${receiving ? "on" : "off"}`;
     if (!this.viewer.tcpFrame) return;
-    for (const cell of this.panel.querySelectorAll("[data-joint]")) {
-      const value = this.viewer.robot.joints[cell.dataset.joint].angle;
-      cell.textContent = `${(value * 180 / Math.PI).toFixed(2)}°`;
-    }
     const pose = this.viewer.pose();
     this.panel.querySelector("[data-robot-position]").textContent = pose.position.map((x) => x.toFixed(4)).join("  ");
     this.panel.querySelector("[data-robot-orientation]").textContent = pose.quaternion.map((x) => x.toFixed(4)).join("  ");

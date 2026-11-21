@@ -8,6 +8,9 @@ const CLOUD_COLORS = { reference: 0x5a96ff, measured: 0xff6e1e };
 const OBJECT_MESHES = new Set(["vehicle", "holder", "contact_block", "hemisphere", "fixed_vehicle"]);
 // 시뮬레이터 없이 그리는 고정 실차 (robot_files.py /api/robot/fixed-scene). 시뮬레이션 장면이 오면 그것으로 바꾼다
 const FIXED_NS = "fixed_vehicle";
+// RG2 finger joint at the 28.6 mm the probe is held at (onrobot_rg_control jointValueToWidth inverted):
+// width = 2000 (0.055 cos(a + 0.76794) - 0.0144 + 0.108505 cos(1.41371)) [mm]
+const HELD_FINGER_RAD = Math.acos((28.6 / 2000 + .0144 - .108505 * Math.cos(1.41371)) / .055) - .76794;
 
 /** RViz-style robot display. All model transforms use ROS meters/radians and Z-up. */
 export class RobotViewer {
@@ -15,7 +18,7 @@ export class RobotViewer {
     this.host = host;
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x18212c);
-    this.camera = new THREE.PerspectiveCamera(42, 1, .005, 100);
+    this.camera = new THREE.PerspectiveCamera(42, 1, .001, 100)   // near 1 mm: close zoom on the probe tip;
     this.camera.up.set(0, 0, 1);
     this.camera.position.set(1.6, -1.8, 1.3);
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -25,7 +28,8 @@ export class RobotViewer {
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.target.set(.1, 0, .45);
-    this.controls.minDistance = .08;
+    this.controls.minDistance = .01;   // 1 cm from the target: scan points up close
+    this.controls.zoomToCursor = true;  // the wheel zooms toward the point under the mouse
     this.controls.maxDistance = 15;
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0x596a80, 2.3));
     for (const [position, intensity] of [[[2, -3, 4], 2.4], [[-2, 2, 1], 1.2]]) {
@@ -37,9 +41,12 @@ export class RobotViewer {
     this.grid.rotation.x = Math.PI/2;
     this.scene.add(this.grid);
     this.baseAxes = new THREE.AxesHelper(.2);
+    this.baseAxes.visible = false;   // base and TCP axes follow the 좌표축 checkbox (off by default)
     this.scene.add(this.baseAxes);
     this.frames = [];
     this.showFrames = false;
+    this.showProbe = true;
+    this.probeTcpMm = 282.5;  // flange -> probe tip bottom along link_6 z (real_scene.yaml probe.tcp_mm_deg, fixed-scene)
     this.showVisual = true;
     this.showCollision = false;
     this.collisionMaterial = new THREE.MeshBasicMaterial({ color: 0x5ce0bc, wireframe: true,
@@ -83,6 +90,7 @@ export class RobotViewer {
     this.tcpFrame = this.metadata.tcp_frame;
     this.tcpAxes = new THREE.AxesHelper(.12);
     this.robot.links[this.tcpFrame].add(this.tcpAxes);
+    this.loadProbe();
     this.setDisplay();
     if (this.latest) this.applyJointState(this.latest);
     this.fit();
@@ -96,9 +104,14 @@ export class RobotViewer {
     const values = Object.fromEntries(message.name.map((name, i) => [name, message.position[i]]));
     const joints = Object.entries(values).sort(([a], [b]) =>
       Number(!!this.robot.joints[a]?.mimicJoint) - Number(!!this.robot.joints[b]?.mimicJoint));
+    const holding = this.probe?.visible;
     for (const [name, value] of joints) {
+      if (holding && name.startsWith("rg2_")) continue;   // drawn closed on the probe below
       if (Number.isFinite(value)) this.robot.joints[name]?.setJointValue(value);
     }
+    // The real RG2 reports no finger angle (its joints stay 0: open): with the probe shown, the fingers close on it
+    // at the width it is held at (real_scene.yaml held_width_mm, RG2 28.6 mm), mimic joints following.
+    if (holding) this.robot.joints.rg2_finger_joint?.setJointValue(HELD_FINGER_RAD);
     this.robot.updateMatrixWorld(true);
   }
 
@@ -108,9 +121,10 @@ export class RobotViewer {
     this.sceneObjects ??= new Map();
     if (fixed && this.simScene) return;
     if (!fixed && !this.simScene) {
-      this.simScene = true;
+      this.simScene = true;  // its own probe markers: the held probe below is hidden
       for (const [key, object] of this.sceneObjects)
         if (object.userData.ns === FIXED_NS) { this.scene.remove(object); this.sceneObjects.delete(key); }
+      this.placeProbe();
     }
     for (const marker of message.markers) {
       const key = `${marker.ns}/${marker.id}`;
@@ -133,7 +147,7 @@ export class RobotViewer {
     let points = this.clouds.get(name);
     if (!points) {
       points = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({
-        color: CLOUD_COLORS[name] ?? 0xffffff, size: 2, sizeAttenuation: false }));
+        color: CLOUD_COLORS[name] ?? 0xffffff, size: 1.2, sizeAttenuation: false }));
       points.visible = this.cloudVisible?.[name] ?? true;
       this.clouds.set(name, points);
       this.scene.add(points);
@@ -169,14 +183,42 @@ export class RobotViewer {
   }
 
   setDisplay({ visual = this.showVisual, collision = this.showCollision,
-               frames = this.showFrames, grid = this.grid.visible } = {}) {
-    Object.assign(this, { showVisual: visual, showCollision: collision, showFrames: frames });
+               frames = this.showFrames, grid = this.grid.visible, probe = this.showProbe } = {}) {
+    Object.assign(this, { showVisual: visual, showCollision: collision, showFrames: frames, showProbe: probe });
+    this.placeProbe();
     this.grid.visible = grid;
-    for (const axes of this.frames) axes.visible = frames;
+    for (const axes of [...this.frames, this.baseAxes, this.tcpAxes]) if (axes) axes.visible = frames;
     this.robot?.traverse((object) => {
       if (object.isURDFVisual) object.visible = visual;
       if (object.isURDFCollider) object.visible = collision;
     });
+  }
+
+  /** The probe held in the RG2 (meshes/probe_v3_5mm.stl, mm, tip frame: +z to its top, the ball at the bottom) on
+   *  link_6 as native/probe_tool.py mounts it (grip axis x: tip +z opposite link_6 z), its ball bottom at the TCP. */
+  async loadProbe() {
+    try {
+      const geometry = await new STLLoader().loadAsync("/static/robot/probe_v3_5mm.stl");
+      geometry.scale(.001, .001, .001);
+      geometry.computeBoundingBox();
+      this.probe = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0xd9dee5, metalness: .25, roughness: .45 }));
+      this.probe.rotation.x = Math.PI;
+      this.robot.links.link_6.add(this.probe);
+      this.placeProbe();
+    } catch (error) { console.warn("탐침 모델 로딩 실패", error); }
+  }
+
+  /** Flange-to-tip distance (mm) of the real cell's probe TCP. */
+  setProbeTcp(mm) {
+    if (Number.isFinite(mm) && mm > 0) this.probeTcpMm = mm;
+    this.placeProbe();
+  }
+
+  placeProbe() {
+    if (!this.probe) return;
+    this.probe.position.set(0, 0, this.probeTcpMm / 1000 + this.probe.geometry.boundingBox.min.z);
+    this.probe.visible = this.showProbe && !this.simScene;
+    if (this.latest) this.applyJointState(this.latest);   // fingers closed on it, or back to the reported angle
   }
 
   setTcpFrame(name) {

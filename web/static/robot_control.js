@@ -6,6 +6,8 @@ export function rosbridgeUrl() {
   return `${secure ? "wss" : "ws"}://${location.hostname}:${port}`;
 }
 
+const COMMAND_TOPICS = ["/robot/command", "/repair/command", "/robot/teleop"];   // web -> web_control / teleop
+
 /** Shared command connection: readiness comes from web_control's heartbeat, not the WebSocket alone. */
 class RobotControlClient extends EventTarget {
   constructor() {
@@ -63,6 +65,7 @@ class RobotControlClient extends EventTarget {
     if (this.robots.has(robot)) return;
     const ros = this.ros, record = { received: -Infinity };
     this.robots.set(robot, record);
+    for (const path of COMMAND_TOPICS) this.output(this.topic(path, robot));   // matched long before the first command
     new ROSLIB.Topic({ ros, name: this.topic("/robot/status", robot), messageType: "std_msgs/msg/String" })
       .subscribe((message) => {
         if (ros !== this.ros) return;
@@ -105,11 +108,19 @@ class RobotControlClient extends EventTarget {
   get ready() { return this.live && this.status?.ready; }
   emit() { this.dispatchEvent(new CustomEvent("state", { detail: this.status })); }
 
+  /** Advertised once and kept: rosbridge creates a publisher on the first publish and sends at once, before the
+   *  subscriber (web_control, VOLATILE) is matched, so a first message on a new topic was lost (수리 시작 did nothing). */
+  output(name) {
+    if (!this.outputs.has(name)) {
+      const topic = new ROSLIB.Topic({ ros: this.ros, name, messageType: "std_msgs/msg/String" });
+      topic.advertise();
+      this.outputs.set(name, topic);
+    }
+    return this.outputs.get(name);
+  }
+
   publish(path, value) {
-    const name = this.topic(path);
-    if (!this.outputs.has(name)) this.outputs.set(name,
-      new ROSLIB.Topic({ ros: this.ros, name, messageType: "std_msgs/msg/String" }));
-    this.outputs.get(name).publish(new ROSLIB.Message({ data: JSON.stringify(value) }));
+    this.output(this.topic(path)).publish(new ROSLIB.Message({ data: JSON.stringify(value) }));
   }
 
   start(task, parameters, requestId, vehicleId) {

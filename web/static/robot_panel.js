@@ -76,7 +76,11 @@ export class RobotPanel {
   async loadFixedScene() {
     try {
       const response = await fetch("/api/robot/fixed-scene");
-      if (response.ok) this.viewer.applyScene(await response.json(), { fixed: true });
+      if (response.ok) {
+        const scene = await response.json();
+        this.viewer.applyScene(scene, { fixed: true });
+        this.viewer.setProbeTcp(scene.probe_tcp_mm_deg?.[2]);
+      }
       else console.warn("고정 실차 장면 없음", (await response.json().catch(() => ({}))).error);
     } catch (error) { console.warn(error); }
   }

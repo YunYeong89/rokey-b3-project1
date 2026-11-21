@@ -38,18 +38,17 @@
     <div class="robot-layout">
       <div class="robot-main">  <!-- 왼쪽: 로봇 3D → 부품 탐색(수동) → 힘 그래프·결과 → 진행 로그, 간격 없이 이어짐 -->
         <div class="card robot-scene-card">
-          <div class="cardhead"><h2>실시간 현황 <small>M0609 + RG2</small></h2><span data-robot-status class="pill off">연결 대기</span></div>
+          <div class="cardhead"><h2>실시간 현황 <small>M0609 + RG2</small></h2><button type="button" data-robot-status class="pill off pill-button" title="누르면 로봇(rosbridge)에 다시 연결">연결 대기</button></div>
           <div class="robot-meta"><span>Fixed frame: base_link</span><span>길이: m · 관절: deg</span>
             <span class="robot-axis"><b>X</b><b>Y</b><b>Z</b></span></div>
-          <div class="robot-canvas" data-robot-viewer><div class="robot-message" data-robot-message>로봇 탭에서 모델과 관절값을 불러옵니다.</div></div>
           <div class="robot-tools">
             <button class="btn ghost-dark small" data-robot-fit>전체 보기</button>
             <button class="btn ghost-dark small" data-robot-view="iso">기본</button>
             <button class="btn ghost-dark small" data-robot-view="front">정면</button>
             <button class="btn ghost-dark small" data-robot-view="side">측면</button>
             <button class="btn ghost-dark small" data-robot-view="top">위에서</button>
-            <span class="note">드래그: 회전 · 우클릭: 이동 · 휠: 확대</span>
           </div>
+          <div class="robot-canvas" data-robot-viewer><div class="robot-message" data-robot-message>로봇 탭에서 모델과 관절값을 불러옵니다.</div></div>
         </div>
         <!-- 부품 탐색: 수리 카드에서 수동 모드를 고른 경우에만 표시 (admin.js) -->
         <section class="card inspection-card" data-inspection hidden>
@@ -111,6 +110,8 @@
         <div class="card logcard-my robot-log-card">
           <h2>진행 로그</h2>
           <ul id="log" class="log"></ul>
+          <!-- 로봇 프로그램 출력 (web_control). 실패 원인(Traceback 등)은 여기에만 나옴 -->
+          <details><summary>로봇 실행 로그 (오류 확인용)</summary><pre class="robot-task-log" data-task-log></pre></details>
         </div>
       </div>
       <aside class="robot-side">
@@ -127,7 +128,7 @@
         </div>
 
         <div id="partPick" class="part-pick hidden">
-          <div class="field-label">교체할 부품 <small>(로봇 교체 가능 부품만 · 3D 화면에서 눌러도 선택돼요)</small></div>
+          <div class="field-label">교체할 부품 <small>(로봇 교체 가능 부품만)</small></div>
           <div id="partPickList"></div>
         </div>
 
@@ -159,23 +160,6 @@
         <div id="partsList" class="parts-list"><p class="note">–</p></div>
       </div>
         <div class="card">
-          <h3>ROS 기능 제어</h3>
-          <p class="note" data-task-status>ROS 제어 노드 응답 대기</p>
-          <label>실행 기능<select data-task-select><option>연결 대기</option></select></label>
-          <div data-task-fields></div>
-          <div class="robot-task-buttons">
-            <button class="btn primary small" data-task-start disabled>실행</button>
-          </div>
-          <p class="form-msg err" data-task-error role="alert"></p>
-          <p class="note">로봇 정지는 선택한 로봇의 동작과 대기 중인 검사 순서를 중지합니다.</p>
-          <details><summary>실행 로그</summary><pre class="robot-task-log" data-task-log></pre></details>
-        </div>
-        <div class="card">
-          <h3>ROS 연결</h3>
-          <span data-ros-connection class="pill off" role="status">연결 대기</span>
-          <button class="btn primary small" data-robot-connect>다시 연결</button>
-        </div>
-        <div class="card">
           <h3>표시</h3>
           <label class="robot-check"><input type="checkbox" checked data-robot-display="visual">로봇 외형</label>
           <label class="robot-check"><input type="checkbox" data-robot-display="collision">충돌 형상</label>
@@ -189,7 +173,6 @@
           <p class="note">base_link 기준 위치 [m]</p><div class="robot-pose" data-robot-position>—</div>
           <p class="note">Quaternion [x, y, z, w]</p><div class="robot-pose" data-robot-orientation>—</div>
         </div>
-        <div class="card"><h3>관절각</h3><table class="tbl robot-joints"><thead><tr><th>관절</th><th>deg</th></tr></thead><tbody data-robot-joints></tbody></table></div>
       </aside>
     </div>
       <!-- 모형 차 3D 는 화면에서 뺐지만, 데모 모드가 차 형상(스캔 구역·표면)을 계산하는 데 쓰므로 숨긴 채 둔다 -->

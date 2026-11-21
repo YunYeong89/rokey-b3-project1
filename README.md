@@ -24,7 +24,7 @@ Docker 이미지 파일은 별도 공유하지 않으며, 문서의 Docker 이�
 
 ```text
 rokey-b3-project1/
-├── web/              # 웹 (Flask, :5050) — 관리자 정비 관제 · 로봇 탭 · 고객 화면 · 알림 메일
+├── web/              # 웹 (Flask, :5050) — 관리자 화면(로봇·수리) · 고객 화면 · 알림 메일
 ├── ws_cobot_pjt/     # ROS 워크스페이스 배포본
 │   ├── native/       # macOS Gazebo/RViz 표시, 세션 관리 (session.py)
 │   ├── run_web.sh    # 웹 + rosbridge + web_control 함께 실행

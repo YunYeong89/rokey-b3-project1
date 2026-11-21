@@ -185,11 +185,12 @@ export class RobotTaskPanel {
     this.status = panel.querySelector("[data-task-status]");
     this.log = panel.querySelector("[data-task-log]");
     this.error = panel.querySelector("[data-task-error]");
-    this.select.addEventListener("change", () => this.renderFields());
-    this.fields.addEventListener("change", () => this.refresh());
-    this.startButton.addEventListener("click", () => this.start());
+    // "ROS 기능 제어" 카드는 화면에서 뺐음: 기능 선택·실행 칸이 없으면 로봇 정지 버튼과 실행 로그만 다룸
+    this.select?.addEventListener("change", () => this.renderFields());
+    this.fields?.addEventListener("change", () => this.refresh());
+    this.startButton?.addEventListener("click", () => this.start());
     this.stopButton.addEventListener("click", () => {
-      try { robotControl.stop(); } catch (error) { this.error.textContent = error.message; }
+      try { robotControl.stop(); } catch (error) { if (this.error) this.error.textContent = error.message; else alert(error.message); }
     });
     robotControl.addEventListener("state", () => this.refresh());
     this.refresh();
@@ -240,6 +241,11 @@ export class RobotTaskPanel {
 
   refresh() {
     const state = robotControl.status;
+    if (!this.select) {   // 기능 실행 칸 없음: 정지 버튼 상태와 실행 로그만
+      this.stopButton.disabled = !robotControl.live || state?.state === "stopping";
+      if (this.log && state?.log !== this.log.textContent) this.log.textContent = state?.log || "";
+      return;
+    }
     if (state?.catalog && !this.catalog) {
       this.catalog = state.catalog.filter((item) => !item.panel && !item.virtual &&
         !["choose_car", "scan_surface", "real_scan", "box_scan", "defect_scan", "pick_probe"].includes(item.id));

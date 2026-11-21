@@ -15,7 +15,9 @@ const SPEEDS = [["1", 2], ["2", 5], ["3", 15], ["4", 30], ["5", 50]];  // mm/s (
 export class RobotTeleop {
   constructor(panel) {
     this.toggle = Object.assign(document.createElement("button"), { className: "btn small", textContent: "Teleop" });
-    panel.querySelector(".robot-task-buttons").append(this.toggle);
+    // 3D 화면 위 툴바 (자동·수동 모드 모두 보임). 예전 자리(부품 탐색 카드)는 수동 모드에서만 보였음
+    const tools = panel.querySelector(".robot-tools");
+    tools.append(this.toggle);
     this.toggle.addEventListener("click", () => (this.pop.hidden ? this.open() : this.close()));
     this.pop = this.build();
     document.body.append(this.pop);
@@ -39,7 +41,8 @@ export class RobotTeleop {
       <div class="teleop-row"><span class="note">그리퍼</span><span data-teleop-grip></span></div>
       <div class="teleop-row">
         <button class="btn danger small" data-teleop-stop>로봇 정지</button>
-        <button class="btn small" data-teleop-off>Teleop 끄기</button></div>
+        <button class="btn small" data-teleop-off>Teleop 끄기</button>
+        <button class="btn small" data-teleop-home title="Teleop 을 끝내고 HOME 자세로 (차 위면 먼저 위로)">HOME 복귀</button></div>
       <p class="form-msg err" data-teleop-error role="alert"></p>
       <p class="note">버튼을 누르고 있는 동안만 움직이고, 떼면 바로 멈춥니다.</p>`;
     const key = (name, html, area) => {
@@ -63,6 +66,8 @@ export class RobotTeleop {
     this.error = pop.querySelector("[data-teleop-error]");
     pop.querySelector("[data-teleop-close]").addEventListener("click", () => this.close());
     pop.querySelector("[data-teleop-off]").addEventListener("click", () => this.close());
+    this.homeButton = pop.querySelector("[data-teleop-home]");
+    this.homeButton.addEventListener("click", () => this.home());
     pop.querySelector("[data-teleop-stop]").addEventListener("click", () => {
       this.release();
       try { robotControl.stop(); } catch (error) { this.error.textContent = error.message; }
@@ -104,6 +109,23 @@ export class RobotTeleop {
       this.error.textContent = error.message;
       return false;
     }
+  }
+
+  /** HOME 복귀 (web_control task "home"): 한 번에 한 프로그램이라 Teleop 을 먼저 끝내고, 멈춘 뒤 시작한다. */
+  async home() {
+    if (!confirm("HOME 자세로 이동합니다 (차 위에 있으면 먼저 위로 올라간 뒤 이동).\n로봇 주변에 사람·물체가 없고, 보닛을 들고 있지 않은지 확인했나요?")) return;
+    this.release();
+    this.error.textContent = "";
+    try {
+      if (this.active) robotControl.stop();
+      for (const until = performance.now() + 15000; robotControl.status?.busy; ) {   // Teleop 종료 대기
+        if (performance.now() > until) throw new Error("Teleop 이 끝나지 않았습니다. 잠시 뒤 다시 누르세요.");
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+      this.request = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      robotControl.start("home", {}, this.request);
+    } catch (error) { this.error.textContent = error.message; }
+    this.refresh();
   }
 
   mark(name) {
@@ -152,7 +174,10 @@ export class RobotTeleop {
     this.toggle.classList.toggle("primary", active);
     this.toggle.textContent = active ? "Teleop 켜짐" : "Teleop";
     this.pop.querySelectorAll(".teleop-key, .teleop-step").forEach((button) => { button.disabled = !active; });
+    const homing = state?.task === "home" && state.state === "running";
+    this.homeButton.disabled = !robotControl.live || homing || (state?.busy && !active);
+    this.homeButton.textContent = homing ? "HOME 이동 중…" : "HOME 복귀";
     this.status.textContent = active ? "조작 가능" : !robotControl.live ? "ROS 제어 노드 응답 대기"
-      : state?.task === "teleop" ? state.message : "Teleop 시작 대기";
+      : homing ? "HOME 이동 중" : state?.task === "teleop" ? state.message : "Teleop 시작 대기";
   }
 }

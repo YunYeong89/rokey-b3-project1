@@ -15,9 +15,6 @@
 .robot-side .robot-check { display:flex; align-items:center; gap:8px; }
 .robot-side .robot-check input { width:auto; }
 .robot-meta { display:flex; flex-wrap:wrap; gap:12px; font-size:12px; color:#6b7f95; padding:0 18px 12px; }
-.robot-joints { font-variant-numeric:tabular-nums; font-size:11px; }
-.robot-joints td:first-child { overflow-wrap:anywhere; }
-.robot-joints td:last-child { white-space:nowrap; text-align:right; }
 .robot-pose { font:12px ui-monospace,monospace; white-space:pre-wrap; word-spacing:3px; }
 .robot-task-buttons { display:flex; gap:8px; margin-top:12px; }
 .robot-task-log { max-height:240px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font-size:11px; }
@@ -107,3 +104,7 @@
 .teleop-step { padding:6px 10px; border:1px solid var(--line); border-radius:8px; background:#fff; color:var(--ink); cursor:pointer; }
 .teleop-step.selected { border-color:var(--brand); color:var(--brand); font-weight:600; }
 @media (max-width:420px) { .teleop-pad { grid-template-columns:repeat(3, 56px); } .teleop-key { min-width:56px; } }
+
+/* 3D 카드의 연결 상태: 누르면 다시 연결 */
+.pill-button { border: 0; font: inherit; cursor: pointer; }
+.pill-button:hover { filter: brightness(.95); }

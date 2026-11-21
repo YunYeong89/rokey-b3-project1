@@ -111,7 +111,8 @@ class PosePD:
                     pd_saturated=self.position.limited or self.orientation.limited)
 
 
-PRESS_LIMIT = .005  # admittance offset along the TCP axis beyond the path, m: a stop (lifted, then resumed)
+PRESS_LIMIT = .005  # admittance offset along the press axis beyond the path, m: a stop (lifted, then resumed)
+POSITION_WORKSPACE_M = .015  # maximum distance from the measured ball centre to a position setpoint
 
 
 class PositionController:
@@ -131,7 +132,7 @@ class PositionController:
         self.command_position, self.command_orientation = self.position.copy(), self.orientation.copy()
         self.command_velocity, self.command_omega = np.zeros(3), np.zeros(3)
         self.ball_radius = 0.
-        self.force_target = self.press = self.press_velocity = 0.  # N; m and m/s along the TCP +z axis
+        self.force_target = self.press = self.press_velocity = 0.  # N; m and m/s along the session press axis
 
     def accept(self, packet):
         s = self.stream
@@ -173,7 +174,7 @@ class PositionController:
         if np.linalg.norm(feed[:3]) > limits[0] + 1e-8:
             raise ValueError('Sphere centre feedforward exceeds the requested speed')
         actual = np.asarray(s.state['position']) - radius * np.asarray(s.state['rotation'])[:, 2]
-        if np.linalg.norm(p - actual) > .015:
+        if np.linalg.norm(p - actual) > POSITION_WORKSPACE_M:
             raise ValueError('Cartesian target exceeds the local 15 mm workspace')
         self.goal, self.goal_rotation, self.feed = p, r, feed
         self.stiffness_scale, self.feedback_limit, self.force_target = stiffness, feedback_limit, force
@@ -217,12 +218,12 @@ class PositionController:
             self.press_velocity = float(np.clip(self.press_velocity, -b.maximum_velocity[2], b.maximum_velocity[2]))
             self.press += self.press_velocity * dt
             if abs(self.press) > PRESS_LIMIT:
-                return self.stop(f'Contact force offset exceeded {PRESS_LIMIT * 1000:.0f} mm along the TCP axis')
+                return self.stop(f'Contact force offset exceeded {PRESS_LIMIT * 1000:.0f} mm along the press axis')
         reference = self.position + self.press * axis
         s.tracking_error = float(np.linalg.norm(reference - pose[:3, 3]))
         if s.tracking_error > .01:
             return self.stop('Cartesian TCP tracking error exceeded 10 mm')
-        # With a force target only the admittance acts along the TCP axis, as the DSR force control: the position
+        # With a force target only the admittance acts along the press axis, as the DSR force control: the position
         # PD / restoration see the error across it (a position loop along it too stiffened the contact into a bounce).
         across = (lambda vector: vector - axis * (vector @ axis)) if self.force_target else (lambda vector: vector)
         qd = np.array([b.feedback_velocity.get(name, 0.) for name in s.chain.names])

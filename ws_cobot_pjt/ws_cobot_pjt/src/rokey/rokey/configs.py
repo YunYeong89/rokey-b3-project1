@@ -41,13 +41,18 @@ def write_session(name, data):
 
 
 class Config(dict):
-    """robot.yaml with the virtual session plan and the latest calibration result of this mode applied."""
+    """robot.yaml with the active cell's probe profiles and this mode's calibration result."""
 
     def __init__(self, mode):
         super().__init__(load('robot'))
         plan = read_session('probe_plan.json') if mode == 'virtual' else None
         if plan:
             self['probe'].update(tcp_name=plan['tcp_name'], tool_name=plan['tool_name'], tip_radius_mm=plan['probe_radius_mm'])
+        if mode == 'real':
+            cell = load('real_scene')['probe']
+            probe = self['probe']
+            probe.update(tool_name=cell.get('tool_weight_name') or probe['tool_name'],
+                         tcp_name=cell.get('pickup_tcp_name') or probe['tcp_name'])
         result = read_session('calibration_result.json')
         if result and result['mode'] == mode:
             self['scan']['touch_threshold'] = result['touch_threshold_n']

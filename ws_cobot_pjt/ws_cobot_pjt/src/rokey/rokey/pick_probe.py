@@ -36,19 +36,23 @@ SESSION_PLAN = SESSION / 'probe_plan.json'
 class ProbePickup:
     """HOME -> above the docked tip with the gripper aligned to it -> straight down -> grasp -> lift -> HOME."""
 
+    GEOMETRY_REJECTED = ('Grasp alignment rejected', 'fingertip is not seated', 'fingertip extends outside')
+    ATTACH_SETTLE_S = .25
+
     def __init__(self, node, robot, plan, motion):
         self.node, self.robot, self.plan, self.motion = node, robot, plan, motion
-        self.status = {}
+        self.status, self.status_at = {}, 0.
         self.sub = node.create_subscription(String, 'virtual_control/status', self.receive, 10)
 
     def receive(self, message):
         self.status = json.loads(message.data)
+        self.status_at = time.monotonic()
 
-    def wait_ready(self):
+    def wait_ready(self, *, after=0.):
         deadline = time.monotonic()+30
         while time.monotonic()<deadline:
             self.robot.executor.spin_once(timeout_sec=.1)
-            if self.status.get('ready') and self.status.get('settled'):
+            if self.status_at > after and self.status.get('ready') and self.status.get('settled'):
                 return
         raise TimeoutError('Virtual physics/force feedback did not become ready')
 
@@ -61,6 +65,24 @@ class ProbePickup:
             if current is not None and abs(current-angle) < .03:
                 return
         raise TimeoutError(f'RG2 did not reach opening: target={angle:.3f}, actual={current}')
+
+    def attach(self):
+        service = self.node.get_namespace() + '/probe/attach'
+        previous = self.robot.timeout
+        self.robot.timeout = 12.
+        try:
+            for attempt in range(2):
+                self.wait_ready(after=time.monotonic() + self.ATTACH_SETTLE_S)
+                try:
+                    self.robot.request(service, Trigger)
+                    return
+                except RuntimeError as error:
+                    # Geometry rejections occur before the Gazebo constraints change.
+                    if attempt or not any(reason in str(error) for reason in self.GEOMETRY_REJECTED):
+                        raise
+                    self.node.get_logger().warning(f'가상 파지 정렬 재확인: {error}')
+        finally:
+            self.robot.timeout = previous
 
     def move(self, pose, speed, acc):
         current, _ = self.robot.get_current_posx()
@@ -79,6 +101,11 @@ class ProbePickup:
         self.wait_ready()
         if self.robot.request('system/get_robot_system',srv.GetRobotSystem).robot_system != 1:
             raise RuntimeError('Probe pickup is restricted to the virtual robot')
+        if self.status.get('probe_attached'):
+            if (self.robot.get_tcp(), self.robot.get_tool()) != (self.plan['tcp_name'], self.plan['tool_name']):
+                raise RuntimeError('가상 탐침이 이미 고정됐지만 탐침 TCP·Tool이 적용되지 않았습니다.')
+            self.node.get_logger().info('가상 탐침 파지 및 TCP·Tool 적용 상태를 확인했습니다.')
+            return
         initial = self.plan['initial_profiles']
         deadline = time.monotonic() + 30
         while (self.robot.get_robot_mode() != 1 or self.robot.get_tcp() != initial['tcp']
@@ -97,12 +124,10 @@ class ProbePickup:
         self.move([*grasp[:2], grasp[2] + m['approach_height_mm'], *grasp[3:]], m['linear_speed'], m['linear_acc'])
         self.node.get_logger().info('4/7 DESCEND ALONG -Z')
         self.move(grasp, m['approach_speed'], m['approach_acc'])
-        self.node.get_logger().info('5/7 CLOSE RG2 AND VERIFY GRASP')
+        self.node.get_logger().info('5/7 CLOSE RG2')
         self.gripper(self.plan['close_angle_rad'])
-        self.wait_ready()
-        previous=self.robot.timeout;self.robot.timeout=12.
-        try:self.robot.request(self.node.get_namespace() + '/probe/attach',Trigger)
-        finally:self.robot.timeout=previous
+        self.node.get_logger().info('5/7 VERIFY GAZEBO GRASP AND RELEASE RACK')
+        self.attach()
         self.plan.update(json.loads(SESSION_PLAN.read_text()))
         self.node.get_logger().info('6/7 SELECT PROBE TCP/TOOL')
         mode=self.robot.get_robot_mode()
@@ -145,6 +170,9 @@ def main():
             if not plan.get('simulation_only'):
                 parser.error('가상 로봇용 탐침 배치 계획이 필요합니다')
             ProbePickup(node, robot, plan, config['motion']).run()
+    except (RuntimeError, TimeoutError) as error:
+        node.get_logger().error(str(error))
+        raise
     finally:
         try:
             if robot.motion_active:

@@ -33,6 +33,7 @@ class RobotServices:
         self.sent = self.queued = None  # send(): the request in flight and the one waiting for it
         self.motion_active = False
         self.rejection_count = 0
+        self.motion_fault_count = 0
         self.rejection_message = ''
         self.last_alarm = ''
         self.cancelled = False  # set by a stop command; later requests fail until cleared
@@ -42,7 +43,10 @@ class RobotServices:
     def _alarm(self, message):
         text = ' '.join(part for part in (message.msg1, message.msg2, message.msg3) if part)
         self.last_alarm = f'level={message.level} group={message.group} code={message.code} {text}'.rstrip()
-        if 'rejected event' in text:
+        rejected = 'rejected event' in text
+        if message.level >= 2 or rejected:
+            self.motion_fault_count += 1
+        if rejected:
             self.rejection_count += 1
             self.rejection_message = f'code={message.code}: {text}'
             self.node.get_logger().error(f'컨트롤러 명령 거절: {self.rejection_message}')
@@ -57,7 +61,8 @@ class RobotServices:
 
     # Read-only queries are asked again after a response timeout: on the Rosetta-emulated controller one
     # check_motion went unanswered for 3 s while the motion itself carried on, and the whole scan aborted.
-    QUERIES = ('motion/check_motion', 'aux_control/get_current_posx', 'aux_control/get_tool_force')
+    QUERIES = ('motion/check_motion', 'aux_control/get_current_posx', 'aux_control/get_tool_force',
+               'system/get_robot_state')
 
     def request(self, service_path, service_type, **values):
         attempts = 3 if service_path in self.QUERIES else 1
@@ -127,6 +132,9 @@ class RobotServices:
 
     def get_robot_mode(self):
         return self.request('system/get_robot_mode', srv.GetRobotMode).robot_mode
+
+    def get_robot_state(self):
+        return self.request('system/get_robot_state', srv.GetRobotState).robot_state
 
     def get_control_mode(self):
         """3: position control, 4: torque control (compliance / force control)."""
@@ -239,6 +247,13 @@ class RobotServices:
                      pos=[Float64MultiArray(data=[float(value) for value in pose]) for pose in poses],
                      pos_cnt=len(poses), vel=vel, acc=acc, time=0.0, ref=ref, mode=mod, opt=opt, sync_type=1)
         return 0
+
+    def amoveb(self, poses, radius, vel, acc):
+        """Send one BASE moveb of line segments. The controller ignores the final radius."""
+        segments = [Float64MultiArray(data=[*pose, *[0.] * 6, 0., float(radius)]) for pose in poses]
+        self.motion_active = True
+        self.request('motion/move_blending', srv.MoveBlending, segment=segments, pos_cnt=len(segments),
+                     vel=vel, acc=acc, ref=self.DR_BASE, mode=self.DR_MV_MOD_ABS, sync_type=1)
 
     def jog_multi(self, axis, speed, ref=0):
         """Velocity jog along the unit task-space `axis` [x y z rx ry rz] at `speed` % of 250 x 1.73 mm/s; end it with

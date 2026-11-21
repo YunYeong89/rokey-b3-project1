@@ -6,12 +6,14 @@ through the row ends at the contact level while the controller keeps the force. 
 force along the axis): nothing it commands depends on the force. Out to the standoff; on to the next segment's
 standoff straight across where the planner found that clear, else up to the travel height the same way; HOME only
 after the last path (real_scan). Records number the segments (`path`)."""
+import json
 import time
 
 import numpy as np
 
 from ..configs import SESSION
 from ..rotations import align, angles_zyz, rotation_zyz
+from ..scan_scene import INSPECTION_SCENE
 from .sampling import PointSampler
 
 
@@ -22,6 +24,16 @@ class CloudChannel:
     def __init__(self):
         self.directory = SESSION / 'clouds'
         self.directory.mkdir(parents=True, exist_ok=True)
+
+    def begin(self, points_m, scene=None):
+        """Start the cloud stream and bind it to the BASE placement used for the real scan."""
+        self.write('measured', [])
+        if scene is not None:
+            path = self.directory.parent / INSPECTION_SCENE
+            partial = path.with_suffix('.tmp')
+            partial.write_text(json.dumps(scene))
+            partial.replace(path)
+        self.write('reference', points_m)
 
     def write(self, name, points_m):
         points = np.asarray(points_m, np.float32)
@@ -123,9 +135,10 @@ class AxisScraper:
         self.static, self.static_at = offset, pose[:3]
         return offset
 
-    def search_contact(self, axis, surface):
-        """Find contact and confirm the reaction at rest while still in position control."""
-        d, hits, offset = self.scan['default_scan'], 0, self.static
+    def search_contact(self, axis, surface, offset=None):
+        """Find contact and confirm the reaction at rest while still in position control; the rise over `offset`
+        (the reading at the gap by default)."""
+        d, hits, offset = self.scan['default_scan'], 0, self.static if offset is None else offset
         rise = d['real_contact_offset_n']
 
         def touched(pose, wrench):
@@ -177,9 +190,9 @@ class AxisScraper:
         self.program.log(f'접촉 확인: 반력 {force:.3f} N, TCP {pose[:3].round(2).tolist()} mm '
                          f'(계획 표면 {float((pose[:3] - surface) @ axis):+.2f} mm); 계획 경로 진행')
 
-    def run(self, segments, axis, straight):
+    def run(self, segments, axis, straight, *, lift_after=True):
         """One path (pass): `segments` (BASE mm points) in order, `straight[k]`: lift from segment k to k + 1 straight
-        across at the standoff."""
+        across at the standoff. `lift_after=False` leaves the last lift to the following transfer or HOME."""
         p, probe, s, m = self.program, self.probe, self.scan, self.motion
         self.sweeps += 1
         p.topics.stage(p.topics.MOVING, path=self.sweeps)
@@ -188,6 +201,7 @@ class AxisScraper:
             self.down = rotation_zyz(pose[3:])
         down = self.down
         turned = self.tool(down, axis)
+        turn_at_standoff = p.mode != 'real' or not np.allclose(down, turned, atol=1e-6)
         for k, positions in enumerate(segments):
             out = positions[0] + s['standoff_mm'] * axis
             if k and straight[k - 1]:
@@ -195,15 +209,22 @@ class AxisScraper:
             else:
                 pose, _ = probe.read()
                 travel = max(p.safe_z(), out[2], pose[2])
-                probe.move([*pose[:2], travel], down, m['approach_speed'], acc=m['approach_acc'])
-                probe.move([*out[:2], travel], down, m['linear_speed'], acc=m['linear_acc'])
-                probe.move(out, down, m['approach_speed'], acc=m['approach_acc'])
-                probe.move(out, turned, m['approach_speed'])
+                if p.mode == 'real':
+                    p.scan_transfer(pose, out[:2], travel, down)
+                else:
+                    probe.move([*pose[:2], travel], down, m['approach_speed'], acc=m['approach_acc'])
+                    probe.move([*out[:2], travel], down, m['linear_speed'], acc=m['linear_acc'])
+                if p.mode != 'real' or travel > out[2]:
+                    probe.move(out, down, m['approach_speed'], acc=m['approach_acc'])
+                if turn_at_standoff:
+                    probe.move(out, turned, m['approach_speed'])
             away = self.segment(positions, axis, turned) + s['standoff_mm'] * axis
             probe.move(away, turned, m['approach_speed'], acc=m['approach_acc'])
             if k == len(segments) - 1 or not straight[k]:
-                probe.move(away, down, m['approach_speed'])
-                probe.move([*away[:2], max(p.safe_z(), away[2])], down, m['approach_speed'], acc=m['approach_acc'])
+                if turn_at_standoff:
+                    probe.move(away, down, m['approach_speed'])
+                if lift_after or k < len(segments) - 1:
+                    probe.move([*away[:2], max(p.safe_z(), away[2])], down, m['approach_speed'], acc=m['approach_acc'])
 
     def tool(self, down, axis):
         """Tool orientation along a path: TOOL +Z straight into the surface (`axis` outward)."""

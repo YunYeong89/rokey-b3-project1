@@ -5,7 +5,7 @@ import numpy as np
 
 from ..configs import load
 from .cloud_roi import CloudRoi
-from .crack_roi import CrackRoi
+from .crack_roi import CrackRoi, DoorCrackRoi
 from .pose_filter import PoseHeightFilter
 from .staged_roi import SurveyRoi
 
@@ -126,6 +126,10 @@ class MeshRoi(SurveyRoi):
                                                     axis, grid, reason)
         if cloud is None:
             self.regions = self.merge(self.regions)
+            for region in self.regions:
+                region['type'] = 'scan_candidate'
+            if stroke.any() and metadata.get('part') == 'door' and metadata.get('controller') == 'mesh-height':
+                self.door_crack_regions(records, target, stroke, groups, metadata['speed_mm_s'], config['door_crack_roi'])
         else:
             roi_strokes = roi_surface & raster
             self.dent_regions(cloud, support, heading, groups, roi_strokes)
@@ -143,8 +147,24 @@ class MeshRoi(SurveyRoi):
             self.regions = [region for region, _ in self.damage_samples]
         for number, region in enumerate(self.regions, 1):
             region['id'] = f'roi_{number:03d}'
-            if cloud is None:
-                region['type'] = 'scan_candidate'
+
+    def door_crack_regions(self, records, target, stroke, groups, speed, settings):
+        axis = self.records[stroke, 5:8][0]
+        velocity = np.asarray([row[72:75] for row in records], float)
+        self.settings['door_crack'] = settings
+        detector = DoorCrackRoi(settings)
+        for at, values, length, width, confirmed, lanes in detector.detect(
+                self.position, target, axis, self.records[:, 4], self.wrench, velocity,
+                self.records[:, 8], groups, stroke, speed, self.threshold):
+            self.crack_crossings[at] = True
+            points = self.position[at]
+            region = self.region(points, axis, ['force'], max(0., float(values[:, 0].max())), float(values[:, 1].max()))
+            region.update(type='crack', confirmed=confirmed, force_samples=len(at), raster_rows=int(lanes),
+                          length_mm=length, width_mm=width,
+                          force_contrast_xyz_n=np.abs(values[:, 3:]).max(0).round(3).tolist(),
+                          crossing_bounds_yz_mm=np.r_[points[:, 1:].min(0), points[:, 1:].max(0)].tolist())
+            self.regions.append(region)
+            self.damage_samples.append((region, points))
 
     def dent_regions(self, cloud, support, heading, groups, roi_surface):
         depth = np.where(roi_surface, self.depth, np.nan)

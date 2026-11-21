@@ -5,6 +5,7 @@ import numpy as np
 from scipy.spatial import cKDTree
 from scipy.spatial.transform import Rotation
 
+from ..cartesian_servo import POSITION_WORKSPACE_M
 from .cartesian_transport import CartesianTransport
 from .mesh_motion import ScanTransfers
 from .progress_watch import ProgressWatch
@@ -24,7 +25,9 @@ class MeshNormalScan:
         self.scan, self.settings = plan.scan, plan.scan['mesh_normal']
         # mesh-height presses along one fixed BASE axis (bonnet -Z, door +X: its TCP axis tilted), else the TCP axis.
         self.press = -plan.paths[0].axis if height_mode else None
-        self.transport = CartesianTransport(program, self.settings, self.scan['speed_mm_s'])
+        self.door_entry = height_mode and plan.surface.part == 'door'
+        self.transport = CartesianTransport(program, self.settings, self.scan['speed_mm_s'],
+                                            force_axis=self.press if self.door_entry else None)
         self.records, self.points = [], []
         self.sampler = PointSampler(self.scan['sample_mm'], self.settings['point_decimation'])
         self.timings = []
@@ -67,11 +70,52 @@ class MeshNormalScan:
                 or (Rotation.from_matrix(model_pose[:3, :3]) * Rotation.from_matrix(rotation).inv()).magnitude()
                 > np.radians(2.)):
             raise RuntimeError('Active ProbeTCP does not match the planning URDF/TCP profile')
-        self.transfers = ScanTransfers(self.program, self.scan, reach.frame)
+        outward = -self.press if self.door_entry else None
+        self.transfers = ScanTransfers(self.program, self.scan, reach.frame, outward)
         self.report.route([(path.trajectory, 'stroke', number)
                            for number, path in enumerate(self.plan.paths, 1)])
         self.program.log('검출 경로 검증 결과 재사용; 일반 이동은 기존 DSR 속도로 실행합니다')
         self.program.home()
+
+    def wait_at_entry(self, trajectory, elapsed=0.):
+        state = self.transport.wait_still()
+        if self.door_entry:
+            target, rotation, _ = trajectory.sample(elapsed)
+            error, turn = self.entry_error(state, target, rotation)
+            if error > POSITION_WORKSPACE_M * 1000 or turn > self.settings['progress_angle_deg']:
+                raise RuntimeError(f'도어 측정점 접근 미완료: TCP 위치 오차 {error:.1f} mm, 각도 오차 {turn:.1f}°')
+        return state
+
+    def entry_error(self, state, target, rotation):
+        position, actual_rotation = self.pose(state)
+        distance = np.linalg.norm(position - target)
+        turn = np.degrees((Rotation.from_matrix(rotation) * Rotation.from_matrix(actual_rotation).inv()).magnitude())
+        return distance, turn
+
+    def align_door_entry(self, trajectory, elapsed):
+        """Correct a short DSR stop within the local stream workspace before ramping contact force."""
+        target, rotation, _ = trajectory.sample(elapsed)
+        t = self.transport
+        tolerance, angle = self.settings['progress_error_mm'], self.settings['progress_angle_deg']
+        period = 1 / self.settings['command_hz']
+        next_command = time.monotonic()
+        deadline = next_command + 6.
+        error, turn = self.entry_error(t.state(), target, rotation)
+        if error <= tolerance and turn <= angle:
+            return
+        self.program.log(f'도어 측정 시작점 위치 보정: TCP 오차 {error:.1f} mm (힘 제어 전)')
+        while time.monotonic() < deadline:
+            self.program.robot.check_cancelled()
+            now = time.monotonic()
+            if now >= next_command:
+                t.send(target, rotation, np.zeros(6), force=0.)
+                next_command = now + period
+            t.spin(.005)
+            error, turn = self.entry_error(t.state(), target, rotation)
+            if error <= tolerance and turn <= angle:
+                self.program.log(f'도어 측정 시작점 보정 완료: TCP 오차 {error:.2f} mm')
+                return
+        raise RuntimeError(f'도어 시작점 보정 시간 초과: TCP 위치 오차 {error:.1f} mm, 각도 오차 {turn:.1f}°')
 
     def record(self, state, target, rotation, phase, number):
         position, actual_rotation = self.pose(state)
@@ -188,6 +232,8 @@ class MeshNormalScan:
             while True:
                 try:
                     self.transport.begin()
+                    if self.door_entry:
+                        self.align_door_entry(trajectory, start)
                     self.program.log(f'native PD {"ON" if self.transport.state().pd_enabled else "OFF"}; '
                                      f'검출 {start:.1f} -> {trajectory.duration:.1f} s')
                     topics.stage(topics.SCANNING)
@@ -209,13 +255,14 @@ class MeshNormalScan:
                     self.transport.end()
                 topics.stage(topics.MOVING)
                 self.transfers.resume(trajectory, start, resume['lift_mm'])
-                self.transport.wait_still()
+                self.wait_at_entry(trajectory, start)
         finally:
             timing.finish()
             self.program.log(f'검출 {timing.export()["wall_s"]:.1f} s: 추종 대기 {timing.pause:.1f} s, '
                              f'끝점 정착 {timing.settle:.1f} s, 재검출 {timing.resumes}회')
 
     def run(self):
+        failure = None
         try:
             self.prepare()
             topics, skipped = self.program.topics, []
@@ -224,7 +271,7 @@ class MeshNormalScan:
                 topics.stage(topics.MOVING, path=number, segment=number)
                 self.program.log(f'mesh path {number}/{len(self.plan.paths)}: DSR 접근')
                 self.transfers.approach(path.trajectory)
-                state = self.transport.wait_still()
+                state = self.wait_at_entry(path.trajectory)
                 path.trajectory.entry(self.plan.reach, np.asarray(state.joint_positions), self.scan['speed_mm_s'],
                                       self.scan['measurable']['joint_jump_deg'])
                 self.program.log(f'mesh path {number}: custom 검출 시작, 최대 {self.scan["speed_mm_s"]} mm/s')
@@ -234,9 +281,12 @@ class MeshNormalScan:
                 topics.stage(topics.MOVING)
                 self.transfers.retract()
             self.program.home()
-            self.completed = True
             if skipped:
-                topics.record(message=f'완료 (경로 {skipped}: 반복 중단으로 나머지 건너뜀)')
+                raise RuntimeError(f'검사 경로 {skipped}: 반복 중단으로 측정 미완료')
+            self.completed = True
+        except BaseException as error:
+            failure = str(error) or type(error).__name__
+            raise
         finally:
             try:
                 self.transport.end()
@@ -247,4 +297,5 @@ class MeshNormalScan:
                     try:
                         self.channel.write('measured', self.points)
                     finally:
-                        self.report.save(self.records, self.completed, [timing.export() for timing in self.timings])
+                        self.report.save(self.records, self.completed, [timing.export() for timing in self.timings],
+                                         failure=failure)

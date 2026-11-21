@@ -9,6 +9,7 @@ import numpy as np
 from scipy.spatial import cKDTree
 from scipy.spatial.transform import Rotation
 
+from ..contact_probe import SplineProgress
 from ..rotations import rotation_zyz
 from .height_plan import press_label
 from .run import AxisScraper
@@ -17,8 +18,17 @@ from .scan_timing import StrokeTiming
 from .telemetry import Telemetry
 
 
+class ContactOverload(RuntimeError):
+    """A first contact past contact_guard_n (MeshHeightDsr.press backs off and searches again)."""
+
+    def __init__(self, force, limit):
+        super().__init__(f'갭 기준 반력 {force:.2f} N > {limit:g} N')
+        self.force = force
+
+
 class MeshHeightDsr(AxisScraper):
     SPLINE_POINTS = 100  # DSR movesx limit
+    MOTION_RETRIES = 2
     # Position-only descent end, pressed 5-6.4 N: the TCP ends 0.10-0.15 mm past the target along the axis and
     # 0.05-0.06 mm toward -x (033819 path 2, 061706 path 1 stopped at 0.1).
     APPROACH_TOLERANCE_MM = 0.2
@@ -47,6 +57,8 @@ class MeshHeightDsr(AxisScraper):
         self.radius = program.config['probe']['tip_radius_mm']
         self.approaches = []
         self.timings, self.completed, self.last = [], False, None
+        self.probe.motion_retries = self.MOTION_RETRIES
+        self.probe.on_motion_retry = self.record_resume
         self.trim = 0.  # force command trim (N), kept from path to path
         self.pushed, self.below = 0., None  # floating: the extra push (N) and since when the reaction is under
 
@@ -55,22 +67,29 @@ class MeshHeightDsr(AxisScraper):
         return self.trajectory.sample(0.)[1]
 
     def press(self, axis, surface):
-        """Verify the end of the position-only descent before enabling force and confirming contact."""
+        """The first contact (touch), then force control. A contact past contact_guard_n: stopped, back to the
+        approach gap and searched again, contact_retries times."""
         settings = self.scan['mesh_normal']
-        time.sleep(settings['press_settle_s'])
-        self.tare_at_gap(axis)
-        approach = dict(path=self.path, unloaded_reaction_n=self.static)
+        depth, retries = settings['extra_depth_mm'], settings['contact_retries']
+        approach = dict(path=self.path, air_stops=[], overloads=[])
         self.approaches.append(approach)
-        contact = self.search_contact(axis, surface)[:3]
-        depth = settings['extra_depth_mm']
-        target = contact - depth * axis
-        approach.update(search_tcp_mm=contact.tolist(), target_tcp_mm=target.tolist())
-        # The controller requires at least two explicit waypoints, excluding the current TCP.
-        waypoints = [contact - 0.5 * depth * axis, target]
-        self.probe.spline(waypoints, self.trajectory.sample(0.)[1], settings['extra_depth_speed_mm_s'],
-                          until=self.guard_approach, acc=self.motion['approach_acc'], constant_speed=False)
-        pose, wrench = self.probe.read()
-        self.probe.guard(wrench)
+        for attempt in range(retries + 1):
+            try:
+                contact, target, pose, wrench, rise = self.touch(axis, surface, approach)
+                break
+            except ContactOverload as error:
+                approach['overloads'].append(error.force)
+                self.robot.stop()
+                while self.robot.check_motion() != 0:
+                    time.sleep(.05)
+                self.probe.move(surface + self.scan['gap_mm'] * axis, self.trajectory.sample(0.)[1],
+                                self.motion['approach_speed'], acc=self.motion['approach_acc'])
+                self.program.log(f'첫 접촉 과부하 {attempt + 1}/{retries + 1}회: {error}, 갭으로 물러났습니다'
+                                 + (', 다시 탐색합니다' if attempt < retries else ''))
+        else:
+            raise RuntimeError(f'힘 초과: 첫 접촉 과부하가 {retries + 1}회 반복되었습니다 '
+                               f'(갭 기준 {", ".join(f"{force:.2f}" for force in approach["overloads"])} N)')
+        approach.update(search_tcp_mm=contact.tolist(), target_tcp_mm=target.tolist(), confirm_rise_n=rise)
         error = np.linalg.norm(pose[:3] - target)
         approach.update(position_tcp_mm=pose[:3].tolist(), position_error_mm=float(error),
                         position_reaction_n=float(wrench[:3] @ axis) - self.static)
@@ -78,7 +97,8 @@ class MeshHeightDsr(AxisScraper):
             self.program.log(f'경고: 위치 제어 {depth:g} mm 하강 목표 오차 {error:.2f} mm, 현재 위치에서 계속합니다')
 
         self.contact = pose[:3]
-        self.program.log(f'위치 제어 스플라인 {depth:g} mm 하강 완료 (TCP 오차 {error:.2f} mm), 힘 제어 시작')
+        self.program.log(f'위치 제어 스플라인 {depth:g} mm 하강 완료 (TCP 오차 {error:.2f} mm, 반력 상승 {rise:+.2f} N), '
+                         f'힘 제어 시작')
         self.probe.enable(self.robot.DR_BASE, self.scan['stiffness'])
         self.probe.forcing = True
         ramp = self.scan['ramp_s']
@@ -101,10 +121,51 @@ class MeshHeightDsr(AxisScraper):
         contact = ground_force > self.GROUND_REACTION_THRESHOLD_N  # logged, the strokes' trim and push go on pressing
         self.program.log(f'힘 제어 후 접촉 {"확인" if contact else "미확인 (경고)"}: 반력 {ground_force:+.2f} N, 스캔 시작')
 
+    def touch(self, axis, surface, approach):
+        """Settle and zero at the gap, search, press extra_depth_mm. Contact: the press raises the reaction
+        press_confirm_n over the search's stop, or reaches press_limit_n (a stop already past it is not pressed: the
+        press ended at once, +0.03/+0.06 N, read as the air, and the search went on into 8.3/8.9 N, 073012-073054).
+        Otherwise in the air: the left door (063056) stopped 5-6.5 mm off the panel at +0.5 N, +0.93/+1.20 N after the
+        0.3 mm; searched on from there, its reading the new zero (the force's stays the gap's).
+        -> (search stop, press target, pose, wrench, rise)"""
+        settings = self.scan['mesh_normal']
+        depth, limit = settings['extra_depth_mm'], settings['press_limit_n']
+        time.sleep(settings['press_settle_s'])
+        self.tare_at_gap(axis)
+        self.gap = np.mean([self.probe.read()[1][:3] for _ in range(5)], axis=0)
+        approach['unloaded_reaction_n'] = baseline = self.static
+        while True:
+            contact = self.search_contact(axis, surface, baseline)[:3]
+            stop = np.mean([self.probe.read()[1] for _ in range(5)], axis=0)
+            self.guard_contact(stop)
+            stop = float(stop[:3] @ axis)
+            target = contact - depth * axis
+            if stop - self.static < limit:
+                # The controller requires at least two explicit waypoints, excluding the current TCP.
+                self.probe.spline([contact - 0.5 * depth * axis, target], self.trajectory.sample(0.)[1],
+                                  settings['extra_depth_speed_mm_s'], until=self.guard_approach,
+                                  acc=self.motion['approach_acc'], constant_speed=False)
+            pose, wrench = self.probe.read()
+            self.guard_contact(wrench)
+            reaction = float(wrench[:3] @ axis)
+            if reaction - stop >= settings['press_confirm_n'] or reaction - self.static >= limit:
+                return contact, target, pose, wrench, reaction - stop
+            approach['air_stops'].append([*pose[:3].tolist(), reaction - stop])
+            baseline = float(np.mean([self.reaction(axis)[1] for _ in range(5)]))
+            self.program.log(f'접촉 미확인: {depth:g} mm 추가 누름 반력 상승 {reaction - stop:+.2f} N < '
+                             f'{settings["press_confirm_n"]:g} N, 공중(또는 덜 닫힌 문)으로 판정하고 탐색을 계속합니다')
+
+    def guard_contact(self, wrench):
+        """The first contact's force guard, on the gap's zero (contact_guard_n): the probe guard's HOME zero carried
+        the gap's 0.6-1.3 N along the axis and ~1.2 N across over the bonnet."""
+        force = float(np.linalg.norm(wrench[:3] - self.gap))
+        if force > self.scan['mesh_normal']['contact_guard_n']:
+            raise ContactOverload(force, self.scan['mesh_normal']['contact_guard_n'])
+
     def guard_approach(self, _pose, wrench):
         """The position-only descent ends early once the reaction along the axis reaches press_limit_n: on the way to
         0.3 mm it reached 6.4-6.6 N (072408) and the probe guard's 8 N with the unloaded ~1 N (075045, 075132)."""
-        self.probe.guard(wrench)
+        self.guard_contact(wrench)
         return float(wrench[:3] @ self.axis) - self.static >= self.scan['mesh_normal']['press_limit_n']
 
     def command(self, axis, magnitude, ramp=0., wait=True):
@@ -126,7 +187,11 @@ class MeshHeightDsr(AxisScraper):
             yield points[start:end + 1]
             start = end
 
-    def measure(self, axis):
+    def record_resume(self):
+        if self.timings and self.timings[-1].stopped is None:
+            self.timings[-1].resumes += 1
+
+    def measure(self, axis, progress=None):
         """movesx `until` callback: the RT samples since the last call (real robot; the service read otherwise), each
         a samples.csv row and a contact point; never stops the stroke."""
         def until(pose, wrench):
@@ -136,6 +201,8 @@ class MeshHeightDsr(AxisScraper):
                 return False
             for now, pose, wrench in self.telemetry.drain():
                 pose[:3] += rotation_zyz(pose[3:]) @ self.probe.offset  # the probe TCP, as ContactProbe.read
+                if progress is not None:
+                    progress.observe(pose[:3])
                 self.sample(axis, now, pose, wrench - self.probe.bias)
             return False
         return until
@@ -229,10 +296,13 @@ class MeshHeightDsr(AxisScraper):
         self.pushed, self.below = 0., None
         if self.telemetry:
             list(self.telemetry.drain())  # the approach and the grounding, before the stroke
+        tolerance = self.scan['mesh_normal']['progress_error_mm']
         for span in self.trajectory.spans:
             for piece in self.chunks(self.thin(self.resample(span) + shift), self.plane):
-                self.probe.spline(piece[1:], turned, self.scan['speed_mm_s'], until=self.measure(axis),
-                                  acc=self.program.config['scan']['acc'])
+                progress = SplineProgress(piece, self.plane, tolerance)
+                self.probe.spline(piece[1:], turned, self.scan['speed_mm_s'], until=self.measure(axis, progress),
+                                  acc=self.program.config['scan']['acc'], progress=progress,
+                                  read_feedback=self.telemetry is None)
                 done += np.linalg.norm(np.diff(piece, axis=0), axis=1).sum()
                 self.program.topics.within(done)
         if self.telemetry:
@@ -246,7 +316,7 @@ class MeshHeightDsr(AxisScraper):
         length = lambda path: np.linalg.norm(np.diff(path.positions, axis=0), axis=1).sum()
         failure = None
         try:
-            p.home()
+            p.home(scan_travel=True)
             actual, _ = self.probe.read()  # the defined TCP (real_scan: real_scene.yaml)
             if np.linalg.norm(reach.chain.forward(reach.home)[0][:3, 3] * 1000 - actual[:3]) > 2.:
                 raise RuntimeError('컨트롤러 HOME TCP가 계획의 URDF/ProbeTCP와 2 mm 넘게 다릅니다')
@@ -265,11 +335,11 @@ class MeshHeightDsr(AxisScraper):
                       f'BASE {press_label(self.axis)} {self.scan["force_n"]:g} N, movesx {self.scan["speed_mm_s"]:g} mm/s, '
                       f'{length(path):.0f} mm')
                 try:
-                    super().run([path.positions], path.axis, [])
+                    super().run([path.positions], path.axis, [], lift_after=False)
                     timing.completed, timing.elapsed = True, path.trajectory.duration
                 finally:
                     timing.finish()
-            p.home()
+            p.home(scan_travel=True)
             self.completed = True
         except BaseException as error:
             failure = str(error) or type(error).__name__

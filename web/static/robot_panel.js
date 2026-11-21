@@ -41,6 +41,9 @@ export class RobotPanel {
       requestAnimationFrame(() => this.viewer.resize());
     });
     setInterval(() => this.refresh(), 200);
+    setInterval(() => {
+      if (this.panel.dataset.modelLoaded && robotControl.status?.mode !== "virtual") this.loadFixedScene();
+    }, 1500);
     window.addEventListener("beforeunload", () => this.client?.close());
   }
 
@@ -65,11 +68,14 @@ export class RobotPanel {
 
   /** 시뮬레이터 없이도 차량을 보이게: 실측 배치(real_scene.yaml)의 팀 차량. 가상 세션 장면이 오면 그쪽이 우선 */
   async loadFixedScene() {
+    const robot = robotControl.selected;
+    const request = this.fixedSceneRequest = {};
     try {
-      const response = await fetch("/api/robot/fixed-scene");
+      const response = await fetch(`/api/robot/fixed-scene?robot=${encodeURIComponent(robot)}`, { cache: "no-store" });
       if (response.ok) {
         const scene = await response.json();
-        this.viewer.applyScene(scene, { fixed: true });
+        if (request !== this.fixedSceneRequest || robot !== robotControl.selected) return;
+        this.viewer.applyScene(scene, { fixed: true, real: robotControl.status?.mode === "real" });
         this.viewer.setProbeTcp(scene.probe_tcp_mm_deg?.[2]);
       }
       else console.warn("고정 실차 장면 없음", (await response.json().catch(() => ({}))).error);
@@ -85,7 +91,9 @@ export class RobotPanel {
     this.client?.close();
     this.client = new RobotRosClient({ url: rosbridgeUrl(), topic: robotControl.jointTopic(),
       sceneTopic: (robotControl.selected === "dsr01" && window.APP.robotSceneTopic) || `/${robotControl.selected}/sim_scene`,
-      onScene: (message) => this.viewer.applyScene(message),
+      onScene: (message) => {
+        if (robotControl.status?.mode !== "real") this.viewer.applyScene(message);
+      },
       onState: (state) => { this.connection = state; this.refresh(); },
       onMessage: (message) => { this.viewer.applyJointState(message); this.refresh(); } });
     this.client.connect();

@@ -12,6 +12,7 @@ more of the wobble into the axis."""
 import numpy as np
 from scipy.interpolate import LinearNDInterpolator
 from scipy.ndimage import median_filter
+from scipy.spatial import QhullError
 
 
 class PoseHeightFilter:
@@ -32,8 +33,12 @@ class PoseHeightFilter:
     def reference(self, centres, targets):
         """Depth (mm, + deeper) of each measured ball centre below the planned centres' surface at its own place
         across the axis; the planned point of the same instant outside their hull."""
-        planned = LinearNDInterpolator(self.plane(targets), targets @ self.axis)(self.plane(centres))
         timed = targets @ self.axis
+        try:
+            planned = LinearNDInterpolator(self.plane(targets), timed)(self.plane(centres))
+        except QhullError:
+            # A stopped or straight-line stroke may not cover a two-dimensional patch.
+            return timed - centres @ self.axis
         return np.where(np.isfinite(planned), planned, timed) - centres @ self.axis
 
     def detrend(self, values, centres):

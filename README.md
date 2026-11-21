@@ -29,7 +29,7 @@ rokey-b3-project1/
 │   ├── native/       # macOS Gazebo/RViz 표시, 세션 관리 (session.py)
 │   ├── run_web.sh    # 웹 + rosbridge + web_control 함께 실행
 │   └── ws_cobot_pjt/src/  # ROS 패키지 (rokey, cobot_rg2, rokey_interfaces …)
-├── part_replace/     # 부품 교체 (보닛 분해·조립)
+│                          #   부품 교체(보닛 분해·조립): src/rokey/rokey/part_replace/
 ├── cad/              # 3D 모델 (차량, 탐침, 손상 보닛)
 └── docs/             # 프로젝트 문서
 ```

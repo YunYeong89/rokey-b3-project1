@@ -2,6 +2,10 @@
 
 펜던트에서 만든 보닛 분해·조립 DRL 을 DSR_ROBOT2 파이썬으로 옮긴 것. 속도는 DRL 기본값의 **20%** (`SPEED_SCALE = 0.2`).
 
+**이 폴더가 유일한 실행본**이에요 (2026-11-21 정리: 저장소 루트 `part_replace/` 와 저장소 밖 복사본은 지움, 이전 내용은 git 기록).
+웹 수리는 `web_control → repair_manager → replace_parts → python -m rokey.part_replace.bonnet_replace` 로 이 파일을 실행하고,
+`rokey` 는 symlink 설치라 좌표를 고치면 다시 빌드하지 않아도 다음 수리부터 반영돼요.
+
 | 파일 | 내용 |
 |---|---|
 | `bonnet_replace.py` | `disassemble()`, `assemble()` (다른 코드에서 import 가능) |
@@ -18,14 +22,15 @@
 ros2 launch m0609_rg2_bringup bringup.launch.py mode:=virtual                      # 가상
 ros2 launch m0609_rg2_bringup bringup.launch.py mode:=real host:=<로봇 IP>          # 실물
 
-# 2) 실행 (터미널 2)
-source <ws_dsr>/install/setup.bash
-cd part_replace
-python3 bonnet_replace.py disassembly|assembly|all [--virtual] [--until N]
+# 2) 실행 (터미널 2) — 웹 없이 단독으로
+source ~/cobot1_ws/ws_cobot_pjt/ws_dsr/install/setup.bash
+source ~/cobot1_ws/ws_cobot_pjt/rokey-b3-project1/ws_cobot_pjt/ws_cobot_pjt/install/setup.bash
+ros2 run rokey bonnet_replace disassembly|assembly|all [--virtual] [--until N]
 ```
+웹에서는 자동 모드(실차: 스캔 → 판정 → 교체)나 수동 모드(보닛 지정)로 수리를 시작하면 분해 → 조립 순서로 실행돼요.
 - `--virtual`: Tool/TCP 설정·확인을 건너뜀 (가상 로봇에는 이 이름이 없음). 실물에서는 쓰지 말 것.
 - `--until N`: N 단계까지만 하고 멈춤 (분해 1~9, 조립 1~8). `all` 과는 같이 못 씀.
-  예) `python3 bonnet_replace.py assembly --until 5` → 장착 자세까지 가서 보닛을 잡은 채 멈춤.
+  예) `ros2 run rokey bonnet_replace assembly --until 5` → 장착 자세까지 가서 보닛을 잡은 채 멈춤.
   멈출 때 켜져 있는 힘·순응만 해제하고, 홈 이동은 하지 않음. 이어서 하는 기능은 없음 (복귀는 펜던트로).
 
 다른 코드에서 쓸 때는 `DR_init` 의 id/model/node 를 먼저 설정한 뒤 `disassemble(until=None)`, `assemble(until=None)` 을 부름.

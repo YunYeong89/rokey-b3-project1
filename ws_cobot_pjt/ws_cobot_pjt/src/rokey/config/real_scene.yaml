@@ -28,6 +28,6 @@ probe:
   release_z_offset_mm: 6.0  # release this far above the taught grasp, in BASE +Z
 
 inspection_poses:                 # optional measured [BASE X mm, Y mm, yaw deg, base Z mm] overrides
-  bonnet: [650.0, 4.0, 180.0, 82.36]  # real scan placement; +4 mm BASE Y from CAD-to-contact comparison
+  bonnet: null                    # use the vehicle pose above
   left_door: null                 # use demo_left from vehicles.yaml
   right_door: null                # use demo_right from vehicles.yaml

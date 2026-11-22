@@ -19,7 +19,7 @@ class CrackRoi:
     def __init__(self, settings):
         self.settings = settings
 
-    def peaks(self, points, depth, force, tangential, heading, groups, usable, contact_threshold, *, channels=None):
+    def peaks(self, points, depth, force, tangential, heading, groups, usable, contact_threshold):
         """Compare each crossing with healthy reference-supported shoulders on both sides. `tangential`: the reaction
         across the press axis (N, 3). -> crossings, [depth drop mm, force evidence N]"""
         usable = usable & np.isfinite(depth) & np.isfinite(force)
@@ -29,7 +29,6 @@ class CrackRoi:
         cuts = np.r_[0, np.flatnonzero(~joined) + 1, len(points)]
         shoulder = self.settings['shoulder_mm']
         offset = round(shoulder / self.STEP_MM)
-        channels = np.empty((len(points), 0)) if channels is None else channels
         peaks, contrasts = [], []
         for lo, hi in zip(cuts[:-1], cuts[1:]):
             if hi - lo < 3:
@@ -63,11 +62,8 @@ class CrackRoi:
                              (lateral[hits] >= self.settings['lateral_n'])) & (shoulders[hits] > contact_threshold)]
             if len(hits):
                 peaks.extend(lo + np.searchsorted(distance, s[hits + offset]))
-                extra = [gaussian_filter1d(np.interp(s, distance, channel[lo:hi]), 1.) for channel in channels.T]
-                centres = hits + offset
-                delta = [values[centres] - (values[hits] + values[hits + 2 * offset]) / 2 for values in extra]
-                contrasts.extend(np.column_stack([drop[hits], np.maximum(loss[hits], lateral[hits]), *delta]))
-        return np.asarray(peaks, int), np.asarray(contrasts).reshape(-1, 2 + channels.shape[1])
+                contrasts.extend(np.c_[drop[hits], np.maximum(loss[hits], lateral[hits])])
+        return np.asarray(peaks, int), np.asarray(contrasts).reshape(-1, 2)
 
     def traces(self, points, heading, evidence):
         """Join nearby crossings on different raster rows into elongated regions; a crossing in none with force
@@ -97,38 +93,3 @@ class CrackRoi:
                     yield at[own], float(length), float(width), confirmed
         for k in np.flatnonzero(~joined & (evidence >= self.settings['single_n'])):
             yield np.array([k]), 0., 0., False
-
-
-class DoorCrackRoi(CrackRoi):
-    """Find repeated force crossings on the plane transverse to a door's press axis."""
-
-    def __init__(self, settings):
-        super().__init__({**settings, 'force_led': True, 'single_n': np.inf})
-
-    def detect(self, points, target, axis, force, wrench, velocity, paths, groups, stroke, speed, threshold):
-        plane = np.flatnonzero(np.abs(axis) < .9)
-        uv = points[:, plane]
-        smooth = np.empty_like(uv)
-        cuts = np.r_[0, np.flatnonzero(np.diff(groups)) + 1, len(groups)]
-        for first, last in zip(cuts[:-1], cuts[1:]):
-            smooth[first:last] = gaussian_filter1d(velocity[first:last, plane], 5., axis=0)
-        travel = np.argmax(np.abs(smooth), axis=1)
-        major = np.take_along_axis(smooth, travel[:, None], axis=1)[:, 0]
-        minor = np.take_along_axis(smooth, (1 - travel)[:, None], axis=1)[:, 0]
-        heading = 2 * travel + (major < 0.)
-        usable = stroke & (np.abs(major) > max(.5, .36 * speed)) & (np.abs(minor) < .33 * np.abs(major))
-        for path in np.unique(paths[usable]):
-            own = paths == path
-            primary = np.bincount(travel[own & usable]).argmax()
-            usable[own] &= travel[own] == primary
-        depth = (target - points) @ axis
-        peaks, values = self.peaks(uv, depth, force, wrench[:, plane], heading, groups, usable, threshold,
-                                   channels=np.c_[target @ axis, wrench])
-        quiet = np.abs(values[:, 2]) <= self.settings['mesh_contrast_mm']
-        peaks, values = peaks[quiet], values[quiet]
-        for own, length, width, confirmed in self.traces(uv[peaks], heading[peaks], values[:, 1]):
-            at = peaks[own]
-            across = 1 - travel[at[0]]
-            lanes = np.unique(np.floor(uv[at, across] / .8)).size
-            if lanes >= self.settings['min_rows'] and length >= self.settings['length_mm']:
-                yield at, values[own], length, width, confirmed, lanes

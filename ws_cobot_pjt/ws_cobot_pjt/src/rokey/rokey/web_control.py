@@ -202,11 +202,8 @@ class WebControl(Node):
             raise ValueError('실차 메시 장면에서 부품 검사를 실행하세요')
 
         def pose_check(previous, part):
-            if self.robot.mode != 'real' or plan_only:
-                return False
-            if previous is None and part == 'bonnet':
-                return ScanScene.active_panel() in ('left_door', 'right_door')
-            return part != previous
+            return (self.robot.mode == 'real' and not plan_only and part != previous and
+                    (previous is not None or part != 'bonnet'))
 
         self.launch_steps(steps, data.get('request_id'), plan_only,
                           dict(model=vehicle['model'], plate=vehicle['name']), pose_check)
@@ -290,17 +287,13 @@ class WebControl(Node):
             job = self.db.job(job_id)
             if job['status'] != 'running':
                 raise ValueError('진행 중인 DB 작업만 실행할 수 있습니다')
-            args = [sys.executable, '-u', '-m', 'rokey.repair_manager', '--job-id', str(job_id)]
-            if self.robot.mode == 'real':
-                self.check_scan_ready()
-                if data.get('placement') != 'bonnet':
-                    raise ValueError('실기 수리 전에 정면 보닛 배치를 확인하세요.')
-                if job.get('mode') == 'manual' and job['requested'] != ['bonnet']:
-                    raise ValueError('실기 수동 교체는 보닛 한 부품을 지원합니다.')
-                args.append('--front-placement-confirmed')
-            elif job.get('mode') == 'auto' and self.scene('model') == 'real' and self.robot.probe_attached() is False:
-                raise ValueError('실차 스캔 전에 탐침을 파지하세요 (그리퍼가 비어 있음)')
-            self.launch('repair', args, job=job_id)
+            if job.get('mode') == 'auto' and (self.robot.mode == 'real' or self.scene('model') == 'real'):
+                # 실차 자동 모드는 real_scan: 탐침을 잡은 채로 (보닛 교체는 탐침을 거치대에 두고 끝남).
+                # RG2 피드백이 없는 구성(DO 로만 여닫음)은 None: 웹에서 사람이 확인하고 시작한다
+                if self.robot.probe_attached() is False:
+                    raise ValueError('실차 스캔 전에 탐침을 수동으로 파지하세요 (그리퍼가 비어 있음)')
+            self.launch('repair', [sys.executable, '-u', '-m', 'rokey.repair_manager',
+                                  '--job-id', str(job_id)], job=job_id)
         except (ValueError, KeyError, TypeError, OSError, RuntimeError) as error:
             job_id = data.get('job_id') if isinstance(data, dict) else None
             if (isinstance(data, dict) and data.get('cmd') == 'start'

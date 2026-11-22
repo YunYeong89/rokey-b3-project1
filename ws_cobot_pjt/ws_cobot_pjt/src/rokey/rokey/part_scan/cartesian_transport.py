@@ -14,9 +14,8 @@ SPEED_LIMIT_HEADROOM = 1.1
 
 
 class CartesianTransport:
-    def __init__(self, program, settings, detection_speed_mm_s, *, force_axis=None):
+    def __init__(self, program, settings, detection_speed_mm_s):
         self.program, self.robot, self.node, self.settings = program, program.robot, program.node, settings
-        self.force_axis = force_axis
         self.linear_speed = max(SPEED_LIMIT_MM_S, detection_speed_mm_s * SPEED_LIMIT_HEADROOM) / 1000
         self.message, self.received = None, 0.
         self.run_id, self.sequence = '', 0
@@ -71,7 +70,7 @@ class CartesianTransport:
         raise TimeoutError('TCP did not become stationary before detection')
 
     def send(self, position, rotation, feed, force=0.):
-        """Force target on the session's press axis, in N. Zero requests position-only motion."""
+        """force: contact force target along the TCP +z axis (into the surface), N; 0: position only."""
         state = self.state()
         if state.run_id != self.run_id or not state.active:
             raise RuntimeError(state.reason or 'Cartesian stream ownership changed')
@@ -110,8 +109,6 @@ class CartesianTransport:
         request = CartesianSession.Request(command=command, run_id=run_id)
         if command == CartesianSession.Request.START:
             c = self.settings['pd']
-            if self.force_axis is not None:
-                request.force_axis.x, request.force_axis.y, request.force_axis.z = map(float, self.force_axis)
             request.pd = PosePdConfig(
                 enabled=c['enabled'], position_kp=c['position_kp'], position_kd_s=c['position_kd_s'],
                 orientation_kp=c['orientation_kp'], orientation_kd_s=c['orientation_kd_s'],

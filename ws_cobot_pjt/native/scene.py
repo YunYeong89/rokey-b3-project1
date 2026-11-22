@@ -23,7 +23,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'ws_cobot_pjt/sr
 from configs import load  # noqa: E402  (rokey package configuration)
 from vehicle_model import VehicleModel, pose_matrix, write_stl  # noqa: E402
 from real_vehicle import RealVehicle, read_stl  # noqa: E402
-from scan_scene import DOOR_DEMO_PANELS, ScanScene  # noqa: E402
 from performance_sample import PerformanceSample  # noqa: E402
 from defect_block import DefectBlock  # noqa: E402
 
@@ -138,21 +137,15 @@ class Vehicle:
 class RealDisplayScene:
     """The holder-mounted vehicle and its reference points for the connected robot's viewers."""
 
-    def __init__(self, cache, placement=None, *, kind='real'):
-        cell = load('real_scene')
-        vehicle, probe = cell['vehicle'], cell['probe']
+    def __init__(self, cache, placement=None):
+        cell, probe = load('real_scene')['vehicle'], load('real_scene')['probe']
         self.probe_holder = ProbeHolder(probe) if probe['holder_pose_base_mm_deg'] else None
         cache.mkdir(parents=True, exist_ok=True)
-        panel = DOOR_DEMO_PANELS.get(kind)
-        if panel:
-            pose, base_z = ScanScene.inspection_pose(panel, cell, placement=placement)
-        else:
-            pose, base_z = placement or vehicle['pose_base_mm_deg'], vehicle['base_z_mm']
-        self.vehicle = Vehicle('demo_front' if kind == 'real' else kind, pose, (), cache,
-                               visual_only=True, table_z=vehicle['table_z_mm'])
-        if base_z is not None:
-            self.vehicle.pose[2, 3] = base_z / 1000
-            self.vehicle.truth.update(pose_base_mm_deg=pose, base_z_mm=base_z)
+        self.vehicle = Vehicle('demo_front', placement or cell['pose_base_mm_deg'], (), cache,
+                               visual_only=True, table_z=cell['table_z_mm'])
+        if cell['base_z_mm'] is not None:
+            self.vehicle.pose[2, 3] = cell['base_z_mm'] / 1000
+            self.vehicle.truth['base_z_mm'] = cell['base_z_mm']
 
     def markers(self):
         from visualization_msgs.msg import MarkerArray

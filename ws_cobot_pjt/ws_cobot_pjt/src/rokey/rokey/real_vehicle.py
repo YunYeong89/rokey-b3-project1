@@ -80,16 +80,6 @@ class RealVehicle:
             self.triangles = clip(self.triangles, axis, value)
         self.damage = []
         self.parts = self.split()
-        self._trim_door_interior()
-
-    def _trim_door_interior(self):
-        """Keep only the two outer door panels as scan targets, retaining the rest as collision geometry."""
-        doors = self.parts == 'door'
-        threshold = self.spec['door_outer_y_mm']
-        triangles = clip(clip(self.triangles[doors], 1, -threshold), 1, threshold)
-        exterior = np.abs(triangles[:, :, 1].mean(1)) >= threshold
-        self.triangles = np.concatenate((self.triangles[~doors], triangles))
-        self.parts = np.concatenate((self.parts[~doors], np.where(exterior, 'door', 'body')))
 
     def export_collision(self, directory):
         """One welded surface across visual part boundaries; OBJ retains shared vertex indices."""

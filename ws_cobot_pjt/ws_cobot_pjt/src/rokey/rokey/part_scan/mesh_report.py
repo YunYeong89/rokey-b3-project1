@@ -14,11 +14,10 @@ class MeshReport:
         self.directory.mkdir(parents=True, exist_ok=True)
         self.rois = None
 
-    def plan(self, plan, roi_reference=None, roi_cloud_settings=None, *, nominal=None, web_report=None, scene=None):
+    def plan(self, plan, roi_reference=None, roi_cloud_settings=None, *, nominal=None, web_report=None):
         source = getattr(plan.surface, 'geometry_source', 'mesh')
         checks = plan.planning_checks if source == 'pointcloud' else dict(
-            tool_collision=not getattr(plan.reach.clearance, 'tool_free', False),
-            arm_collision=True, transit=True, mesh_projection=True)
+            tool_collision=True, arm_collision=True, transit=True, mesh_projection=True)
         self.metadata = dict(controller=getattr(plan, 'controller',
                                                'cloud-normal' if source == 'pointcloud' else 'mesh-normal'),
                              planning_source=source, planning_checks=checks,
@@ -47,12 +46,8 @@ class MeshReport:
                 PointCloudFile.save_ply(self.directory / 'nominal_reference.ply', nominal / 1000).name)
         if web_report:
             self.metadata['web_report'] = web_report
-        if scene is not None:
-            self.metadata['inspection_scene'] = scene
         if plan.scan.get('roi_base_mm'):
             self.metadata['roi_base_mm'] = plan.scan['roi_base_mm']
-        if plan.scan.get('bonnet_path_mm'):
-            self.metadata['bonnet_path_mm'] = plan.scan['bonnet_path_mm']
         if plan.scan.get('rescan_of'):  # the survey this ROI rescan follows (real_scan.rescan): strict, drawn on the mesh
             self.metadata['rescan_of'] = plan.scan['rescan_of']
         (self.directory / 'plan.json').write_text(json.dumps(self.metadata, indent=2))

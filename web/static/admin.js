@@ -332,19 +332,12 @@ $("#startBtn").addEventListener("click", async () => {
       && !["sedan", "suv", "sports", "real"].includes(scene) && !scene.startsWith("demo")) {
     alert("수리 공정은 sedan/suv/sports 또는 실차(real, demo) 장면에서 실행하세요."); return;
   }
+  // 실차 자동 모드는 탐침으로 보닛을 스캔(real_scan): 그리퍼 피드백이 없으면 사람이 확인 (보닛 교체 뒤에는 탐침이 거치대에 있음)
+  const realCar = robotControl.status?.mode === "real" || scene === "real" || scene.startsWith("demo");
+  if (!state.demo && state.mode === "auto" && realCar && robotControl.status?.probe_attached !== true
+      && !confirm("그리퍼 상태를 확인할 수 없습니다.\n로봇이 탐침을 잡은 상태인지 직접 확인했나요?\n(확인을 누르면 보닛 스캔을 시작합니다)")) return;
   const parts = state.mode === "manual" ? pickedParts() : [];
   if (state.mode === "manual" && !parts.length) { alert("교체할 부품을 1개 이상 고르세요."); return; }
-  const physical = !state.demo && robotControl.status?.mode === "real";
-  if (physical) {
-    if (state.mode === "manual" && (parts.length !== 1 || parts[0] !== "bonnet")) {
-      alert("실기 수동 교체는 보닛 한 부품을 지원합니다."); return;
-    }
-    if (robotControl.status?.probe_attached !== true) {
-      alert("실기 수리 전에 탐침 파지와 RG2 피드백을 확인하세요."); return;
-    }
-    if (!confirm("차량이 정면 보닛 검사 배치에 있고 로봇이 HOME에 있는지 확인하세요.\n"
-        + (state.mode === "auto" ? "자동 검사 후 확정 손상이 있으면 보닛을 교체합니다." : "보닛 교체를 시작합니다."))) return;
-  }
   resetLive();
   $("#resultBox").className = "result hidden";
   let job;
@@ -361,7 +354,7 @@ $("#startBtn").addEventListener("click", async () => {
   setRunning(true); renderJob(job); startPolling(job.id);
   if (state.demo) runDemo(job);
   else {
-    try { robotControl.repair({ cmd: "start", job_id: job.id, ...(physical ? { placement: "bonnet" } : {}) }); }
+    try { robotControl.repair({ cmd: "start", job_id: job.id }); }
     catch (e) {
       await api("POST", `/api/jobs/${job.id}/finish`, { status: "failed", summary: e.message });
       alert(e.message); return;

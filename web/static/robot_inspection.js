@@ -368,8 +368,7 @@ export class RobotInspection {
     this.el("status").textContent = !robotControl.live ? "로봇 연결 대기" : this.pending ? "명령 접수 대기"
       : state.state === "stopping" ? state.message : confirm
         ? `${prefix} · 검사할 면이 로봇을 향하게 차량을 배치하세요.`
-        : inspection ? `${prefix} · ${state.plan_only ? "경로 계획 중" : PHASE[inspection.phase]}${progress}`
-        : state.task === "real_scan" && ["failed", "succeeded"].includes(state.state) ? state.message
+        : inspection ? `${prefix} · ${PHASE[inspection.phase]}${progress}`
         : performance.now() - (this.saved ?? -Infinity) < 3000 ? "탐색 순서를 저장했습니다."
         : state.probe_attached === false && !this.el("plan-only").checked ? "탐색 전에 탐침을 수동으로 파지하세요."
         : state.task === "real_scan" ? state.message : "탐색 대기";

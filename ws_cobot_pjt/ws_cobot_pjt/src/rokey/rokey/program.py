@@ -54,28 +54,7 @@ class RobotProgram:
         zone = self.config['vehicle_zone']
         return max(zone['table_z_mm'] + zone['max_height_mm'], self.top_mm) + self.config['scan']['clearance_mm']
 
-    def scan_transfer(self, pose, xy, z, rotation):
-        """Lift and traverse above the scan. Round the corner within the clearance above the vehicle."""
-        motion = self.config['motion']
-        transfer = motion['scan_transfer']
-        start = rotation_zyz(pose[3:])
-        lift, across = np.r_[pose[:2], z], np.r_[xy, z]
-        rise = z - pose[2]
-        distance = np.linalg.norm(across[:2] - lift[:2])
-        radius = min(transfer['blend_radius_mm'], self.config['scan']['clearance_mm'] / 3.)
-        turn = self.probe.turn_deg(pose[3:], rotation)
-        if radius > 0. and min(rise, distance) > 2. * radius and turn < .5:
-            stopped = self.probe.blend([(lift, start), (across, rotation)], transfer['blend_speed'], radius,
-                                       until=lambda _, wrench: np.linalg.norm(wrench[:3]) > self.probe.max_force,
-                                       acc=motion['approach_acc'])
-            if stopped:
-                raise RuntimeError('검사 이동 중 반력 한계 초과')
-            return
-        if rise > 0. or turn >= .5:
-            self.probe.move(lift, rotation, transfer['lift_speed'], acc=motion['approach_acc'])
-        self.probe.move(across, rotation, transfer['linear_speed'], acc=motion['linear_acc'])
-
-    def home(self, joints=None, *, scan_travel=False):
+    def home(self, joints=None):
         """movej home in position control (force and compliance released first). From the work area (up to
         50 mm above the travel height) the probe first goes straight up to the travel height and across to
         above the home TCP: a joint-space move from above the vehicle would cut down over it."""
@@ -91,11 +70,8 @@ class RobotProgram:
             #         made the probe bob up and back down on every call (twice before each surface run)
         if pose[2] <= self.safe_z() + 50.0 and np.linalg.norm(np.subtract(pose[:2], target[:2])) > 5.0:
             z = max(pose[2], self.safe_z())  # lift only when it has to travel across the work area
-            if scan_travel and self.mode == 'real':
-                self.scan_transfer(pose, target[:2], z, rotation)
-            else:
-                self.probe.move([*pose[:2], z], rotation, motion['approach_speed'], acc=motion['approach_acc'])
-                self.probe.move([*target[:2], z], rotation, motion['linear_speed'], acc=motion['linear_acc'])
+            self.probe.move([*pose[:2], z], rotation, motion['approach_speed'], acc=motion['approach_acc'])
+            self.probe.move([*target[:2], z], rotation, motion['linear_speed'], acc=motion['linear_acc'])
         self.robot.movej(joints, motion['joint_speed'], motion['joint_acc'])
 
     def close(self):

@@ -146,15 +146,14 @@ def raster(mask, runs):
 
 
 
-def sweep(mask, runs, *, strict=False):
+def sweep(mask, runs):
     """One path through all the segments of one connected region line after line in the lines' order, never back
     (raster may turn back to reach a segment): on each line its segments in order along it, every other line the
     other way round (serpentine). Joined straight between adjacent lines when that stays within one line spacing of
     the region, else around over it (corners), also between the segments of one line."""
     columns = np.unique([c[0, 1] for _, c in runs])
     loose = mask.copy()
-    growth = int(np.diff(columns).min()) if len(columns) > 1 else 1
-    for _ in range(0 if strict else growth):
+    for _ in range(int(np.diff(columns).min()) if len(columns) > 1 else 1):
         grown = loose.copy()
         grown[1:] |= loose[:-1]
         grown[:-1] |= loose[1:]

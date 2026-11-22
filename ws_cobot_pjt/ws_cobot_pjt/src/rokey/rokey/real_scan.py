@@ -9,9 +9,10 @@ and compliance (the DSR services), as contact_scrape scrapes the block.
              ros2 run rokey real_scan --box [--plan-only] [--pitch MM] [--speed MM_S]
              ros2 run rokey real_scan --box --controller mesh-height [--roi X0 Y0 X1 Y1]
 
-Real robot (./run_real.sh): config/real_scene.yaml supplies the cell and ProbeTCP. With --car demo_left or
-demo_right, --part door uses the session's selected door and placement. Real mesh-height runs DSR movesx
-strokes (part_scan/height_dsr.py). Mesh-normal is available for planning only.
+Real robot (./run_real.sh): the vehicle and probe rack placement and the ProbeTCP come from the measured
+config/real_scene.yaml (scan_scene.py) instead of the session; --part with the default controller or mesh-height
+(the mesh plan run with DSR movesx strokes, part_scan/height_dsr.py). On the real robot,
+mesh-normal is available for planning only.
 
 Every run also publishes rokey_interfaces topics (part_scan/scan_topics.py): /scan/samples (ContactSampleArray),
 /scan/progress (ScanPart feedback), /scan/roi (RoiArray, default controller) and /scan/result (ScanPart result);
@@ -56,18 +57,15 @@ Defect geometry remains in simulation contact and offline evaluation only.
    The samples CSV and ROI JSON retain the measurements and ROI evidence."""
 import argparse
 from .robot_namespace import program_args
-import json
 import signal
 from copy import deepcopy
 from datetime import datetime
-from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
 
-from .configs import PACKAGE, SESSION, output_dir
+from .configs import PACKAGE, output_dir
 from .part_scan import BOX_CONTROLLERS, MESH_CONTROLLERS, SCAN_CONTROLLERS
-from .part_scan.bonnet_path import BonnetPath
 from .part_scan.cloud import PartCloud
 from .part_scan.damage_report import web_report_metadata
 from .part_scan.planner import PartPlan
@@ -101,19 +99,14 @@ def main():
                         help='Bonnet mesh-height only: repeatable BASE-frame rectangles in mm, scanned along Y')
     parser.add_argument('--roi-local', nargs=4, type=float, metavar=('U0', 'V0', 'U1', 'V1'),
                         help='Mesh-height rectangle in vehicle mm (bonnet XY, door XZ)')
-    parser.add_argument('--bonnet-path', nargs='?', type=Path, const=SESSION / 'bonnet_path.json', metavar='JSON',
-                        help='Require the bonnet editor selection, or read a specific selection JSON file')
-    parser.add_argument('--full-bonnet', action='store_true',
-                        help='Scan the full bonnet with mesh-height, bypassing the saved editor selection')
-    parser.add_argument('--result-manifest', type=Path, help=argparse.SUPPRESS)
     parser.add_argument('--inspection-position', action='store_true',
-                        help='Use the panel inspection placement (automatic for real bonnet scans)')
+                        help='Use the inspection placement for the selected panel (taught or demo)')
     parser.add_argument('--inspection-region', type=int, default=0,
                         help='Region number in the web inspection report')
     parser.add_argument('--probe-tip-mm', nargs=2, type=float, metavar=('RADIUS', 'TCP_Z'),
                         help='Real --roi-base only: mounted ball radius and flange-to-tip Z in mm for this scan')
     parser.add_argument('--side', choices=['left', 'right'],
-                        help='door side; defaults to the selected demo door in a real demo session')
+                        help='door only: the vehicle\'s left or right door alone (default: left, then right)')
     parser.add_argument('--controller', choices=SCAN_CONTROLLERS, default='default')
     parser.add_argument('--replan', action='store_true', help='mesh controllers: rebuild the plan cache')
     options = parser.parse_args(program_args())
@@ -137,13 +130,6 @@ def main():
         if (options.part not in ('bonnet', 'door') or options.controller != 'mesh-height' or options.roi_base or
                 not np.isfinite(options.roi_local).all() or u0 >= u1 or v0 >= v1):
             parser.error('--roi-local requires mesh-height bonnet or door and increasing vehicle-frame bounds')
-    full_bonnet = options.part == 'bonnet' and options.controller == 'mesh-height' and not (
-        options.roi_base or options.roi_local)
-    if options.full_bonnet and (not full_bonnet or options.bonnet_path is not None):
-        parser.error('--full-bonnet requires mesh-height bonnet without another region selection')
-    drawn_bonnet = full_bonnet and not options.full_bonnet
-    if options.bonnet_path is not None and not drawn_bonnet:
-        parser.error('--bonnet-path requires --part bonnet --controller mesh-height without other ROI options')
     if options.inspection_position and (options.part not in ('bonnet', 'door') or
                                         options.part == 'door' and not options.side):
         parser.error('--inspection-position requires bonnet or an explicit door side')
@@ -157,47 +143,27 @@ def main():
     if options.side and options.part != 'door':
         parser.error('--side applies to --part door only')
     options.web_report = web_report_metadata()
+    name = 'box' if options.box else f'{options.part}_{options.side}' if options.side else options.part
+    stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    prefix = 'performance' if options.box else f'real_{name}'
+    if options.inspection_region:
+        prefix += f'_r{options.inspection_region}'
     program = RobotProgram('real_scan')
-    topics = None
+    topics = program.topics = ScanTopics(program.node, f'{prefix}_{stamp}', name)
     try:
-        selected_file, options.bonnet_path = options.bonnet_path, None
-        if drawn_bonnet and selected_file is None and program.mode == 'real':
-            saved = SESSION / 'bonnet_path.json'
-            selected_file = saved if saved.is_file() else None
-        if selected_file is not None:
-            if not selected_file.is_file():
-                raise ValueError('보닛 편집기에서 검사 범위를 먼저 저장하세요.')
-            options.bonnet_path = BonnetPath.load(selected_file)
-        door_scene = None
-        if program.mode == 'real' and options.part == 'door':
-            options.side, door_scene = ScanScene.real_door(options.side, reposition=options.inspection_position)
-        name = 'box' if options.box else f'{options.part}_{options.side}' if options.side else options.part
-        stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        prefix = 'performance' if options.box else f'real_{name}'
-        if options.inspection_region:
-            prefix += f'_r{options.inspection_region}'
-        topics = program.topics = ScanTopics(program.node, f'{prefix}_{stamp}', name)
-        scan_part(program, options, parser, name, prefix, stamp, door_scene=door_scene)
-        if options.result_manifest is not None:
-            options.result_manifest.write_text(json.dumps(topics.outcome.get('reports', [])))
+        scan_part(program, options, parser, name, prefix, stamp)
         topics.finish(True, '완료')
     except BaseException as error:
-        if topics is not None:
-            topics.finish(False, '중지' if isinstance(error, KeyboardInterrupt) else str(error) or type(error).__name__)
+        topics.finish(False, '중지' if isinstance(error, KeyboardInterrupt) else str(error) or type(error).__name__)
         raise
     finally:
         program.close()
 
 
-def scan_part(program, options, parser, name, prefix, stamp, *, door_scene=None):
+def scan_part(program, options, parser, name, prefix, stamp):
     panel = 'bonnet' if options.part == 'bonnet' else f'{options.side}_door'
-    inspection_part = panel if options.inspection_position or (program.mode == 'real' and panel == 'bonnet') else None
     truth, plan = ScanScene.load(program.mode, 'performance' if options.box else 'real',
-                                 inspection_part=inspection_part, door_scene=door_scene)
-    if program.mode == 'real':
-        truth['inspection_scene'] = dict(panel=panel if options.part == 'door' and options.side else options.part,
-                                         run_id=program.topics.run_id,
-                                         pose_base_mm_deg=truth['pose_base_mm_deg'], base_z_mm=truth['base_z_mm'])
+                                 inspection_part=panel if options.inspection_position else None)
     config, probe = program.config, program.config['probe']
     if options.probe_tip_mm:
         if program.mode != 'real':
@@ -255,7 +221,7 @@ def scan_part(program, options, parser, name, prefix, stamp, *, door_scene=None)
         from .mesh_scan import run_mesh_scan
         report = run_mesh_scan(program, options, deepcopy(scan), vehicle, pose, plan, truth, stamp)
         if (options.controller == 'mesh-height' and options.part == 'bonnet' and not options.plan_only and
-                not options.roi_base and not options.roi_local and not options.bonnet_path and report.rois is not None):
+                not options.roi_base and not options.roi_local and report.rois is not None):
             rescan(program, options, scan, vehicle, pose, plan, truth, report)
         return
     threshold = scan['default_scan']['contact_threshold_n']
@@ -297,23 +263,26 @@ def scan_part(program, options, parser, name, prefix, stamp, *, door_scene=None)
             parser.error('--roi is too small for the planning grid')
         planning_cloud = SimpleNamespace(part='box',points=points[keep])
     channel = CloudChannel()
-    publish_cloud = program.mode != 'real' or not options.plan_only
-    if publish_cloud:
-        channel.begin(points / 1000, truth.get('inspection_scene'))
-    program.log(f'{name}: reference cloud {len(points)} points ({cloud.path})')
+    channel.write('reference', points / 1000)
+    channel.write('measured', [])
+    program.log(f'{name}: reference cloud {len(points)} points ({cloud.path}) -> RViz Cloud reference')
     home_position = chain.forward(home)[0][:3, 3] * 1000
     if program.mode == 'real':
         controller_home = program.robot.fkin(config['robot']['home_joints_deg'])
         controller_home = np.asarray(controller_home[:3]) + rotation_zyz(controller_home[3:]) @ program.probe.offset
         if np.linalg.norm(home_position - controller_home) > 2.0:
             raise RuntimeError(f'실제 로봇의 TCP가 계획에 사용한 {plan["tcp_mm_deg"]} (mm, deg)과 일치하지 않습니다.')
+    program.home()
+    actual, _ = program.probe.read()
+    if np.linalg.norm(home_position - actual[:3]) > 2.0:
+        raise RuntimeError('URDF/ProbeTCP HOME differs from the controller HOME by more than 2 mm')
     program.log(f'{name}: 스캔 경로와 접근·이탈 자세를 계산 중입니다')
     part_plan = PartPlan(planning_cloud, axes, clearance, reach, scan, probe['tip_radius_mm'], program.safe_z())
     program.log(f'{name}: {part_plan.summary(scan["speed_mm_s"])}')
     touchable = points[part_plan.on_measurable(points)]
-    if publish_cloud:
-        channel.write('reference', touchable / 1000)
-        program.log(f'{name}: RViz Cloud reference -> {len(touchable)} measurable points')
+    channel.write('reference', touchable / 1000)
+    program.log(f'{name}: RViz Cloud reference -> the {len(touchable)} measurable points (outer surface the probe '
+                f'can touch)')
     report = ScanReport(images, f'{prefix}_{stamp}', cloud.points, options.web_report)
     report.save_reference()
     evaluation = (PerformanceReport(vehicle,pose,cloud,images,f'{prefix}_{stamp}',
@@ -331,10 +300,6 @@ def scan_part(program, options, parser, name, prefix, stamp, *, door_scene=None)
         if not part_plan.paths and not options.plan_only:
             raise RuntimeError(f'{name}: 접근과 이탈이 가능한 스캔 경로가 없습니다.')
         return
-    program.home(scan_travel=True)
-    actual, _ = program.probe.read()
-    if np.linalg.norm(home_position - actual[:3]) > 2.0:
-        raise RuntimeError('URDF/ProbeTCP HOME differs from the controller HOME by more than 2 mm')
     scanner = DefaultScan(program, scan, part_plan, channel, report, evaluation, name, clouds, stamp)
     try:
         scanner.run()

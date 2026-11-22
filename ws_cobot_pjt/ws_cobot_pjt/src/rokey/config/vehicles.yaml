@@ -59,14 +59,12 @@ real:
   # Scan parts (rokey real_scan) from the assembly's bodies (connected shells): the bodies under the `parts` seed
   # points (vehicle frame mm, nearest triangle) are bonnet / bumper (front and rear); the other bodies reaching within
   # shell_mm[0] of the outer box (sides, ends, top) with their top above shell_mm[1] are the body (not wheels, axles,
-  # seats, dashboard); the door box spans from the rear edge of the open window towards the nose (+X).
-  # Side-facing triangles (|normal y| >= door[4]) inside the box are cropped to the two outer panels.
+  # seats, dashboard); body triangles at door x0..x1, z0..z1 facing sideways (|normal y| >= door[4]) are both doors.
   parts:
     bonnet: [[72.05, 0.0, 90.07]]   # vehicle-frame mm below scale with length_mm (0.9007)
     bumper: [[112.13, 0.0, 47.74], [-111.68, 0.0, 51.34]]
   shell_mm: [13.51, 54.04]
-  door: [-17.0, 36.03, 40.53, 121.59, 0.7]
-  door_outer_y_mm: 40.0            # minimum distance from the vehicle centre plane to the outer door skin
+  door: [-39.63, 36.03, 40.53, 121.59, 0.7]
 
 # --car demo (= demo_front), demo_front, demo_left, demo_right (native session): the `real` vehicle fixed on the vehicle
 # holder (team 3D-models holder.stl: 200 x 200 mm base plate on the table, four posts up into the vehicle underside),

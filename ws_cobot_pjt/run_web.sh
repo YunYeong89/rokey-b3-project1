@@ -108,10 +108,8 @@ start() {
         exit 1
     fi
     if [[ ! -x "$WEB/.venv/bin/python" ]]; then
+        echo '웹 서버 의존성 설치 (최초 1회)'
         python3 -m venv "$WEB/.venv"
-    fi
-    if ! "$WEB/.venv/bin/python" -c 'import flask, numpy, yaml' 2>/dev/null; then
-        echo '웹 서버 의존성 설치'
         "$WEB/.venv/bin/pip" install -q -r "$WEB/requirements.txt"
     fi
     mkdir -p "$STATE"

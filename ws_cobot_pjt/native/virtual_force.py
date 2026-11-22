@@ -155,7 +155,7 @@ class GazeboForceBackend(GazeboDisplay):
             if name in ('cartesian_start', 'cartesian_stop'):
                 try:
                     if name == 'cartesian_start':
-                        return self.surface.begin('position', request.get('pd'), force_axis=request.get('force_axis'))
+                        return self.surface.begin('position', request.get('pd'))
                     if self.surface.method != 'position' or request['run_id'] != self.surface.run_id:
                         raise ValueError('Cartesian stream ownership mismatch')
                     return self.surface.halt('Cartesian stream released by operator')

@@ -154,4 +154,4 @@ class DefaultScan:
         self.channel.write('measured', self.points)
         cloud = PointCloudFile.save(self.clouds / f'real_{self.part}_{self.stamp}_measured.ply', self.points)
         self.program.topics.record(measured_cloud=str(cloud), points=len(self.points))
-        self.program.home(scan_travel=True)
+        self.program.home()

@@ -17,8 +17,6 @@ class RealProbePickup:
     NEAR_GRASP_MM = 6.
     # The taught grasp pose measured 24.29 N before lifting and 2.25 N after raising 6 mm.
     NEAR_GRASP_LIMIT_N = 28.
-    TRANSFER_SPEED = 55.
-    TRANSFER_RADIUS_MM = 5.
 
     def __init__(self, robot, settings, home_joints):
         self.robot, self.settings, self.home_joints = robot, settings, home_joints
@@ -75,7 +73,7 @@ class RealProbePickup:
         if not release:
             self.gripper(opening=True)
         self.log.info(f'HOME → 탐침 거치대 접근점 → {action} 위치 (Z {target[2]:.2f} mm)')
-        self.move(approach, self.TRANSFER_SPEED)
+        self.move(approach, 30.)
         self.move(above_target, 16.)
         self.move(near_target, 20.)
         self.move(target, 6., at_fixture=not release)
@@ -83,15 +81,7 @@ class RealProbePickup:
 
         self.log.info(f'{action} 후 수직 상승하여 HOME 복귀')
         self.move(near_target, 6., at_fixture=not release)
-        if lift[2] > above_target[2] + 2. * self.TRANSFER_RADIUS_MM:
-            self.move(above_target, 20.)
-            route = [lift, above_home, home]
-        else:
-            self.move(lift, 20.)
-            route = [above_home, home]
-        poses = [(point[:3], rotation_zyz(point[3:])) for point in route]
-        if self.probe.blend(poses, self.TRANSFER_SPEED, self.TRANSFER_RADIUS_MM,
-                            until=lambda _, wrench: np.linalg.norm(wrench[:3]) > self.probe.max_force,
-                            acc=50., angular_speed=40., angular_acc=120.):
-            raise RuntimeError(f'탐침 HOME 복귀 중 반력 한계 초과 ({self.probe.max_force:g} N)')
+        self.move(lift, 20.)
+        self.move(above_home, 30.)
+        self.move(home, 20.)
         self.log.info(f'탐침 {action} 동작 완료. HOME 도착.')

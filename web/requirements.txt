@@ -1,3 +1,2 @@
 Flask>=3.0,<4
 PyYAML>=6     # 로봇 탭 고정 실차 배치 (rokey config/real_scene.yaml)
-numpy>=1.26  # 실측 점군을 차량 좌표로 변환

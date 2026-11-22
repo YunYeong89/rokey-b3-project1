@@ -7,15 +7,16 @@ recording every stage in the repair DB:
              those parts are replaced at pendant-taught positions.
   plan       auto mode, real vehicle: real_scan's mesh path plan (its cache or a new plan), read from its output
   scan       auto mode. The real vehicle (real robot, or a virtual session of the real assembly): real_scan
-             (--controller mesh-height, as the web part inspection) per REAL_SCAN_PARTS. Completed real scan ROI
-             reports drive replacement for confirmed dent/crack. Candidates alone are recorded as suspect.
+             (--controller mesh-height, as the web part inspection) per REAL_SCAN_PARTS -> detect: its result.json
+             damage summary, a confirmed dent / crack ROI -> finding and replace, candidates only -> suspect.
              The scaled model vehicles (virtual sedan/suv/sports): scan_surface over the replaceable parts.
              No damage -> no_damage
   stock      check_db for the parts to replace (auto: dent/missing, manual: the requested parts) -> on_hold
   replace    replace_parts per part -> inspect -> replacement record, consume on success -> done / failed
 
-A stop request ends the job with `stopped`. On a real-robot error the job records the failure without
-commanding a return to HOME. A failed taught replacement also inhibits automatic HOME in simulation.
+A stop command stops the robot at once and records nothing more (the web records `stopped`); an error is
+recorded, the job fails and the robot goes home (not after a taught replacement stopped part-way: it may hold
+a part next to the vehicle).
   ros2 run rokey repair_manager [--calibrate]          (or ros2 launch rokey repair.launch.py)
 """
 import argparse
@@ -24,9 +25,6 @@ import os
 import re
 import sys
 import threading
-import time
-from pathlib import Path
-from tempfile import TemporaryDirectory
 
 from std_msgs.msg import String
 
@@ -34,25 +32,21 @@ if __package__:
     from .calibration import calibrate
     from .check_db import StockChecker
     from .choose_car import fixed
-    from .configs import load, output_dir, read_session
+    from .configs import output_dir, read_session
     from .robot_namespace import robot_topic
     from .force_data import CalibrationRun
     from .repair_db import RepairDB
     from .replace_parts import TAUGHT, PartReplacer
-    from .rg2_state import RG2State
-    from .scan_scene import ScanScene
     from .scan_surface import scan_parts
 else:
     from calibration import calibrate
     from check_db import StockChecker
     from choose_car import fixed
-    from configs import load, output_dir, read_session
+    from configs import output_dir, read_session
     from robot_namespace import robot_topic
     from force_data import CalibrationRun
     from repair_db import RepairDB
     from replace_parts import TAUGHT, PartReplacer
-    from rg2_state import RG2State
-    from scan_scene import ScanScene
     from scan_surface import scan_parts
 
 
@@ -70,11 +64,8 @@ class Stopped(Exception):
 
 
 class RepairManager:
-    def __init__(self, always_calibrate, front_confirmed=False):
+    def __init__(self, always_calibrate):
         self.program = CalibrationRun('repair_manager')
-        self.front_confirmed = front_confirmed
-        if self.program.mode == 'real':
-            self.gripper = RG2State(self.program.node, load('real_scene')['probe']['held_width_mm'])
         self.db = RepairDB(**self.program.config['db'])
         self.always_calibrate, self.pending, self.job, self.stage = always_calibrate, None, None, None
         self.program.node.create_subscription(String, robot_topic(self.program.node, '/repair/command'), self.command, 10)
@@ -104,7 +95,6 @@ class RepairManager:
 
     def run(self, job):
         program, job_id = self.program, job['job_id']
-        self.stage = 'prepare'
         try:
             program.reload()
             status, summary = self.process(job)
@@ -130,7 +120,7 @@ class RepairManager:
                     self.event(self.stage, str(error), 'error')
                     self.db.finish(job_id, 'failed', str(error))
                 finally:
-                    if program.mode == 'virtual' and not getattr(error, 'no_home', False):
+                    if not getattr(error, 'no_home', False):
                         program.home()
             return 1
         finally:
@@ -141,13 +131,6 @@ class RepairManager:
         manual = job.get('mode') == 'manual'
         parts = self.db.requested_parts(job_id) if manual else None
         real = self.real_vehicle()
-        physical = program.mode == 'real'
-        if physical:
-            if manual and parts != ['bonnet']:
-                raise RuntimeError('실기 수동 교체는 보닛 한 부품을 지원합니다.')
-            if ScanScene.active_panel() in ('left_door', 'right_door') and not self.front_confirmed:
-                raise RuntimeError('차량을 정면 배치로 돌리고 웹에서 보닛 배치를 확인하세요.')
-            self.check_real_probe()
         if manual and parts and all(part in TAUGHT for part in parts):
             self.event('calibrate', f'job {job_id} (manual {parts}): 티칭 좌표 교체라 보정·차량 인식 생략, 탐침 확인')
             self.hold_probe()   # the bonnet disassembly starts by putting the held probe on its holder
@@ -187,8 +170,6 @@ class RepairManager:
         if missing:
             raise Stopped('on_hold', f'재고 없음: {", ".join(missing)}')
         replacer, failed = PartReplacer(program, self.event), []
-        if physical:
-            self.check_real_probe()
         for part in parts:
             self.event('replace', part)
             outcome = replacer.replace(part)
@@ -200,8 +181,7 @@ class RepairManager:
                 self.db.consume(part)
             else:
                 failed.append(part)
-        if not physical:
-            program.home()
+        program.home()
         self.event('done', f'replaced {[part for part in parts if part not in failed]}')
         return ('failed', f'교체 실패: {", ".join(failed)}') if failed else ('done', f'교체 완료: {", ".join(parts)}')
 
@@ -210,53 +190,19 @@ class RepairManager:
         truth = read_session('scene_truth.json') if self.program.mode == 'virtual' else None
         return self.program.mode == 'real' or (truth or {}).get('model') == 'real'
 
-    def check_real_probe(self):
-        """Ensure the taught repair starts from HOME with its real probe and tool profiles."""
-        program, robot = self.program, self.program.robot
-        probe = program.config['probe']
-        if robot.get_robot_mode() != 1 or robot.get_control_mode() != 3 or robot.check_motion() != 0:
-            raise RuntimeError('실기 수리는 자동 모드의 위치 제어 정지 상태에서 시작하세요.')
-        robot.verify_profiles(probe['tool_name'], probe['tcp_name'])
-        home = program.config['robot']['home_joints_deg']
-        if any(abs(a - b) > 1. for a, b in zip(robot.get_current_posj(), home)):
-            raise RuntimeError('실기 수리를 시작하려면 먼저 HOME으로 이동하세요.')
-        deadline = time.monotonic() + 2.
-        while self.gripper.held() is None and time.monotonic() < deadline:
-            robot.executor.spin_once(timeout_sec=.1)
-            robot.check_cancelled()
-        if self.gripper.held() is not True:
-            raise RuntimeError('실기 수리 전에 RG2에서 탐침 파지를 확인하세요.')
-
-    @staticmethod
-    def scan_findings(runs, *, physical):
-        """Aggregate a completed survey and its optional rescan, using measured ROI on the physical robot."""
-        confirmed, candidates = set(), set()
-        kinds = {'dent', 'crack'}
-        for directory in runs:
-            result = json.loads((directory / 'result.json').read_text())
-            if not result.get('completed'):
-                raise RuntimeError(f'완료되지 않은 검사 결과: {directory.name}')
-            if physical:
-                roi = json.loads((directory / 'roi.json').read_text())
-                confirmed.update(region['type'] for region in roi['regions'] if region.get('confirmed'))
-                candidates.update(region['type'] for region in roi['candidates'])
-            else:
-                regions = (result.get('damage') or {}).get('regions') or {}
-                confirmed.update(kind for kind, info in regions.items() if info.get('confirmed'))
-                candidates.update(kind for kind, info in regions.items() if info.get('candidates'))
-        return sorted(confirmed & kinds), sorted((candidates & kinds) - confirmed)
-
     def scan_real(self):
-        """Run the whole scan and read only the reports emitted by this child."""
-        program, images = self.program, output_dir('images').resolve()
-        physical = program.mode == 'real'
+        """real_scan per REAL_SCAN_PARTS as a child process (stopped with this process group), then its damage
+        summary (images/real_<part>_<time>/result.json). Returns (findings, parts to replace)."""
+        program, images = self.program, output_dir('images')
         ros_args = ['--ros-args', '-r', f'__ns:={program.node.get_namespace()}']
         findings, replace = [], []
         for part in REAL_SCAN_PARTS:
             self.event('plan', f'{part}: 경로 계획 (real_scan, mesh-height)')
             planned = []
 
-            def line(text):
+            def line(text, part=part, planned=planned):
+                """real_scan's 'mesh plan cache hit / checked and cached: N s' line: the plan stage ends and the
+                scan starts. A later plan (the bonnet ROI rescan) stays in the scan stage."""
                 plan = PLAN_LINE.search(text)
                 if not plan:
                     return
@@ -268,22 +214,23 @@ class RepairManager:
                     self.event('scan', f'{part}: 실차 스캔 시작')
                 planned.append(plan[1])
 
-            with TemporaryDirectory(prefix='rokey-repair-') as pending:
-                manifest = Path(pending) / 'reports.json'
-                code = PartReplacer.run_child([sys.executable, '-u', '-m', 'rokey.real_scan', '--part', part,
-                                               '--controller', 'mesh-height', '--full-bonnet',
-                                               '--result-manifest', str(manifest),
-                                               *(['--inspection-position'] if physical else []), *ros_args],
-                                              line)
-                if code != 0:
-                    raise RuntimeError(f'{part} 스캔 실패 (real_scan 종료 코드 {code})')
-                files = [Path(path).resolve() for path in json.loads(manifest.read_text())]
-            runs = [path.parent for path in files if path.name == 'plan.json']
-            if not runs or any(run.parent != images or not run.name.startswith(f'real_{part}_') for run in runs):
+            before = set(images.glob(f'real_{part}_*'))
+            code = PartReplacer.run_child([sys.executable, '-u', '-m', 'rokey.real_scan', '--part', part,
+                                           '--controller', 'mesh-height',
+                                           *(['--inspection-position'] if program.mode == 'real' else []), *ros_args],
+                                          line)
+            if code != 0:
+                raise RuntimeError(f'{part} 스캔 실패 (real_scan 종료 코드 {code})')
+            runs = sorted(path for path in set(images.glob(f'real_{part}_*')) - before if (path / 'result.json').exists())
+            if not runs:
                 raise RuntimeError(f'{part} 스캔 결과(result.json)를 찾을 수 없습니다 ({images})')
-            confirmed, candidates = self.scan_findings(runs, physical=physical)
-            self.event('detect', f'{part}: 확정 {confirmed or "없음"}, 후보 {candidates or "없음"} '
-                                 f'({", ".join(run.name for run in runs)})', 'warn' if confirmed else 'info')
+            damage = json.loads((runs[-1] / 'result.json').read_text()).get('damage') or {}
+            regions = damage.get('regions') or {}
+            confirmed = {kind: info['confirmed'] for kind, info in regions.items() if info.get('confirmed')}
+            candidates = {kind: info['candidates'] for kind, info in regions.items() if info.get('candidates')}
+            percent = damage.get('damage_percent')
+            self.event('detect', f'{part}: 손상 {"-" if percent is None else f"{percent:.1f}%"}, 확정 {confirmed or "없음"}, '
+                                 f'후보 {candidates or "없음"} ({runs[-1].name})', 'warn' if confirmed else 'info')
             findings += [dict(part_code=part, decision=kind) for kind in confirmed]   # dent / crack
             if confirmed:
                 replace.append(part)
@@ -310,10 +257,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--calibrate', action='store_true', help='calibrate at every job start')
     parser.add_argument('--job-id', type=int, help='Run one existing DB job and exit (web_control)')
-    parser.add_argument('--front-placement-confirmed', action='store_true',
-                        help='The operator has confirmed the front-facing bonnet fixture')
     options, _ = parser.parse_known_args()
-    manager, code = RepairManager(options.calibrate, options.front_placement_confirmed), 1
+    manager, code = RepairManager(options.calibrate), 1
     try:
         if options.job_id is not None:
             job = manager.db.job(options.job_id)

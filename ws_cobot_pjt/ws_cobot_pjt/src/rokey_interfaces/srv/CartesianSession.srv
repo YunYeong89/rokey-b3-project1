@@ -3,7 +3,6 @@ uint8 STOP=1
 uint8 command
 string run_id
 rokey_interfaces/PosePdConfig pd
-geometry_msgs/Vector3 force_axis    # fixed BASE direction; zero selects the TCP +Z direction
 ---
 bool success
 string run_id

@@ -53,7 +53,7 @@ class MeshClearance(ToolClearance):
         if (hasattr(self, 'ball_radius') and
                 not self.tree.clear(tip + self.ball_radius * axis, self.ball_radius - self.ball_penetration)):
             return False
-        return getattr(self, 'tool_free', False) or all(self.tree.cylinder_clear(tip, axis, a, b, radius) and
+        return all(self.tree.cylinder_clear(tip, axis, a, b, radius) and
                    self.tree.cylinder_triangles_clear(self.rack_triangles, tip, axis, a, b, radius)
                    for a, b, radius in self.cylinders)
 

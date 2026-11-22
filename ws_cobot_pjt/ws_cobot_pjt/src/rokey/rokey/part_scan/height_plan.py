@@ -10,59 +10,12 @@ character lines out of every bonnet row)."""
 from copy import deepcopy
 
 import numpy as np
-from scipy.ndimage import distance_transform_edt, label, map_coordinates, minimum_filter
+from scipy.ndimage import map_coordinates, minimum_filter
 
 from ..rotations import align
 from .cloud import ball_bottom
 from .mesh_plan import MeshNormalPlan
 from .planner import PartPlan, sweep
-
-
-def door_panel(surface, grid, settings):
-    """The door's flat panel under the window, as grid cells: under the door's mid height, the normal within
-    flat_deg of the panel's (their median), the height within step_mm of a quadratic fit over them (twice: the handle,
-    a crease off it), seam_mm inside any other cell (the door/body joint, the window line), no strip narrower than
-    2 x narrow_mm, the largest region left, from its first row bottom_width as wide as its median row up, without its
-    front_mm toward the vehicle's front. Cached on the grid."""
-    if not hasattr(grid, 'panel'):
-        i, j = np.nonzero(grid.faces >= 0)
-        uv = grid.origin + (np.c_[i, j] + .5) * grid.step
-        height = grid.height[i, j]
-        points = uv[:, :1] * grid.u + uv[:, 1:] * grid.v + height[:, None] * grid.axis
-        door = surface.roi_coordinates(surface.triangles[surface.target].reshape(-1, 3))[:, 1]
-        keep = surface.roi_coordinates(points)[:, 1] <= (door.min() + door.max()) / 2
-        normals = grid.normal_grid[i, j]
-        reference = np.median(normals[keep], 0)
-        keep &= normals @ (reference / np.linalg.norm(reference)) >= np.cos(np.radians(settings['flat_deg']))
-        terms = np.c_[np.ones(len(uv)), uv, uv ** 2, uv[:, :1] * uv[:, 1:]]
-        for _ in range(2):
-            fit = np.linalg.lstsq(terms[keep], height[keep], rcond=None)[0]
-            keep &= np.abs(terms @ fit - height) <= settings['step_mm']
-        mask = np.zeros(grid.faces.shape, bool)
-        mask[i[keep], j[keep]] = True
-        mask = distance_transform_edt(np.pad(mask, 1))[1:-1, 1:-1] * grid.step > settings['seam_mm']
-        # opened: strips narrower than 2 x narrow_mm dropped (the tab under the left panel, 2.6 mm wide), the rest kept
-        core = distance_transform_edt(np.pad(mask, 1))[1:-1, 1:-1] * grid.step > settings['narrow_mm']
-        mask &= distance_transform_edt(~core) * grid.step <= settings['narrow_mm']
-        regions, count = label(mask)
-        panel = regions == np.bincount(regions.ravel())[1:].argmax() + 1 if count else mask
-        # its bottom rows up to the first bottom_width as wide as its median row dropped (the bulge under the right panel),
-        # and its front_mm toward the vehicle's front (vehicle +x: the hinge joint by the bonnet, left and right doors)
-        i, j = np.nonzero(panel)
-        uv = grid.origin + (np.c_[i, j] + .5) * grid.step
-        local = surface.roi_coordinates(uv[:, :1] * grid.u + uv[:, 1:] * grid.v + grid.height[i, j][:, None] * grid.axis)
-        rows = np.round(local[:, 1] / grid.step).astype(int)
-        widths = np.bincount(rows - rows.min())
-        bottom = np.flatnonzero(widths >= settings['bottom_width'] * np.median(widths[widths > 0]))[0]
-        drop = (rows - rows.min() < bottom) | (local[:, 0] > local[:, 0].max() - settings['front_mm'])
-        panel[i[drop], j[drop]] = False
-        grid.panel = panel
-    return grid.panel
-
-
-def panel_cells(grid, points):
-    """The grid cell (i, j) of each point across the grid's axis."""
-    return np.floor((np.c_[points @ grid.u, points @ grid.v] - grid.origin) / grid.step).astype(int).T
 
 
 def press_label(axis):
@@ -83,7 +36,6 @@ class MeshHeightPlan(MeshNormalPlan):
         settings = scan['mesh_normal']
         self.axis = np.asarray(axes[0], float)
         press, down, tilt = -self.axis, np.array([0., 0., -1.]), np.radians(settings['tool_tilt_deg'])
-        self.spin = np.radians(settings.get('tool_spin_deg', 0.))
         side = down - press * (down @ press)
         self.tool = np.cos(tilt) * press + (np.sin(tilt) * side / np.linalg.norm(side) if tilt else 0.)
         self.radius = settings['ball_radius_mm']
@@ -121,12 +73,9 @@ class MeshHeightPlan(MeshNormalPlan):
         return paths
 
     def scan_area(self, points):
-        """A door: its flat panel under the window only (door_panel), no handle, crease or door/body joint."""
         allowed = super().scan_area(points)
         if self.door_max_z is not None:
-            grid = self.grids[-1][1]
-            i, j = panel_cells(grid, points)
-            allowed &= door_panel(self.surface, grid, self.scan['mesh_normal']['door_panel'])[i, j]
+            allowed &= self.surface.roi_coordinates(points)[:, 1] <= self.door_max_z
         return allowed
 
     def transit(self, tip, rotation, seed):
@@ -156,10 +105,7 @@ class MeshHeightPlan(MeshNormalPlan):
         return tcp - self.radius * self.tool - self.radius * self.axis
 
     def rotation(self):
-        """The TCP axis on `tool`, turned the shortest way from HOME's, then spun tool_spin_deg about itself (J6; minus:
-        clockwise seen from the wrist down the tool)."""
-        c, s = np.cos(self.spin), np.sin(self.spin)
-        return align(self.reach.frame, -self.tool, np.pi) @ np.array([[c, -s, 0.], [s, c, 0.], [0., 0., 1.]])
+        return align(self.reach.frame, -self.tool, np.pi)
 
     def probe_pose(self, point, normal):
         # Only depth along the axis comes from the mesh; neither the tool nor the force axis follows its normals.

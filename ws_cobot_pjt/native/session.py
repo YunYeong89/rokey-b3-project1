@@ -16,8 +16,6 @@ from displays import RVizDisplay, StateReceiver
 from model_export import CACHE, ROOT, RobotModel
 from robot_network import RobotNetwork
 from calibration import DEFAULT_CALIBRATION
-from scene import DEMO, RealDisplayScene, probe_types, vehicle_types
-from scan_scene import DOOR_DEMO_PANELS, INSPECTION_SCENE, REAL_DOOR_SCENE
 
 # Native processes of a session, recognisable by their files: Gazebo server / window, RViz, robot_state_publisher.
 LEFTOVERS = [str(CACHE / 'world.sdf'), str(ROOT / 'native/gazebo.config'), str(CACHE / 'native.rviz'),
@@ -93,8 +91,6 @@ class NativeSession:
             lock.truncate()
             lock.write(str(os.getpid()))
             lock.flush()
-            (SESSION / REAL_DOOR_SCENE).unlink(missing_ok=True)
-            (SESSION / INSPECTION_SCENE).unlink(missing_ok=True)
             profile = ['--profile', 'virtual'] if self.args.mode == 'virtual' else []
             compose = ['docker', 'compose', '-f', str(ROOT / 'compose.yaml'), *profile]
             subprocess.run([*compose, 'up', '-d', '--wait'], check=True)
@@ -151,16 +147,15 @@ class NativeSession:
                             '--gui-config', str(ROOT / 'native/gazebo.config'),
                             '--render-engine-gui', 'ogre2',
                             '--render-engine-gui-api-backend', 'metal']))
-        elif self.args.car:
-            model.scene_map = real_scene = RealDisplayScene(CACHE / 'scene', self.args.car_pose, kind=self.args.car)
+        elif self.args.car == 'real':
+            from scene import RealDisplayScene
+            model.scene_map = real_scene = RealDisplayScene(CACHE / 'scene', self.args.car_pose)
         if not self.args.no_gui:
             rviz = RVizDisplay(model, self.start)
             self.displays.append(rviz)
             self.viewers.append(rviz.viewer)
         if real_scene is not None:
             self.session_files.append(real_scene.write_reference(SESSION))
-            if not self.args.observe_only and self.args.car in DOOR_DEMO_PANELS:
-                self.write_session(SESSION / REAL_DOOR_SCENE, real_scene.vehicle.truth)
         if not self.args.observe_only and not self.robot_id:
             host = 'emulator' if self.args.mode == 'virtual' else self.args.host
             environment = ' '.join(f'{key}={shlex.quote(value)}'
@@ -334,9 +329,9 @@ def main():
     parser.add_argument('--web-port', type=int, default=5050)
     parser.add_argument('--web-dir', type=Path, default=next(
         (d for d in (ROOT/'rokey-b3-project1/web', ROOT.parent/'web') if d.is_dir()), ROOT/'rokey-b3-project1/web'))
+    from scene import DEMO, probe_types, vehicle_types
     parser.add_argument('--car', choices=[*vehicle_types(), 'random', 'real', 'performance', *DEMO],
-                        help='Real mode displays the selected placement (demo_left or demo_right for a door); '
-                             'virtual mode puts this vehicle into the '
+                        help='Real mode displays the holder-mounted vehicle; virtual mode puts this vehicle into the '
                              'vehicle zone of rokey robot.yaml, with the probe rack; real = the team vehicle '
                              'assembly; performance = the fracture_sample.stl coupon with a probe rack; demo '
                              '(= demo_front), demo_front, demo_left, demo_right = the team vehicle on its holder 650 mm '
@@ -351,8 +346,8 @@ def main():
                         help='Real TCP/tool calibration JSON, applied in virtual mode')
     args = parser.parse_args()
     args.probe = args.probe or ('ball-2mm' if args.car in DEMO else 'standard')
-    if args.mode == 'real' and args.car not in (None, 'real', *DEMO):
-        parser.error('Real mode supports --car real, demo_front, demo_left, or demo_right')
+    if args.mode == 'real' and args.car not in (None, 'real'):
+        parser.error('Real mode supports --car real')
     if args.car_pose and not args.car:
         parser.error('--car-pose requires --car')
     if args.probe != 'standard' and not args.car:

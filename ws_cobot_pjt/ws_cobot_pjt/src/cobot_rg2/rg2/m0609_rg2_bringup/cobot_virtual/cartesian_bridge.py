@@ -23,10 +23,8 @@ class CartesianBridge:
             response.message = 'Unknown Cartesian session command'
             return response
         start = request.command == request.START
-        axis = request.force_axis
         result = self.bridge.connection.request('cartesian_start' if start else 'cartesian_stop',
                                                 {'run_id': request.run_id,
-                                                 'force_axis': [axis.x, axis.y, axis.z],
                                                  'pd': {field: getattr(request.pd, field)
                                                         for field in request.pd.get_fields_and_field_types()}})
         response.run_id = result.get('run_id', request.run_id)

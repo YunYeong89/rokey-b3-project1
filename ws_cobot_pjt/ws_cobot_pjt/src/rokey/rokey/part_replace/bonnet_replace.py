@@ -295,23 +295,24 @@ def disassemble(virtual=False, until=None):
         r.begin(4, "홈 경유 → 보닛 앞 접근",
                 caution="27줄 홈→보닛 앞 큰 직선 이동(ry -150), 특이점 회피로 경로가 달라질 수 있음")
         _ok(movej(posj(0.00, 0.00, 90.00, 0.00, 90.00, 0.00), radius=0.00, ra=DR_MV_RA_DUPLICATE), "DRL25 movej")
-        _ok(movel(posx(572.25, 2.85, 148.70, 178.60, -150.33, 178.23), radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_ABS, ra=DR_MV_RA_DUPLICATE), "DRL27 movel")
-        _ok(movel(posx(587.25, 2.85, 138.70, 178.60, -150.33, 178.23), radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_ABS, ra=DR_MV_RA_DUPLICATE), "DRL27 movel")
-        _ok(movel(posx(593.25, 2.85, 129.70, 178.60, -150.33, 178.23), radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_ABS, ra=DR_MV_RA_DUPLICATE), "DRL29 movel")
+        _ok(movel(posx(578, 2.78, 140, 180, -136.4, 180), radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_ABS, ra=DR_MV_RA_DUPLICATE), "DRL27 movel")
+        _ok(movel(posx(598, 2.78, 140, 180, -136.4, 180), radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_ABS, ra=DR_MV_RA_DUPLICATE), "DRL27 movel")
+        _ok(movel(posx(598, 2.78, 150, 180, -136.4, 180), radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_ABS, ra=DR_MV_RA_DUPLICATE), "DRL27 movel")
+
 
         r.begin(5, f"순응 + 힘 3N(+x), 보닛 앞 들기 z+40 ({T_FORCE_MOVE:.1f}초)")
         r.compliance_on = True
         _ok(task_compliance_ctrl(), "DRL31 task_compliance_ctrl")
         _ok(set_stiffnessx([3000.00, 3000.00, 3000.00, 200.00, 200.00, 200.00], time=0.0), "DRL32 set_stiffnessx")
         r.force_on = True
-        _ok(set_desired_force([3.00, 0.00, 0.00, 0.00, 0.00, 0.00], [1, 0, 0, 0, 0, 0], time=0.0, mod=DR_FC_MOD_ABS), "DRL34 set_desired_force")
+        _ok(set_desired_force([2.00, 0.00, 0.00, 0.00, 0.00, 0.00], [1, 0, 0, 0, 0, 0], time=0.0, mod=DR_FC_MOD_ABS), "DRL34 set_desired_force")
         # DRL time=9.33 → 9.33 / SPEED_SCALE
-        _ok(movel(posx(0.00, 0.00, 40.00, 0.00, 0.00, 0.00), time=T_FORCE_MOVE, radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_REL, ra=DR_MV_RA_DUPLICATE), "DRL36 movel")
+        _ok(movel(posx(0.00, 0.00, 20.00, 0.00, 0.00, 0.00), time=T_FORCE_MOVE, radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_REL, ra=DR_MV_RA_DUPLICATE), "DRL36 movel")
 
         r.begin(6, f"순응 + 힘 유지, x+10 z-10 ({T_FORCE_MOVE:.1f}초) → 힘·순응 해제",
                 caution="힘 제어 축(x, 3N)과 같은 방향으로 x+10 이동 명령. 실제 이동량이 다를 수 있음")
         # DRL time=9.33 → 9.33 / SPEED_SCALE
-        _ok(movel(posx(10.00, 0.00, -10.00, 0.00, 0.00, 0.00), time=T_FORCE_MOVE, radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_REL, ra=DR_MV_RA_DUPLICATE), "DRL38 movel")
+        _ok(movel(posx(6.00, 0.00, -6.00, 0.00, 0.00, 0.00), time=T_FORCE_MOVE, radius=0.00, ref=DR_BASE, mod=DR_MV_MOD_REL, ra=DR_MV_RA_DUPLICATE), "DRL38 movel")
         _ok(release_force(time=0.0), "DRL40 release_force")
         r.force_on = False
         _ok(release_compliance_ctrl(), "DRL42 release_compliance_ctrl")

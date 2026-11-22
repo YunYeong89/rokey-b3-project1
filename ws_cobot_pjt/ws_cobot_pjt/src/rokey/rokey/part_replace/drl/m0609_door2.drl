@@ -1,0 +1,51 @@
+## Title : m0609_door2
+## Time : 2026-11-22 17:18:03
+
+
+set_singular_handling(DR_AVOID)
+set_velj(60.0)
+set_accj(100.0)
+set_velx(250.0, 80.625, DR_OFF)
+set_accx(1000.0, 322.5)
+gLoop171803851 = 0
+while gLoop171803851 < 1:
+    # MoveLNode
+    movel(posx(445.16, 194.18, 59.28, 95.67, 142.28, 94.10), radius=0.00, ref=0, mod=DR_MV_MOD_ABS, ra=DR_MV_RA_DUPLICATE, app_type=DR_MV_APP_NONE)
+    # MoveLNode
+    movel(posx(440.65, 239.16, 2.08, 96.00, 142.59, 94.56), radius=0.00, ref=0, mod=DR_MV_MOD_ABS, ra=DR_MV_RA_DUPLICATE, app_type=DR_MV_APP_NONE)
+    # SetNode
+    set_digital_output(1,ON)
+    # SetNode
+    set_digital_output(2,OFF)
+    # WaitNode
+    wait(2.00)
+    # MoveLNode
+    movel(posx(440.65, 239.16, 20.00, 96.00, 142.59, 94.56), radius=0.00, ref=0, mod=DR_MV_MOD_ABS, ra=DR_MV_RA_DUPLICATE, app_type=DR_MV_APP_NONE)
+    # MoveLNode
+    movel(posx(578.74, 30.00, 140.00, 179.21, -142.44, -80.03), radius=0.00, ref=0, mod=DR_MV_MOD_ABS, ra=DR_MV_RA_DUPLICATE, app_type=DR_MV_APP_NONE)
+    # MoveLNode
+    movel(posx(578.74, 30.00, 130.00, 179.21, -142.44, -80.03), radius=0.00, ref=0, mod=DR_MV_MOD_ABS, ra=DR_MV_RA_DUPLICATE, app_type=DR_MV_APP_NONE)
+    # ComplianceNode
+    task_compliance_ctrl()
+    set_stiffnessx([200.00, 200.00, 200.00, 200.00, 200.00, 200.00],time=0.0)
+    # MoveLNode
+    movel(posx(1.00, 0.00, -15.00, 0.00, 0.00, 0.00), vel=[1.00, 60.08], acc=[1000.00, 240.33], radius=0.00, ref=0, mod=DR_MV_MOD_REL, ra=DR_MV_RA_DUPLICATE, app_type=DR_MV_APP_NONE)
+    # ComplianceNode
+    release_compliance_ctrl()
+    # SetNode
+    set_digital_output(1,OFF)
+    # SetNode
+    set_digital_output(2,ON)
+    # WaitNode
+    wait(0.50)
+    # MoveLNode
+    movel(posx(548.11, 28.05, 161.60, 178.97, -142.22, -80.21), radius=0.00, ref=0, mod=DR_MV_MOD_ABS, ra=DR_MV_RA_DUPLICATE, app_type=DR_MV_APP_NONE)
+    # SetNode
+    set_digital_output(2,OFF)
+    # SetNode
+    set_digital_output(1,ON)
+    # MoveLNode
+    movel(posx(572.22, 58.19, 103.18, 177.57, -142.01, -81.18), radius=0.00, ref=0, mod=DR_MV_MOD_ABS, ra=DR_MV_RA_DUPLICATE, app_type=DR_MV_APP_NONE)
+    # MoveLNode
+    movel(posx(621.09, -1.05, 108.68, 175.29, -141.93, -82.34), vel=[10.00, 60.83], acc=[1000.00, 243.30], radius=0.00, ref=0, mod=DR_MV_MOD_ABS, ra=DR_MV_RA_DUPLICATE, app_type=DR_MV_APP_NONE)
+    gLoop171803851 = gLoop171803851 + 1

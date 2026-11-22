@@ -1,4 +1,4 @@
-# part_replace — 보닛 분해·조립
+# part_replace — 보닛·문 분해·조립
 
 펜던트에서 만든 보닛 분해·조립 DRL 을 DSR_ROBOT2 파이썬으로 옮긴 것. 속도는 DRL 기본값의 **20%** (`SPEED_SCALE = 0.2`).
 
@@ -11,6 +11,9 @@
 | `bonnet_replace.py` | `disassemble()`, `assemble()` (다른 코드에서 import 가능) |
 | `drl/m0609_bonnet.drl` | 원본 분해 DRL |
 | `drl/m0609_bonnet_assembly.drl` | 원본 조립 DRL |
+| `door_replace.py` | 왼쪽 문: `disassemble_left()`, `assemble_left()` (아래 "문") |
+| `drl/m0609_door.drl` | 원본 문 분해 DRL (13~49줄 왼쪽 문 → door_replace.py, 51~81줄 오른쪽 문은 아직 이식 안 함) |
+| `drl/m0609_door2.drl` | 원본 문 조립 DRL (왼쪽 문만) |
 
 ## 상태
 - 가상 로봇: 분해·조립 확인 완료 (2026-11-20)
@@ -90,3 +93,25 @@ ros2 run rokey bonnet_replace disassembly|assembly|all [--virtual] [--until N]
 - [ ] 비상정지 버튼 옆에 사람 대기, 로봇 작업 범위 안 비우기
 - [ ] 처음엔 `disassembly` / `assembly` 를 따로 실행 (`all` 은 둘 다 확인한 뒤)
 - [ ] 중간에 멈췄으면 바로 다시 실행하지 말고, 펜던트로 안전한 곳까지 뺀 뒤 보닛·탐침을 정리하고 시작
+
+## 왼쪽 문 (`door_replace.py`)
+보닛과 같은 틀(Tool/TCP 확인, 속도 20%, 반환값 확인, 실패 시 정리, 자동 홈 복귀 없음)을 `bonnet_replace.py` 에서 가져다 씀.
+웹 수리(`replace_parts.TAUGHT`)에는 아직 연결 안 함 — 단독 실행만.
+```bash
+ros2 run rokey door_replace disassembly           # 왼쪽 문 분해
+ros2 run rokey door_replace assembly              # 왼쪽 문 조립
+ros2 run rokey door_replace all                   # 왼쪽 문 분해 → 조립
+ros2 run rokey door_replace disassembly --until 4
+```
+- 단계 수: 왼문 분해 7, 왼문 조립 7. `--until` 은 `all` 과 같이 못 씀.
+- DRL 에서 `vel=`/`acc=` 를 직접 준 movel 2개(조립 32·50줄): 직선 속도(1, 10 mm/s)는 그대로, 회전 속도·가속도는 × 0.2.
+- 좌표는 DRL 그대로 (자동 대조로 확인). 원본과 다른 곳:
+  - 조립 시작: **원본과 다름: 안전** — 원본은 현재 위치에서 바로 13줄 movel. 홈 movej → 그리퍼 열기 후 시작.
+  - 그리퍼 동작 뒤 `wait(1.0)` 추가 (조립의 원래 `wait(2.00)`, `wait(0.50)` 은 그대로).
+
+**실행 전 점검 (원본 DRL 그대로라 확인할 것)**
+- [ ] 분해는 그리퍼를 열거나 닫지 않고 시작해서 3단계에서 그 상태 그대로 문을 밀어 냄 → **탐침을 잡고 있으면 안 됨** (펜던트로 그리퍼를 연 상태로 시작)
+- [ ] 왼쪽 문은 헌 문 거치대 (344.8, 264.5)에 놓음
+- [ ] 분해·조립 모두 끝에 홈 복귀 없음
+- [ ] 새 문 위치 (440.7, 239.2, z 2.08)가 티칭 때와 같은지 (힘 감지 없이 z 2.08까지 하강)
+- [ ] DRL 에 Tool/TCP 설정이 없어서 보닛과 같은 `Tool Weight v2` / `GripperDA_v1_probe` 로 가정함 → 문 티칭 때 펜던트에서 다른 TCP 였다면 좌표가 어긋남

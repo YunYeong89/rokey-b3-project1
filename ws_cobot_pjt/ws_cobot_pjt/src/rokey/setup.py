@@ -56,6 +56,7 @@ setup(
             'check_db = rokey.check_db:main',
             'replace_parts = rokey.replace_parts:main',
             'bonnet_replace = rokey.part_replace.bonnet_replace:main',
+            'door_replace = rokey.part_replace.door_replace:main',
             'repair_manager = rokey.repair_manager:main',
             'web_control = rokey.web_control:main',
             'robot_demo = rokey.robot_demo:main',

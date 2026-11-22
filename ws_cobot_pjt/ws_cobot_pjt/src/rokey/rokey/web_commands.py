@@ -76,6 +76,8 @@ class WebCommands:
                 arguments = base + (['--inspection-position'] if mode == 'real' else [])
                 if box is not None:
                     arguments += ['--roi-local', *map(str, box), '--inspection-region', str(number)]
+                elif part == 'bonnet':
+                    arguments += ['--full-bonnet']
                 steps.append(InspectionStep(part, number, arguments))
         return steps
 

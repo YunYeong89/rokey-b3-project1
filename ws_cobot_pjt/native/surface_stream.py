@@ -54,11 +54,19 @@ class CartesianStream:
                           rotation=probe_pose[:3, :3].tolist(), velocity=(probe_jacobian @ qd).tolist(),
                           wrench=self.filtered_wrench.tolist(), fast_wrench=self.fast_wrench.tolist())
 
-    def begin(self, method, pd=None):
+    def begin(self, method, pd=None, *, force_axis=None):
         b = self.backend
+        fixed_axis = None
         if method == 'position':
             from pose_pd import PDSettings
             pd = PDSettings.parse(pd)
+            if force_axis is not None:
+                axis = np.asarray(force_axis, float)
+                if axis.shape != (3,) or not np.isfinite(axis).all():
+                    raise ValueError('Expected three finite components for the BASE force axis')
+                norm = np.linalg.norm(axis)
+                if norm > 0.:
+                    fixed_axis = axis / norm
         self.timeout = .3 if method == 'position' else type(self).timeout
         if method not in ('hybrid', 'position'):
             raise ValueError('Unknown Cartesian stream method')
@@ -98,6 +106,7 @@ class CartesianStream:
         self.nominal = {name: b.nominal[name] for name in b.chain.names}
         self.position_controller = None
         if method == 'position':
+            self.fixed_force_axis = fixed_axis
             self.position_controller = PositionController(self, pd)
             self.control['pd_enabled'] = bool(pd.enabled)
         b.mode, b.error = 'surface_' + method, ''

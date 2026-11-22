@@ -12,6 +12,7 @@
                                        (rokey config/real_scene.yaml vehicle), as /sim_scene markers (meshes
                                        static/robot/scene/real_<part>.stl, made by rokey RealVehicle().export)"""
 from pathlib import Path
+import json
 import math
 import re
 
@@ -85,17 +86,35 @@ class RobotFiles:
                 return send_file(match, max_age=0)
         abort(404)
 
+    def real_placement(self, session):
+        """Use the exact BASE placement recorded by real_scan, or the selected fixture at idle."""
+        import yaml
+        real = yaml.safe_load((self.rokey / 'config/real_scene.yaml').read_text())
+        vehicle = real['vehicle']
+        bonnet = real.get('inspection_poses', {}).get('bonnet')
+        for filename in ('inspection_scene.json', 'real_door_scene.json'):
+            try:
+                placement = json.loads((session / filename).read_text())
+            except FileNotFoundError:
+                continue
+            return real, placement['pose_base_mm_deg'], placement['base_z_mm'], placement.get('panel', placement.get('type'))
+        if bonnet is not None:
+            return real, bonnet[:3], bonnet[3], 'bonnet'
+        z = vehicle.get('base_z_mm')
+        if z is None:
+            spec = yaml.safe_load((self.rokey / 'config/vehicles.yaml').read_text())['real']
+            z = vehicle.get('table_z_mm', 0.0) + spec.get('lift_mm', 0.0)
+        return real, vehicle['pose_base_mm_deg'], z, None
+
     def fixed_scene(self):
-        """The team vehicle where it always stands (real_scene.yaml), in the MarkerArray JSON of /sim_scene."""
+        """The real fixture or current scan placement, in the MarkerArray format of /sim_scene."""
         import yaml
         try:
-            real = yaml.safe_load((self.rokey / 'config/real_scene.yaml').read_text())
-            cell = real['vehicle']
+            _, session = self.roots()
+            real, (x, y, yaw), z, panel = self.real_placement(session)
             spec = yaml.safe_load((self.rokey / 'config/vehicles.yaml').read_text())['real']
-        except (OSError, KeyError, TypeError) as error:
+        except (OSError, KeyError, TypeError, ValueError) as error:
             return jsonify(error=f'실차 배치 설정을 읽을 수 없습니다: {error}'), 404
-        x, y, yaw = cell['pose_base_mm_deg']
-        z = cell['base_z_mm'] if cell.get('base_z_mm') is not None else cell.get('table_z_mm', 0.0) + spec.get('lift_mm', 0.0)
         body = [float(v) for v in spec.get('color', (0.36, 0.42, 0.30))]
         colors = {'body': body, 'door': [min(v * 1.25, 1) for v in body], 'bonnet': [min(v * 1.5, 1) for v in body],
                   'bumper': [0.16, 0.16, 0.17], 'other': [0.07, 0.07, 0.08]}
@@ -106,31 +125,28 @@ class RobotFiles:
                         scale=dict(x=0.001, y=0.001, z=0.001),
                         color=dict(r=colors[part][0], g=colors[part][1], b=colors[part][2], a=1.0))
                    for index, part in enumerate(VEHICLE_PARTS)]
-        return jsonify(markers=markers, pose_base_mm_deg=[x, y, yaw], base_z_mm=z,
+        return jsonify(markers=markers, pose_base_mm_deg=[x, y, yaw], base_z_mm=z, panel=panel,
                        probe_tcp_mm_deg=(real.get('probe') or {}).get('tcp_mm_deg'))   # the held probe in the viewer
 
     MAX_POINTS = 6000   # owner's view: enough to see the strokes, small enough to poll every 2 s
 
-    def vehicle_frame(self):
-        """(pose x, y, yaw [mm, deg], base z, bounds min/max [mm]) of the real vehicle: real_scene.yaml and the
-        vehicle-frame meshes static/robot/scene/real_*.stl (x front, y left, z up), cached by file times."""
-        files = [self.rokey / 'config/real_scene.yaml', self.rokey / 'config/vehicles.yaml',
-                 *sorted(p for d in self.scene_dirs if d.is_dir() for p in d.glob('real_*.stl'))]
-        stamp = tuple(f.stat().st_mtime for f in files if f.exists())
-        if getattr(self, '_frame', (None,))[0] != stamp:
+    def vehicle_bounds(self):
+        """Vehicle-frame mesh bounds in mm, independent of the active fixture placement."""
+        files = [next((path for directory in self.scene_dirs
+                       for path in directory.rglob(f'real_{part}.stl')), None) for part in VEHICLE_PARTS]
+        if None in files:
+            raise ValueError('실차 부품 메시를 찾을 수 없습니다')
+        stamp = tuple((file, file.stat().st_mtime_ns) for file in files)
+        if getattr(self, '_bounds', (None,))[0] != stamp:
             import numpy as np
-            import yaml
-            cell = yaml.safe_load(files[0].read_text())['vehicle']
-            spec = yaml.safe_load(files[1].read_text())['real']
-            z = cell['base_z_mm'] if cell.get('base_z_mm') is not None else cell.get('table_z_mm', 0.0) + spec.get('lift_mm', 0.0)
             low, high = np.full(3, np.inf), np.full(3, -np.inf)
-            for path in files[2:]:
+            for path in files:
                 data = path.read_bytes()
                 vertices = np.frombuffer(data, dtype=[('n', '<f4', 3), ('v', '<f4', (3, 3)), ('a', '<u2')],
                                          count=int.from_bytes(data[80:84], 'little'), offset=84)['v'].reshape(-1, 3)
                 low, high = np.minimum(low, vertices.min(0)), np.maximum(high, vertices.max(0))
-            self._frame = stamp, (*cell['pose_base_mm_deg'], z, low, high)
-        return self._frame[1]
+            self._bounds = stamp, (low, high)
+        return self._bounds[1]
 
     def vehicle_cloud(self, started):
         """Measured contact points of the scan running since `started` (epoch s), or None: session/clouds/measured.npy
@@ -144,7 +160,10 @@ class RobotFiles:
         if stat.st_mtime < started:   # a previous job's points (each scan clears the file when it starts)
             return None
         points = np.load(path).astype(float)[:, :3] * 1000.
-        x, y, yaw, z, low, high = self.vehicle_frame()
+        _, (x, y, yaw), z, _ = self.real_placement(self.session)
+        if path.stat().st_mtime_ns != stat.st_mtime_ns:
+            return None  # a scan started or published another cloud while its placement was being read
+        low, high = self.vehicle_bounds()
         c, s = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
         d = points - [x, y, z]
         local = np.c_[c * d[:, 0] + s * d[:, 1], -s * d[:, 0] + c * d[:, 1], d[:, 2]]   # Rz(-yaw)

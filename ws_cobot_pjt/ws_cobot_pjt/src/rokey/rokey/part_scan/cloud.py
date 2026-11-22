@@ -1,7 +1,10 @@
 """Reference point cloud of one real-vehicle part in BASE (mm): area-uniform samples of the part's mesh (holes such
 as door windows have none), and its outermost surface seen along a fixed probe axis (HeightMap), as defect_scan
 probes the block top; no normal vectors."""
+from hashlib import sha256
 from itertools import product
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import numpy as np
 from scipy.ndimage import map_coordinates
@@ -10,19 +13,38 @@ from ..surface_follow.pointcloud_file import PointCloudFile
 
 
 class PartCloud:
-    """The part's samples in the vehicle frame, taken once and kept in `path` (PLY, vehicle frame, metres; delete it
-    after changing the mesh or the spacing), placed at the session `pose`."""
+    """The part's samples in the vehicle frame (PLY, metres), placed at the session pose.
+
+    Door references are regenerated when their mesh or sample spacing changes.
+    """
 
     def __init__(self, vehicle, part, pose, spacing, path):
-        if path.exists():
+        mask = vehicle.parts == part
+        comment = f'real vehicle {part} reference, spacing {spacing} mm'
+        if part == 'door':
+            digest = sha256(np.ascontiguousarray(vehicle.triangles[mask]).tobytes()).hexdigest()
+            comment += f', mesh {digest}'
+        if path.exists() and (part != 'door' or self._matches_reference(path, comment)):
             points = PointCloudFile.load_ply(path) * 1000
         else:
-            points, _ = vehicle.sample(spacing, vehicle.parts == part)
+            points, _ = vehicle.sample(spacing, mask)
             if not len(points):
                 raise ValueError(f'No {part} triangles in the real vehicle')
-            PointCloudFile.save_ply(path, points / 1000, frame='vehicle',
-                                    comments=[f'real vehicle {part} reference, spacing {spacing} mm'])
+            with TemporaryDirectory(dir=path.parent) as directory:
+                temporary = Path(directory) / path.name
+                PointCloudFile.save_ply(temporary, points / 1000, frame='vehicle', comments=[comment])
+                temporary.replace(path)
         self.part, self.path, self.points = part, path, points @ pose[:3, :3].T + pose[:3, 3]
+
+    @staticmethod
+    def _matches_reference(path, comment):
+        with path.open() as stream:
+            for line in stream:
+                if line.rstrip() == f'comment {comment}':
+                    return True
+                if line.rstrip() == 'end_header':
+                    break
+        return False
 
     @staticmethod
     def neighbours(directory, part, pose, bounds, margin):

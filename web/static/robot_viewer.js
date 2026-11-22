@@ -117,9 +117,15 @@ export class RobotViewer {
 
   /** Simulation scene (visualization_msgs/MarkerArray in base_link): the selected map, none without one.
    *  fixed: the real cell's vehicle at its measured pose, drawn until a simulation scene arrives. */
-  applyScene(message, { fixed = false } = {}) {
+  applyScene(message, { fixed = false, real = false } = {}) {
     this.sceneObjects ??= new Map();
-    if (fixed && this.simScene) return;
+    if (fixed && this.simScene) {
+      if (!real) return;
+      for (const object of this.sceneObjects.values()) this.scene.remove(object);
+      this.sceneObjects.clear();
+      this.simScene = false;
+      this.placeProbe();
+    }
     if (!fixed && !this.simScene) {
       this.simScene = true;  // its own probe markers: the held probe below is hidden
       for (const [key, object] of this.sceneObjects)

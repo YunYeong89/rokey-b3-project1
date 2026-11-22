@@ -21,6 +21,11 @@ motion:                             # general motion
   approach_speed: 30.0              # final descent / lift near parts and the probe holder
   approach_acc: 100.0
   approach_height_mm: 60.0          # pickup: above the docked tip before the final descent
+  scan_transfer:                    # real_scan travel between the standoff, safe height and HOME
+    lift_speed: 50.0                # mm/s
+    linear_speed: 120.0             # mm/s on an unblended traverse
+    blend_speed: 75.0               # mm/s for an elevated lift and traverse in one moveb
+    blend_radius_mm: 5.0            # the corner must also fit within the safe-height clearance
 
 scan:                               # contact motion
   speed: 5.0                        # mm/s, stepping along the surface
@@ -52,9 +57,6 @@ vehicle_zone:                       # where the vehicle is placed (BASE): nomina
   position_tolerance_mm: 20.0
   yaw_tolerance_deg: 10.0
   max_height_mm: 165.0              # tallest vehicle type (suv 161 mm): travel between touches stays above it
-  fixed:                            # the vehicle always stands here: the repair process uses this pose instead of
-    type: sedan                     # choose_car touches (virtual robot: the session scene's own pose, scene_truth)
-    pose_base_mm_deg: [318.0, 318.0, 135.0]   # x, y [mm], yaw [deg] (BASE): measure on the cell and enter here
 
 inspection:                         # damage thresholds in units of the calibrated height sigma
   height_sigma_mm: 0.2              # overwritten by calibration_result.json
@@ -151,6 +153,19 @@ performance_scan:                  # real_scan --box: healthy plane plans, sourc
       - [8.0, 8.0, 42.0, 42.0]
       - [2.0, 51.0, 48.0, 98.0]
 
+door_crack_roi:                    # mesh-height door: force crossings on BASE Y/Z, with the planned mesh as depth reference
+  shoulder_mm: 1.0
+  depth_mm: -0.15                   # tolerate shallow/flat readings, reject a rise larger than this across the shoulders
+  force_drop_n: 0.95
+  lateral_n: 0.95
+  width_mm: 1.5                     # maximum width of one force peak
+  row_gap_mm: 3.25                  # link across one missed 1.5 mm row
+  length_mm: 5.0
+  trace_width_mm: 3.5               # allow the force peak to shift with direction across a narrow crack
+  trace_slope: 0.85
+  min_rows: 4
+  mesh_contrast_mm: 0.10            # suppress peaks aligned with a planned mesh ridge or recess
+
 bonnet_roi_cloud:                  # real mesh-height ROI analysis in BASE, after recording the scan
   grid_mm: 1.0
   smooth_mm: 2.5
@@ -222,16 +237,38 @@ real_scan:                          # rokey real_scan: one part of the real vehi
     door_axis: [-1.0, 0.0, 0.0]    # door: the side the probe comes from (BASE), pressed along +X. Only the door
                                    # facing the robot: vehicle yaw 90 deg (left door) or -90 deg (right door) in
                                    # real_scene.yaml, as --car demo_left / demo_right
-    door_tool_tilt_deg: 25.0       # door: tilt toward down to keep the wrist reachable and the gripper clear of the lower panel
+    door_tool_tilt_deg: 45.0       # door: tilt toward down (real robot). 25 until 2026-11-21: the wrist flips between the
+                                   # tool down at the approach point (J5 +98) and on the door (J5 -13.5, by the wrist
+                                   # singularity), so turning it there was refused (055527: 1206 NOT REACHABLE); at 45 the
+                                   # turn is smooth (<= 6 deg per 1/12) and J5 stays +25..+30 along the path
+    door_tool_spin_deg: -90.0      # door (real robot): the tool spun about its own axis on the door (J6, minus clockwise
+                                   # seen from the wrist down the tool), the flat RG2 turned across the lower panel
+    door_tool_clearance: false     # door (real robot): the tool's shape not checked against the vehicle when planning
+                                   # (at 45 deg the probe body's cylinder, r 23 mm 14-67 mm up the tool, took every
+                                   # panel cell; the ball's support, the table, IK and the arm links still checked)
+    door_panel:                    # door planning area (and the RViz reference): the flat panel under the window
+      flat_deg: 3.0                # normal within this of the panel's (the left door: 87 % of its lower half)
+      step_mm: 0.5                 # height within this of a quadratic fit over the panel (the handle, a crease)
+      seam_mm: 3.0                 # this far inside any other cell (the door/body joint, the window line)
+      narrow_mm: 4.0               # strips narrower than twice this dropped (the tab under the left panel's bottom)
+      bottom_width: 0.8            # bottom rows narrower than this share of the median row dropped up to the first
+                                   # wider one (the bulge under the right panel, 6-29 mm wide against ~38 mm)
+      front_mm: 10.0               # the panel's front this far (vehicle +x, toward the bonnet) left out on both doors:
+                                   # the hinge joint made there for the door to open
+    door_virtual_tool_tilt_deg: 35.0  # shared by demo_left and demo_right
+    door_virtual_force_n: 2.7         # force into either door along BASE +X
+    door_force_n: 3.0              # real robot: pressing force into either door (force_n + 0.3 since 2026-11-21)
+    bonnet_force_n: 3.0            # real bonnet survey and user-selected regions
     linear_acceleration_mm_s2: 8.0 # stream path timing and servo reference: raster turns (r 0.7 mm) at ~2 mm/s
                                    # (mesh_normal's 40: 4 mm/s; 114347 path 1 had 4x the force spikes and 3x the
                                    # contact loss within 0.6 s of a turn). DSR mesh-height keeps its movesx timing.
-    force_n: 2.4                   # pressing force along the BASE axis (real robot: set_desired_force from the grounding
+    force_n: 2.7                   # pressing force along the BASE axis (real robot: set_desired_force from the grounding
                                    # on; 1.5 until 2026-11-20, then 1.0 with the path started at the grounded contact,
                                    # 0.8 with the path extra_depth_mm below it, 1.2: the extra depth added no force,
                                    # the TCP rose 0.95 mm under force control; 1.5 for full contact (070300, 1.5 N/mm:
                                    # p5/p50/p95 0.20/1.51/3.17 N, 6.9 % under record_threshold_n); 2.4 with 3 N/mm,
-                                   # pressed harder throughout: 3 N/mm x 0.8 mm, as the lift push
+                                   # pressed harder throughout: 3 N/mm x 0.8 mm, as the lift push; 2.7 after the probe
+                                   # was regripped (the dent read weaker at 2.4)
                                    # 0.7 until 2026-11-19: the stream (114347) lost contact on 38 % of path 2
                                    # (5th percentile -0.9 N); 1.5 keeps its 95th (~3.1 N) under max_force_n
     contact_threshold_n: 0.5       # contact search: the rise ending the position-controlled descent (real robot)
@@ -249,7 +286,17 @@ real_scan:                          # rokey real_scan: one part of the real vehi
     extra_depth_speed_mm_s: 0.5    # real robot: velocity cap for the position-only descent
     press_limit_n: 5.0             # real robot: the position-only descent ends early at this reaction along the axis
                                    # (6.4-6.6 N at 0.3 mm in 072408; 075045 and 075132 reached the probe guard's 8 N)
-    force_trim:                    # real robot grounding and strokes: the force command trimmed so the median reaction
+    press_confirm_n: 1.0           # real robot: contact confirmed when that descent raises the reaction this much over
+                                   # the search's stop; less: in the air (the left door 063056 stopped 5-6.5 mm off the
+                                   # panel, +0.93/+1.20 N after 0.3 mm), the search goes on from there; at or past
+                                   # press_limit_n (the stop itself, or the descent ended by it): contact
+    contact_guard_n: 8.0           # real robot: the first contact (search stop and that descent) stopped past this
+                                   # force on the gap's zero, not the probe guard's HOME zero (8 N), which carried the
+                                   # gap's 0.6-1.3 N along the axis and ~1.2 N across over the bonnet: it tripped at
+                                   # 6.8-7.2 N of contact (062534-075132) against 2.9-6.7 N on 33 confirmed presses
+    contact_retries: 2             # such a contact: stopped, back to the approach gap and searched again this many
+                                   # times, then '힘 초과' (the web step's own retries after it)
+    force_trim:                  # real robot grounding and strokes: the force command trimmed so the median reaction
                                    # holds force_n (MeshHeightDsr.retrim), the trim kept from path to path
       period_s: 1.0                # median window and update period (a 1 mm crack crossing: 0.17 s at 6 mm/s)
       gain: 0.5                    # share of the period's shortfall added to the trim
@@ -260,7 +307,7 @@ real_scan:                          # rokey real_scan: one part of the real vehi
                                    # joined into --roi-base areas and scanned again; only speed and force changed
       types: [crack]
       speed_mm_s: 2.0              # the survey's cruise_speed_mm_s or --speed otherwise
-      force_n: 3.0                 # pressing force of the rescan (the survey's force_n otherwise)
+      force_n: 3.5                 # pressing force for the automatic bonnet rescan
       merge_mm: 3.0                # ROI boxes at most this far apart (gap between the boxes) joined; near ones only
                                    # (072408: crack A one area, crack B two, A and B 4.6 mm apart kept apart)
       margin_mm: 3.0               # then added round each area (the shoulders and the ROI's surroundings)

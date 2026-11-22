@@ -44,11 +44,20 @@ class MeshFigures:
                     axis = normals[0]
             if roi_file:
                 defects = rois.damage_samples
+        if axis is None and self.metadata.get('part') == 'door' and self.metadata.get('controller') == 'mesh-height':
+            axis = np.asarray(self.metadata['settings']['door_axis'], float)  # a door plan: seen along its fixed axis
         path = self.directory / 'report.png'
-        self.damage = DamageReport(nominal, measured, axis=axis, defects=defects,
-                                   web=self.metadata.get('web_report')).save(path)
+        report = DamageReport(nominal, measured, axis=axis, defects=defects, web=self.metadata.get('web_report'))
+        if not roi_file and self.rois and self.rois.damage_samples:
+            detected_types = {region['type'] for region, _ in self.rois.damage_samples}
+            report.defects = [(region, points) for region, points in report.defects
+                              if region['type'] not in detected_types] + self.rois.damage_samples
+        self.damage = report.save(path)
         if self.metadata.get('rescan_of') and defects is not None:  # an ROI rescan: its defects drawn on the mesh too,
-            drawing = DefectMap(nominal, measured, defects, self.metadata).save(self.directory / 'defects.png')
+            survey = self.directory.parent / self.metadata['rescan_of'] / 'roi.json'  # with the survey's dents
+            dents = [region for region in json.loads(survey.read_text())['regions'] if region['type'] == 'dent'] \
+                if survey.exists() else []
+            drawing = DefectMap(nominal, measured, defects, self.metadata, dents).save(self.directory / 'defects.png')
             shutil.copy(drawing, self.directory.parent / f'{self.directory.name}_defects.png')  # beside its _roi.json
         return path
 
@@ -63,4 +72,11 @@ class MeshFigures:
             next(reader)
             records = [[value if index == 2 else float(value) for index, value in enumerate(row)]
                        for row in reader]
-        return cls(directory, metadata).save(records)
+        figures = cls(directory, metadata)
+        path = figures.save(records)
+        result_path = directory / 'result.json'
+        if result_path.is_file():
+            result = json.loads(result_path.read_text())
+            result['damage'] = figures.damage
+            result_path.write_text(json.dumps(result, indent=2) + '\n')
+        return path

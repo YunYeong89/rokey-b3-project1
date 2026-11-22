@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>보닛 검사 범위</title>
+<style>
+  :root { color-scheme: light; font-family: system-ui, sans-serif; color: #14222e; background: #e7edf1; }
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  main { max-width: 1060px; margin: auto; padding: clamp(16px, 4vw, 40px); }
+  header { display: flex; align-items: end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+  h1 { font-size: clamp(26px, 4vw, 40px); margin: 0 0 6px; letter-spacing: -.04em; }
+  p { margin: 0; color: #455967; }
+  .actions { display: flex; gap: 8px; }
+  button { font: inherit; border: 1px solid #9baab3; padding: 9px 13px; border-radius: 7px; background: #fff; color: #152a39; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  #save { background: #086a5b; color: white; border-color: #086a5b; }
+  canvas { display: block; width: 100%; height: min(65vh, 640px); min-height: 320px; background: #132834; border-radius: 12px; touch-action: none; cursor: crosshair; }
+  footer { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 13px; }
+  #status { color: #086a5b; }
+</style>
+<main>
+  <header>
+    <div><h1>보닛 검사 범위</h1><p>검사할 영역의 테두리를 마우스로 그린 뒤 저장하세요. 영역을 여러 개 그릴 수 있습니다.</p></div>
+    <div class="actions"><button id="undo" disabled>되돌리기</button><button id="clear" disabled>모두 지우기</button><button id="save" disabled>검사 범위 저장</button></div>
+  </header>
+  <canvas id="plan" aria-label="위에서 본 보닛 CAD와 검사 범위"></canvas>
+  <footer><p>차량 좌표계 X/Y (mm) · 앞쪽은 화면 위</p><p id="status" role="status">보닛 CAD 불러오는 중</p></footer>
+</main>
+<script type="module">
+  const canvas = document.querySelector('#plan');
+  const ctx = canvas.getContext('2d');
+  const status = document.querySelector('#status');
+  const undo = document.querySelector('#undo'), clear = document.querySelector('#clear'), save = document.querySelector('#save');
+  let mesh, bounds, view, base, regions = [], drawnRegions = [], stroke, pointer, dirty = false;
+
+  function screen([x, y]) { return [view.cx - y * view.scale, view.cy - x * view.scale]; }
+
+  function local(event) {
+    const rect = canvas.getBoundingClientRect();
+    return [(view.cy - event.clientY + rect.top) / view.scale, (view.cx - event.clientX + rect.left) / view.scale];
+  }
+
+  function polygon(points, color, fill) {
+    ctx.beginPath();
+    ctx.moveTo(...screen(points[0]));
+    for (const point of points.slice(1)) ctx.lineTo(...screen(point));
+    ctx.closePath();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = fill;
+    ctx.fill('evenodd');
+  }
+
+  function buttons() {
+    undo.disabled = clear.disabled = regions.length === 0;
+    save.disabled = regions.length === 0 || !dirty;
+  }
+
+  function draw() {
+    if (!mesh) return;
+    const w = canvas.clientWidth, h = canvas.clientHeight, dpr = window.devicePixelRatio || 1;
+    const width = Math.round(w * dpr), height = Math.round(h * dpr);
+    if (canvas.width !== width || canvas.height !== height) {
+      canvas.width = width;
+      canvas.height = height;
+      base = null;
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    const [xmin, ymin, xmax, ymax] = bounds;
+    const scale = Math.min((w - 70) / (ymax - ymin), (h - 96) / (xmax - xmin));
+    view = { scale, cx: w / 2 + (ymin + ymax) * scale / 2, cy: h / 2 + (xmin + xmax) * scale / 2 };
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = '#294654';
+    for (let a = Math.floor(xmin / 10) * 10; a <= xmax; a += 10) {
+      ctx.beginPath(); ctx.moveTo(30, screen([a, 0])[1]); ctx.lineTo(w - 30, screen([a, 0])[1]); ctx.stroke();
+    }
+    for (let a = Math.floor(ymin / 10) * 10; a <= ymax; a += 10) {
+      ctx.beginPath(); ctx.moveTo(screen([0, a])[0], 32); ctx.lineTo(screen([0, a])[0], h - 36); ctx.stroke();
+    }
+    if (!base) {
+      base = document.createElement('canvas');
+      base.width = width;
+      base.height = height;
+      const cad = base.getContext('2d');
+      cad.scale(dpr, dpr);
+      cad.lineWidth = .6;
+      for (const {points, shade} of mesh) {
+        cad.beginPath();
+        cad.moveTo(...screen(points[0]));
+        cad.lineTo(...screen(points[1]));
+        cad.lineTo(...screen(points[2]));
+        cad.closePath();
+        cad.fillStyle = cad.strokeStyle = shade;
+        cad.fill();
+        cad.stroke();
+      }
+    }
+    ctx.drawImage(base, 0, 0, w, h);
+    for (const points of regions) polygon(points, '#73f0cd', '#38cb9956');
+    ctx.setLineDash([5, 5]);
+    for (const points of drawnRegions) polygon(points, '#e8f3f6', 'transparent');
+    ctx.setLineDash([]);
+    if (stroke?.length > 1) polygon(stroke, '#d8fff4', '#76e4ce44');
+    ctx.fillStyle = '#cae0ea';
+    ctx.textAlign = 'center';
+    ctx.font = '14px system-ui';
+    ctx.fillText('차량 앞쪽 ↑', w / 2, 24);
+  }
+
+  function update() {
+    dirty = true;
+    drawnRegions = [];
+    status.textContent = regions.length ? `${regions.length}개 영역 · 저장 대기` : '검사할 영역을 그리세요';
+    buttons();
+    draw();
+  }
+
+  canvas.addEventListener('pointerdown', (event) => {
+    if (!view || stroke || event.button !== 0 || regions.length >= 8) return;
+    pointer = event.pointerId;
+    canvas.setPointerCapture(pointer);
+    stroke = [local(event)];
+  });
+  canvas.addEventListener('pointermove', (event) => {
+    if (!stroke || event.pointerId !== pointer) return;
+    const p = local(event), last = stroke.at(-1);
+    if (Math.hypot(p[0] - last[0], p[1] - last[1]) < .45) return;
+    stroke.push(p);
+    draw();
+  });
+  canvas.addEventListener('pointerup', (event) => {
+    if (!stroke || pointer !== event.pointerId) return;
+    const points = stroke;
+    stroke = null;
+    if (points.length >= 3) {
+      const stride = Math.max(1, Math.ceil(points.length / 400));
+      regions.push(points.filter((_, index) => index % stride === 0));
+      update();
+    } else draw();
+  });
+  canvas.addEventListener('pointercancel', () => { stroke = null; draw(); });
+  undo.addEventListener('click', () => { regions.pop(); update(); });
+  clear.addEventListener('click', () => { regions = []; update(); });
+  save.addEventListener('click', async () => {
+    save.disabled = true;
+    try {
+      const response = await fetch('/selection', {
+        method: 'PUT', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({regions: regions.map(points => points.map(point => point.map(v => Math.round(v * 100) / 100)))})
+      });
+      const result = await response.json();
+      if (!response.ok || result.error) throw new Error(result.error || '저장 실패');
+      dirty = false;
+      status.textContent = `${regions.length}개 영역 저장 완료`;
+    } catch (error) { status.textContent = error.message; }
+    buttons();
+  });
+
+  try {
+    const [stl, saved] = await Promise.all([fetch('/bonnet.stl'), fetch('/selection')]);
+    if (!stl.ok || !saved.ok) throw new Error('CAD 또는 저장된 범위를 불러올 수 없습니다.');
+    const data = new DataView(await stl.arrayBuffer());
+    const n = data.getUint32(80, true);
+    bounds = [Infinity, Infinity, -Infinity, -Infinity];
+    const triangles = Array.from({length: n}, (_, i) => [0, 12, 24].map(j => {
+      const base = 96 + 50*i + j, x = data.getFloat32(base, true), y = data.getFloat32(base + 4, true);
+      bounds = [Math.min(bounds[0], x), Math.min(bounds[1], y), Math.max(bounds[2], x), Math.max(bounds[3], y)];
+      return [x, y, data.getFloat32(base + 8, true)];
+    }));
+    mesh = triangles.map(points => ({points, z: (points[0][2] + points[1][2] + points[2][2]) / 3}));
+    mesh.sort((a, b) => a.z - b.z);
+    const zmin = mesh[0].z, span = Math.max(.01, mesh.at(-1).z - zmin);
+    for (const face of mesh) {
+      const light = 52 + 37 * (face.z - zmin) / span;
+      face.shade = `hsl(200, 19%, ${light}%)`;
+    }
+    const selection = await saved.json();
+    regions = selection.regions;
+    drawnRegions = selection.drawn_regions ?? [];
+    status.textContent = selection.area_mm2 ? `최소 사다리꼴 ${selection.area_mm2.toFixed(1)} mm²` :
+      regions.length ? `저장된 영역 ${regions.length}개` : '검사할 영역을 그리세요';
+    new ResizeObserver(draw).observe(canvas);
+    buttons();
+    draw();
+  } catch (error) { status.textContent = error.message; }
+</script>

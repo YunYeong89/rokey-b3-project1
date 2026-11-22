@@ -35,13 +35,16 @@ class MeshPlanCache:
                                                       'stiffness', 'press_settle_s', 'record_threshold_n',
                                                       'ground_s', 'extra_depth_mm', 'extra_depth_speed_mm_s',
                                                       'force_trim', 'cloud_threshold_n', 'lift_push',
-                                                      'telemetry_average', 'rescan', 'press_limit_n')}
+                                                      'telemetry_average', 'rescan', 'press_limit_n',
+                                                      'press_confirm_n', 'contact_guard_n', 'contact_retries')}
         recipe = dict(part=surface.part, axes=np.asarray(axes).tolist(), scan=planning_scan,
                       urdf=chain.description, tcp=chain.tcp.tolist(), home=reach.home.tolist(),
                       scene=scene, plan_class=plan_class.__name__, travel_z=travel_z)
         digest.update(json.dumps(recipe, sort_keys=True).encode())
         sources = ('mesh_cache.py', 'mesh_plan.py', 'height_plan.py', 'mesh_surface.py', 'cloud_plan.py', 'cloud_path.py', 'cloud_clearance.py',
                    'trajectory.py', 'path_timing.py', 'tool.py', 'kinematics.py', 'planner.py')
+        if 'bonnet_path_mm' in scan:
+            sources += ('bonnet_path.py', 'bonnet_plan.py')
         for name in sources:
             digest.update(Path(__file__).with_name(name).read_bytes())
         digest.update(Path(__file__).parents[1].joinpath('rotations.py').read_bytes())

@@ -1,0 +1,5 @@
+Flask>=3.0,<4
+PyYAML>=6
+numpy
+scipy
+matplotlib

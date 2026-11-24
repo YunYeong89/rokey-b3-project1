@@ -1,0 +1,363 @@
+<sdf version="1.9">
+  <model name="turn_lift">
+    <link name="chassis">
+      <inertial>
+        <pose>0 0 0.045 0 0 0</pose>
+        <mass>1.01303</mass>
+        <inertia>
+          <ixx>0.00212948</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.00385164</iyy>
+          <iyz>0</iyz>
+          <izz>0.0050314</izz>
+        </inertia>
+      </inertial>
+      <visual name="car_visual">
+        <pose>0 0 0.045625 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.2 0.14 0.05875</size>
+          </box>
+        </geometry>
+      </visual>
+      <collision name="car_collision">
+        <pose>0 0 0.045625 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.2 0.14 0.05875</size>
+          </box>
+        </geometry>
+      </collision>
+      <visual name="lift_base_visual">
+        <pose>0 0 0.08575 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.12 0.08 0.0215</size>
+          </box>
+        </geometry>
+      </visual>
+      <collision name="lift_base_collision">
+        <pose>0 0 0.08575 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.12 0.08 0.0215</size>
+          </box>
+        </geometry>
+      </collision>
+    </link>
+    <link name="wheel_front_left">
+      <pose>0.07 0.065 0.0325 -1.5708 0 0</pose>
+      <inertial>
+        <pose>0 0 0 0 0 0</pose>
+        <mass>0.03</mass>
+        <inertia>
+          <ixx>9.74438e-06</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>9.74438e-06</iyy>
+          <iyz>0</iyz>
+          <izz>1.58437e-05</izz>
+        </inertia>
+      </inertial>
+      <visual name="wheel_front_left_visual">
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.0325</radius>
+            <length>0.027</length>
+          </cylinder>
+        </geometry>
+      </visual>
+      <collision name="wheel_front_left_collision">
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.0325</radius>
+            <length>0.027</length>
+          </cylinder>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>0.8</mu>
+              <mu2>0.6</mu2>
+              <fdir1>1 0 0</fdir1>
+            </ode>
+          </friction>
+        </surface>
+      </collision>
+    </link>
+    <joint name="wheel_front_left_joint" type="revolute">
+      <parent>chassis</parent>
+      <child>wheel_front_left</child>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit>
+          <effort>0.0784532</effort>
+          <velocity>20.944</velocity>
+        </limit>
+      </axis>
+    </joint>
+    <link name="wheel_rear_left">
+      <pose>-0.07 0.065 0.0325 -1.5708 0 0</pose>
+      <inertial>
+        <pose>0 0 0 0 0 0</pose>
+        <mass>0.03</mass>
+        <inertia>
+          <ixx>9.74438e-06</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>9.74438e-06</iyy>
+          <iyz>0</iyz>
+          <izz>1.58437e-05</izz>
+        </inertia>
+      </inertial>
+      <visual name="wheel_rear_left_visual">
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.0325</radius>
+            <length>0.027</length>
+          </cylinder>
+        </geometry>
+      </visual>
+      <collision name="wheel_rear_left_collision">
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.0325</radius>
+            <length>0.027</length>
+          </cylinder>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>0.8</mu>
+              <mu2>0.6</mu2>
+              <fdir1>1 0 0</fdir1>
+            </ode>
+          </friction>
+        </surface>
+      </collision>
+    </link>
+    <joint name="wheel_rear_left_joint" type="revolute">
+      <parent>chassis</parent>
+      <child>wheel_rear_left</child>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit>
+          <effort>0.0784532</effort>
+          <velocity>20.944</velocity>
+        </limit>
+      </axis>
+    </joint>
+    <link name="wheel_front_right">
+      <pose>0.07 -0.065 0.0325 -1.5708 0 0</pose>
+      <inertial>
+        <pose>0 0 0 0 0 0</pose>
+        <mass>0.03</mass>
+        <inertia>
+          <ixx>9.74438e-06</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>9.74438e-06</iyy>
+          <iyz>0</iyz>
+          <izz>1.58437e-05</izz>
+        </inertia>
+      </inertial>
+      <visual name="wheel_front_right_visual">
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.0325</radius>
+            <length>0.027</length>
+          </cylinder>
+        </geometry>
+      </visual>
+      <collision name="wheel_front_right_collision">
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.0325</radius>
+            <length>0.027</length>
+          </cylinder>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>0.8</mu>
+              <mu2>0.6</mu2>
+              <fdir1>1 0 0</fdir1>
+            </ode>
+          </friction>
+        </surface>
+      </collision>
+    </link>
+    <joint name="wheel_front_right_joint" type="revolute">
+      <parent>chassis</parent>
+      <child>wheel_front_right</child>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit>
+          <effort>0.0784532</effort>
+          <velocity>20.944</velocity>
+        </limit>
+      </axis>
+    </joint>
+    <link name="wheel_rear_right">
+      <pose>-0.07 -0.065 0.0325 -1.5708 0 0</pose>
+      <inertial>
+        <pose>0 0 0 0 0 0</pose>
+        <mass>0.03</mass>
+        <inertia>
+          <ixx>9.74438e-06</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>9.74438e-06</iyy>
+          <iyz>0</iyz>
+          <izz>1.58437e-05</izz>
+        </inertia>
+      </inertial>
+      <visual name="wheel_rear_right_visual">
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.0325</radius>
+            <length>0.027</length>
+          </cylinder>
+        </geometry>
+      </visual>
+      <collision name="wheel_rear_right_collision">
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.0325</radius>
+            <length>0.027</length>
+          </cylinder>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>0.8</mu>
+              <mu2>0.6</mu2>
+              <fdir1>1 0 0</fdir1>
+            </ode>
+          </friction>
+        </surface>
+      </collision>
+    </link>
+    <joint name="wheel_rear_right_joint" type="revolute">
+      <parent>chassis</parent>
+      <child>wheel_rear_right</child>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit>
+          <effort>0.0784532</effort>
+          <velocity>20.944</velocity>
+        </limit>
+      </axis>
+    </joint>
+    <link name="lift_top">
+      <pose>0 0 0.135526 0 0 0</pose>
+      <inertial>
+        <pose>-0.00139296 0.000145187 0.0376016 0 0 0</pose>
+        <mass>0.306172</mass>
+        <inertia>
+          <ixx>0.000711616</ixx>
+          <ixy>-1.9362e-06</ixy>
+          <ixz>8.63499e-05</ixz>
+          <iyy>0.00173243</iyy>
+          <iyz>-1.82292e-06</iyz>
+          <izz>0.00198031</izz>
+        </inertia>
+      </inertial>
+      <visual name="adapter_visual">
+        <pose>0 0 -0.002 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.23 0.14 0.004</size>
+          </box>
+        </geometry>
+      </visual>
+      <collision name="adapter_collision">
+        <pose>0 0 -0.002 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.23 0.14 0.004</size>
+          </box>
+        </geometry>
+      </collision>
+      <visual name="lift_top_visual">
+        <pose>0 0 -0.0065 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.12 0.08 0.005</size>
+          </box>
+        </geometry>
+      </visual>
+      <collision name="lift_top_collision">
+        <pose>0 0 -0.0065 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.12 0.08 0.005</size>
+          </box>
+        </geometry>
+      </collision>
+      <visual name="vehicle_visual">
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <uri>meshes/vehicle.stl</uri>
+            <scale>0.001 0.001 0.001</scale>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="vehicle_collision">
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <uri>meshes/vehicle.stl</uri>
+            <scale>0.001 0.001 0.001</scale>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <joint name="lift" type="prismatic">
+      <parent>chassis</parent>
+      <child>lift_top</child>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit>
+          <lower>0</lower>
+          <upper>0.062168</upper>
+          <effort>8.93946</effort>
+          <velocity>0.00392117</velocity>
+        </limit>
+        <dynamics>
+          <friction>0.5</friction>
+        </dynamics>
+      </axis>
+    </joint>
+    <plugin filename="gz-sim-diff-drive-system" name="gz::sim::systems::DiffDrive">
+      <left_joint>wheel_front_left_joint</left_joint>
+      <left_joint>wheel_rear_left_joint</left_joint>
+      <right_joint>wheel_front_right_joint</right_joint>
+      <right_joint>wheel_rear_right_joint</right_joint>
+      <wheel_separation>0.13</wheel_separation>
+      <wheel_radius>0.0325</wheel_radius>
+      <topic>/turn_lift/cmd_vel</topic>
+      <odom_topic>/turn_lift/odometry</odom_topic>
+    </plugin>
+    <plugin filename="gz-sim-joint-position-controller-system" name="gz::sim::systems::JointPositionController">
+      <joint_name>lift</joint_name>
+      <topic>/turn_lift/lift</topic>
+      <p_gain>4000</p_gain>
+      <d_gain>50</d_gain>
+      <i_gain>0</i_gain>
+      <cmd_max>8.93946</cmd_max>
+      <cmd_min>-8.93946</cmd_min>
+    </plugin>
+    <plugin filename="gz-sim-joint-state-publisher-system" name="gz::sim::systems::JointStatePublisher" />
+  </model>
+</sdf>

@@ -1,0 +1,58 @@
+digraph system_flow {
+  graph [rankdir=TB, bgcolor="white", color="black", fontname="Apple SD Gothic Neo",
+         fontsize=22, nodesep=0.35, ranksep=0.45, pad=0.25, labelloc=t,
+         label="자동차 자동 수리 로봇 · 전체 노드 기반 흐름\n실선: 실행·데이터 전달 / 점선: 조건부·공유 경로"];
+  node [shape=box, style="rounded,filled", fillcolor="white", color="black", fontcolor="black",
+        fontname="Apple SD Gothic Neo", fontsize=15, penwidth=1.2, margin="0.13,0.10"];
+  edge [color="black", fontcolor="black", fontname="Apple SD Gothic Neo", fontsize=12, arrowsize=0.7];
+
+  launch [label="호스트 런처\nrun_virtual.sh --web / run_real.sh\nservice → session → bringup"];
+  browser [label="관리자 / 고객 브라우저\n검사·수리·teleop / HTTP·WebSocket"];
+  cli [label="CLI / 액션 클라이언트\nros2 run / ScanPart"];
+  gate [label="ROS: rosbridge :9090 → web_control\nrobot/command · repair/command · /scan_part\n동시 실행 제한·작업 상태 관리"];
+  inspection [label="프로세스: InspectionProcess\n부품·영역별 순차 실행"];
+  repair [label="ROS: repair_manager\n자동: 검사·판정 / 수동: 요청 부품"];
+  teleop [label="ROS: teleop / calibration / HOME\n수동 조작·보정·일반 이동"];
+  pickup [label="ROS: pick_probe / release_probe\n탐침 파지 확인 → HOME 안정화"];
+  scene [label="ScanScene / place_demo → 리프트 서비스\nfixture/select (SetCommand) / lift/command (LiftCommand)\n보닛 → 왼쪽 도어 → 오른쪽 도어 배치"];
+  scan [label="ROS: real_scan → mesh_scan\n경로 계획·실행 / crack ROI 조건부 재검출"];
+  dsr [label="ROS: dsr_controller2 / dsr_hardware2\n이동·힘·순응·상태 서비스"];
+  stream [label="ROS: virtual_force_bridge ↔ native\nCartesianSession / Setpoint / State\n가상 위치·힘 제어"];
+  physical [label="실기 M0609 + RG2\nDRFL / Modbus"];
+  gazebo [label="DRCF 에뮬레이터 + Gazebo\n가상 로봇·탐침·차량·리프트\n실제 관절·접촉 피드백"];
+  result [label="real_scan 발행: scan/samples · roi · progress · result\ncustom_interfaces / ScanPart 진행·결과\ndata/robot_N/data/<차량>/<날짜>/<부품>", shape=folder];
+  decide [label="자동: 확정 손상 있음?\n수동: 교환 요청 있음?", shape=diamond];
+  stock [label="check_db → 재고 확인"];
+  replace [label="PartReplacer → 티칭 분해·조립\n탐침 거치 → bonnet_replace / door_replace\n공유 DSR 서비스를 통해 실행"];
+  finish [label="repair_db (REST / X-API-Key)\n판정·교환·재고 차감 / HOME / 최종 상태"];
+  app [label="Flask app.py :5050 + SQLite\n회원·차량·작업·재고·이력 API", shape=cylinder];
+  notify [label="관리자·고객 화면 / notify_owner → SMTP\n진행·보고서·3D 표시 / 시작·종료 메일"];
+  stop [label="중지·실패 분기\nmove_stop · 스트림 종료 · SIGINT\n교환 중단: 자동 HOME 없이 종료", shape=note];
+  scope [label="구현 범위\nGazebo 부품 분리·새 부품 교체 모델과\n교환 후 단차 재검사는 미완성", shape=note];
+
+  {rank=same; launch; browser; cli;}
+  {rank=same; inspection; repair; teleop;}
+  {rank=same; dsr; stream;}
+  {rank=same; physical; gazebo;}
+  launch -> gate [label="세션·노드 시작"];
+  browser -> gate [label="로봇 명령"];
+  cli -> gate [label="액션"];
+  gate -> inspection [label="검사"]; gate -> repair [label="수리"]; gate -> teleop;
+  inspection -> pickup; repair -> pickup [label="자동"];
+  pickup -> scene; scene -> scan;
+  scan -> dsr [label="실기 검사 / 일반 이동"];
+  scan -> stream [label="가상 접촉 스트림"];
+  teleop -> dsr [style=dashed];
+  dsr -> physical [label="real"]; dsr -> gazebo [label="virtual 일반 이동 목표"];
+  stream -> gazebo [dir=both, label="구동 / 피드백"];
+  physical -> result; gazebo -> result;
+  result -> decide;
+  decide -> stock [label="교환 대상 있음"]; stock -> replace;
+  decide -> finish [label="없음: 교환 생략"]; replace -> finish;
+  repair -> stock [style=dashed, constraint=false, label="수동: 검사 생략"];
+  cli -> scan [style=dashed, constraint=false, label="CLI 직접 실행"];
+  gate -> stop [style=dashed];
+  replace -> scope [style=dashed, arrowhead=none];
+  finish -> app; app -> notify;
+  browser -> app [style=dashed, constraint=false, label="HTTP /api/*"];
+}

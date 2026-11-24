@@ -1,0 +1,137 @@
+{
+  "frame": "base_link",
+  "plane": {
+    "z_m": 0.0,
+    "size_m": [
+      2.0,
+      2.0
+    ]
+  },
+  "damage": [
+    {
+      "type": "dent",
+      "part": "bonnet",
+      "offset_mm": [
+        17,
+        14
+      ],
+      "radius": 11,
+      "depth": 2.5
+    },
+    {
+      "type": "missing",
+      "part": "mirror_r"
+    }
+  ],
+  "probes": {
+    "standard": {
+      "pose_base_mm_deg": [
+        250.0,
+        -400.0,
+        230.8,
+        180.0
+      ],
+      "grip_axis": "x",
+      "mesh": "ws_cobot_pjt/src/repair_car/meshes/probes/probe_v2_1.stl",
+      "holder": "ws_cobot_pjt/src/repair_car/meshes/holders/gripper_tip_holder.stl",
+      "grip_from_top_mm": 9,
+      "grip_pocket": {
+        "span_mm": 21.0,
+        "z_mm": [
+          2.0,
+          20.0
+        ]
+      },
+      "tip_radius_mm": 2.0,
+      "mass_kg": 0.039,
+      "ball": {
+        "centre_mm": [
+          -0.0,
+          -0.0,
+          -55.737386
+        ],
+        "friction": 0.3,
+        "color": [
+          0.15,
+          0.35,
+          0.7
+        ]
+      }
+    },
+    "ball": {
+      "pose_base_mm_deg": [
+        250.0,
+        -400.0,
+        230.8,
+        180.0
+      ],
+      "grip_axis": "x",
+      "mesh": "ws_cobot_pjt/src/repair_car/meshes/probes/probe_v3_5mm.stl",
+      "holder": "ws_cobot_pjt/src/repair_car/meshes/holders/probe_holder.stl",
+      "grip_from_top_mm": 9,
+      "grip_pocket": {
+        "span_mm": 21.0,
+        "z_mm": [
+          2.0,
+          20.0
+        ]
+      },
+      "tip_radius_mm": 2.5,
+      "mass_kg": 0.039,
+      "ball": {
+        "centre_mm": [
+          0.0,
+          0.0,
+          -52.0
+        ],
+        "friction": 0.2,
+        "color": [
+          0.78,
+          0.8,
+          0.84
+        ]
+      },
+      "holder_pose": "real_scene",
+      "holder_slot_mm": [
+        0.0,
+        0.0
+      ]
+    },
+    "ball-2mm": {
+      "pose_base_mm_deg": [250.0, -400.0, 230.8, 180.0],
+      "grip_axis": "x",
+      "mesh": "ws_cobot_pjt/src/repair_car/meshes/probes/probe_v3_2mm.stl",
+      "holder": "ws_cobot_pjt/src/repair_car/meshes/holders/probe_holder.stl",
+      "grip_from_top_mm": 9,
+      "grip_pocket": {"span_mm": 21.0, "z_mm": [2.0, 20.0]},
+      "tip_radius_mm": 1.0,
+      "tcp_length_mm": 281.0,
+      "mass_kg": 0.039,
+      "ball": {
+        "centre_mm": [0.0, 0.0, -52.0],
+        "friction": 0.2,
+        "color": [0.78, 0.8, 0.84]
+      },
+      "holder_pose": "real_scene",
+      "holder_slot_mm": [0.0, 0.0]
+    }
+  },
+  "objects": {
+    "catalog": "ws_cobot_pjt/src/repair_car/native/objects",
+    "source": "YCB objects of ros2_mujoco ros_mujoco_native/mujoco_menagerie/mesh (CC BY 4.0, native/objects/source.json); CoACD convex collision parts",
+    "drop_mm": 1.0,
+    "items": {
+      "tennis_ball": {"pose_base_mm_deg": [330, 300, 0], "mass_kg": 0.058, "color": [0.8, 0.9, 0.2]},
+      "box": {"pose_base_mm_deg": [330, 100, 0], "mass_kg": 0.08, "color": [0.9, 0.1, 0.1]},
+      "mug": {"pose_base_mm_deg": [330, -100, 0], "mass_kg": 0.118, "color": [0.75, 0.2, 0.15]},
+      "medium_clamp": {"pose_base_mm_deg": [330, -300, 0], "mass_kg": 0.059, "color": [0.95, 0.55, 0.1]},
+      "banana": {"pose_base_mm_deg": [480, 300, 0], "mass_kg": 0.066, "color": [0.95, 0.85, 0.2]},
+      "large_marker": {"pose_base_mm_deg": [480, 100, 0], "mass_kg": 0.016, "color": [0.15, 0.15, 0.15]},
+      "scissors": {"pose_base_mm_deg": [480, -100, 0], "mass_kg": 0.082, "color": [0.2, 0.4, 0.8]},
+      "adjustable_wrench": {"pose_base_mm_deg": [480, -300, 0], "mass_kg": 0.252, "color": [0.6, 0.6, 0.62]},
+      "phillips_screwdriver": {"pose_base_mm_deg": [630, 300, 90], "mass_kg": 0.097, "color": [0.85, 0.3, 0.2]},
+      "flat_screwdriver": {"pose_base_mm_deg": [630, 100, 0], "mass_kg": 0.098, "color": [0.9, 0.75, 0.2]},
+      "hammer": {"pose_base_mm_deg": [650, -200, 0], "mass_kg": 0.665, "color": [0.45, 0.3, 0.2]}
+    }
+  }
+}

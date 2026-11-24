@@ -1,0 +1,3 @@
+Flask>=3.0,<4
+numpy>=1.26
+PyYAML>=6     # 로봇 탭 고정 실차 배치 (rokey config/real_scene.yaml)

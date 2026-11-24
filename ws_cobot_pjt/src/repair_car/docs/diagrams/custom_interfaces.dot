@@ -1,0 +1,80 @@
+// custom_interfaces 패키지 구조와 용도
+digraph ci {
+  graph [rankdir=LR, fontname="Apple SD Gothic Neo", fontsize=20, labelloc=t,
+         label="custom_interfaces 구조와 용도 (msg 10 · srv 3 · action 1)\n\n", nodesep=0.25, ranksep=0.9, pad=0.4, bgcolor=white];
+  node  [fontname="Apple SD Gothic Neo", fontsize=11, shape=plain];
+  edge  [fontname="Apple SD Gothic Neo", fontsize=10, color="#5b6b7b"];
+
+  subgraph cluster_scan {
+    label="① 접촉 검사 결과 (real_scan → 웹)"; style="rounded,filled"; fillcolor="#fff6ea"; color="#d08a3a"; fontsize=14;
+    ScanPart [label=<<table border="0" cellborder="1" cellspacing="0" cellpadding="4" bgcolor="#fde7cf">
+      <tr><td bgcolor="#d08a3a"><font color="white"><b>action ScanPart</b></font></td></tr>
+      <tr><td align="left">Goal: part · side · controller · pitch_mm · speed_mm_s<br align="left"/>plan_only · replan · roi_mm[4]<br align="left"/></td></tr>
+      <tr><td align="left">Result: success · message · run_id · paths · segments · points<br align="left"/>confirmed_rois · candidate_rois · measured_cloud · roi_file · reports[]<br align="left"/></td></tr>
+      <tr><td align="left">Feedback: stage(PLANNING/MOVING/SCANNING/REPORTING)<br align="left"/>path/paths · segment/segments · progress · points · force_n · remaining_s<br align="left"/></td></tr>
+      <tr><td align="left"><i>/scan_part 서버: web_control · /scan/progress·/scan/result 중계</i></td></tr></table>>];
+    CSA [label=<<table border="0" cellborder="1" cellspacing="0" cellpadding="4" bgcolor="#dbe8f6">
+      <tr><td bgcolor="#6b93c0"><font color="white"><b>msg ContactSampleArray</b></font></td></tr>
+      <tr><td align="left">header · run_id · samples: ContactSample[]<br align="left"/><i>/scan/samples, ~10 Hz 묶음</i><br align="left"/></td></tr></table>>];
+    CS [label=<<table border="0" cellborder="1" cellspacing="0" cellpadding="4" bgcolor="#dbe8f6">
+      <tr><td bgcolor="#6b93c0"><font color="white"><b>msg ContactSample</b></font></td></tr>
+      <tr><td align="left">sampled_at · sequence · phase(TRAVEL/PRESS/STROKE/RELEASE)<br align="left"/>path · segment · axis · tcp(Pose) · wrench · force_n · contact · point<br align="left"/></td></tr></table>>];
+    RA [label=<<table border="0" cellborder="1" cellspacing="0" cellpadding="4" bgcolor="#dbe8f6">
+      <tr><td bgcolor="#6b93c0"><font color="white"><b>msg RoiArray</b></font></td></tr>
+      <tr><td align="left">header · run_id · part · force_limit_n · regions: RoiRegion[]<br align="left"/><i>/scan/roi</i><br align="left"/></td></tr></table>>];
+    RR [label=<<table border="0" cellborder="1" cellspacing="0" cellpadding="4" bgcolor="#dbe8f6">
+      <tr><td bgcolor="#6b93c0"><font color="white"><b>msg RoiRegion</b></font></td></tr>
+      <tr><td align="left">id · type(dent/crack/deformation/force_*) · confirmed<br align="left"/>geometry · force · low/high/centre · axis<br align="left"/>area_m2 · length_m · width_m · max_deviation_m · force_residual_n · force_samples<br align="left"/></td></tr></table>>];
+  }
+
+  subgraph cluster_stream {
+    label="② 가상 Cartesian 스트림 (CartesianTransport ↔ cartesian_bridge)"; style="rounded,filled"; fillcolor="#f3effa"; color="#9b86c4"; fontsize=14;
+    CSess [label=<<table border="0" cellborder="1" cellspacing="0" cellpadding="4" bgcolor="#e1f3e4">
+      <tr><td bgcolor="#5f9a70"><font color="white"><b>srv CartesianSession</b></font></td></tr>
+      <tr><td align="left">Req: command(START/STOP) · run_id · pd: PosePdConfig · force_axis<br align="left"/>Res: success · run_id · message<br align="left"/><i>cartesian_stream/session</i><br align="left"/></td></tr></table>>];
+    PPC [label=<<table border="0" cellborder="1" cellspacing="0" cellpadding="4" bgcolor="#dbe8f6">
+      <tr><td bgcolor="#6b93c0"><font color="white"><b>msg PosePdConfig</b></font></td></tr>
+      <tr><td align="left">enabled · position_kp/kd_s · orientation_kp/kd_s<br align="left"/>derivative_filter_s · feedback speed/limit<br align="left"/></td></tr></table>>];
+    CSet [label=<<table border="0" cellborder="1" cellspacing="0" cellpadding="4" bgcolor="#dbe8f6">
+      <tr><td bgcolor="#6b93c0"><font color="white"><b>msg CartesianSetpoint</b></font></td></tr>
+      <tr><td align="left">run_id · sequence · position · rotation[9] · feedforward<br align="left"/>속도·가속 한계 · ball_radius · stiffness · contact_force<br align="left"/><i>cartesian_stream/setpoint</i><br align="left"/></td></tr></table>>];
+    CSt [label=<<table border="0" cellborder="1" cellspacing="0" cellpadding="4" bgcolor="#dbe8f6">
+      <tr><td bgcolor="#6b93c0"><font color="white"><b>msg CartesianState</b></font></td></tr>
+      <tr><td align="left">ready · active · probe_attached · position · rotation · velocity<br align="left"/>joint_positions · measured/filtered_wrench · ages · tracking_error<br align="left"/>pd_error/p/d/offset · pd_saturated<br align="left"/><i>cartesian_stream/state</i><br align="left"/></td></tr></table>>];
+  }
+
+  subgraph cluster_servo {
+    label="③ 관절 서보 (dsr_controller2 ↔ dsr_hardware2, C++ 내부)"; style="rounded,filled"; fillcolor="#eef4fb"; color="#7aa3cc"; fontsize=14;
+    JSS [label=<<table border="0" cellborder="1" cellspacing="0" cellpadding="4" bgcolor="#e1f3e4">
+      <tr><td bgcolor="#5f9a70"><font color="white"><b>srv JointServoSession</b></font></td></tr>
+      <tr><td align="left">Req: start · run_id   Res: success · message<br align="left"/><i>joint_servo/session</i><br align="left"/></td></tr></table>>];
+    JSP [label=<<table border="0" cellborder="1" cellspacing="0" cellpadding="4" bgcolor="#dbe8f6">
+      <tr><td bgcolor="#6b93c0"><font color="white"><b>msg JointServoSetpoint</b></font></td></tr>
+      <tr><td align="left">run_id · sequence · source_time_s · position_deg[6]<br align="left"/>velocity_deg_s[6] · servo_time_s (servoj_rt)<br align="left"/><i>joint_servo/setpoint</i><br align="left"/></td></tr></table>>];
+    JST [label=<<table border="0" cellborder="1" cellspacing="0" cellpadding="4" bgcolor="#dbe8f6">
+      <tr><td bgcolor="#6b93c0"><font color="white"><b>msg JointServoStatus</b></font></td></tr>
+      <tr><td align="left">run_id · active · stopped · reason<br align="left"/><i>joint_servo/status</i><br align="left"/></td></tr></table>>];
+  }
+
+  subgraph cluster_lift {
+    label="④ 턴 리프트 (실기 lift_bridge / 가상 bridge.py)"; style="rounded,filled"; fillcolor="#e6f4ea"; color="#7fb38f"; fontsize=14;
+    LC [label=<<table border="0" cellborder="1" cellspacing="0" cellpadding="4" bgcolor="#e1f3e4">
+      <tr><td bgcolor="#5f9a70"><font color="white"><b>srv LiftCommand</b></font></td></tr>
+      <tr><td align="left">Req: command ("heading DEG" · "lift MM" · "station top" · "status" …)<br align="left"/>Res: ok · error · status: LiftStatus<br align="left"/><i>lift/command</i><br align="left"/></td></tr></table>>];
+    LS [label=<<table border="0" cellborder="1" cellspacing="0" cellpadding="4" bgcolor="#dbe8f6">
+      <tr><td bgcolor="#6b93c0"><font color="white"><b>msg LiftStatus</b></font></td></tr>
+      <tr><td align="left">heading · station · lift_deg · lift_mm · stand_top_mm · vehicle_z_mm<br align="left"/><i>/lift/status</i><br align="left"/></td></tr></table>>];
+  }
+
+  node [shape=box, style="rounded,filled", fillcolor="#ffffff", color="#5b6b7b", fontsize=11];
+  u_scan [label="real_scan · part_scan/scan_topics.py\n→ web_control · 브라우저"];
+  u_cs   [label="part_scan/cartesian_transport.py\n↔ cobot_virtual/cartesian_bridge.py"];
+  u_js   [label="dsr_controller2.cpp\n↔ dsr_hardware2 joint_servo.hpp"];
+  u_lift [label="repair_manager · lift_command · native/scene.py\n→ lift/node.py · cobot_virtual/bridge.py"];
+
+  ScanPart -> u_scan [style=dotted]; CSA -> CS [label="포함"]; RA -> RR [label="포함"];
+  CSA -> u_scan [style=dotted]; RA -> u_scan [style=dotted];
+  CSess -> PPC [label="포함"]; CSess -> u_cs [style=dotted]; CSet -> u_cs [style=dotted]; CSt -> u_cs [style=dotted];
+  JSS -> u_js [style=dotted]; JSP -> u_js [style=dotted]; JST -> u_js [style=dotted];
+  LC -> LS [label="포함"]; LC -> u_lift [style=dotted]; LS -> u_lift [style=dotted];
+}

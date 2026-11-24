@@ -1,0 +1,37 @@
+<sdf version="1.9">
+  <world name="turn_lift">
+    <physics name="2ms" type="dart">
+      <max_step_size>0.002</max_step_size>
+    </physics>
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics" />
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands" />
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster" />
+    <plugin filename="gz-sim-apply-link-wrench-system" name="gz::sim::systems::ApplyLinkWrench" />
+    <gravity>0 0 -9.81</gravity>
+    <model name="table">
+      <static>true</static>
+      <link name="top">
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>2 2</size>
+            </plane>
+          </geometry>
+        </visual>
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>2 2</size>
+            </plane>
+          </geometry>
+        </collision>
+      </link>
+    </model>
+    <include>
+      <uri>file:///Users/wonjun/Desktop/wonjun/ws_cobot_pjt/ws_cobot_pjt/src/repair_car/repair_car/lift/out/models/turn_lift</uri>
+      <pose>0.56 0 0 0 0 3.14159</pose>
+    </include>
+  </world>
+</sdf>

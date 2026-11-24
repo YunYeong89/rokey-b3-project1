@@ -1,0 +1,494 @@
+<sdf version="1.9">
+  <world name="scissor_lift_1kg">
+    <physics name="1ms" type="dart">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1</real_time_factor>
+    </physics>
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics" />
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands" />
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster" />
+    <gravity>0 0 -9.81</gravity>
+    <light type="directional" name="sun">
+      <pose>0 0 2 0 0 0</pose>
+      <diffuse>.9 .9 .9 1</diffuse>
+      <direction>-.4 .3 -1</direction>
+    </light>
+    <model name="table">
+      <static>true</static>
+      <link name="top">
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>1 1</size>
+            </plane>
+          </geometry>
+        </visual>
+      </link>
+    </model>
+    <model name="scissor_lift">
+      <link name="base">
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>-0.00560437 0.00227856 0.00790602 0 0 0</pose>
+          <mass>0.0293026</mass>
+          <inertia>
+            <ixx>1.66809e-05</ixx>
+            <ixy>-1.68154e-07</ixy>
+            <ixz>1.97133e-06</ixz>
+            <iyy>6.37954e-05</iyy>
+            <iyz>-2.70192e-07</iyz>
+            <izz>7.68166e-05</izz>
+          </inertia>
+        </inertial>
+        <visual name="base">
+          <pose>0 0 0 0 0 0</pose>
+          <geometry>
+            <mesh>
+              <uri>file:///Users/wonjun/Desktop/wonjun/ws_cobot_pjt/ws_cobot_pjt/src/repair_car/repair_car/lift/out/models/scissor_lift/meshes/base.stl</uri>
+              <scale>0.001 0.001 0.001</scale>
+            </mesh>
+          </geometry>
+          <material>
+            <ambient>0.3 0.45 0.8 1</ambient>
+            <diffuse>0.3 0.45 0.8 1</diffuse>
+          </material>
+        </visual>
+      </link>
+      <link name="top">
+        <pose>-0.0577114 0 0.0664034 0 0 0</pose>
+        <inertial>
+          <pose>0.0534768 0.00265073 0.00779802 0 0 0</pose>
+          <mass>0.0381687</mass>
+          <inertia>
+            <ixx>1.95883e-05</ixx>
+            <ixy>7.73464e-09</ixy>
+            <ixz>-1.25629e-06</ixz>
+            <iyy>7.05017e-05</iyy>
+            <iyz>-2.68507e-09</iyz>
+            <izz>8.87054e-05</izz>
+          </inertia>
+        </inertial>
+        <visual name="top">
+          <pose>0 0 0 0 0 0</pose>
+          <geometry>
+            <mesh>
+              <uri>file:///Users/wonjun/Desktop/wonjun/ws_cobot_pjt/ws_cobot_pjt/src/repair_car/repair_car/lift/out/models/scissor_lift/meshes/top.stl</uri>
+              <scale>0.001 0.001 0.001</scale>
+            </mesh>
+          </geometry>
+          <material>
+            <ambient>0.6 0.3 0.7 1</ambient>
+            <diffuse>0.6 0.3 0.7 1</diffuse>
+          </material>
+        </visual>
+      </link>
+      <link name="arm_a">
+        <pose>-0.0203314 0 0.0440524 0 0 0</pose>
+        <inertial>
+          <pose>-6.19465e-06 0.00295 2.63475e-06 0 0 0</pose>
+          <mass>0.00643482</mass>
+          <inertia>
+            <ixx>5.0496e-06</ixx>
+            <ixy>1.36702e-13</ixy>
+            <ixz>-2.06458e-06</ixz>
+            <iyy>4.91189e-06</iyy>
+            <iyz>5.79838e-13</iyz>
+            <izz>7.41642e-06</izz>
+          </inertia>
+        </inertial>
+        <visual name="arm_a">
+          <pose>0 0 0 0 0 0</pose>
+          <geometry>
+            <mesh>
+              <uri>file:///Users/wonjun/Desktop/wonjun/ws_cobot_pjt/ws_cobot_pjt/src/repair_car/repair_car/lift/out/models/scissor_lift/meshes/arm_a.stl</uri>
+              <scale>0.001 0.001 0.001</scale>
+            </mesh>
+          </geometry>
+          <material>
+            <ambient>0.2 0.2 0.2 1</ambient>
+            <diffuse>0.2 0.2 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+      <link name="arm_b">
+        <pose>0.0170486 0 0.0217084 0 0 0</pose>
+        <inertial>
+          <pose>-0.0373051 0.00295001 0.0223466 0 0 0</pose>
+          <mass>0.00746329</mass>
+          <inertia>
+            <ixx>4.5181e-06</ixx>
+            <ixy>-4.37105e-12</ixy>
+            <ixz>2.06398e-06</ixz>
+            <iyy>4.91781e-06</iyy>
+            <iyz>-6.76175e-09</iyz>
+            <izz>6.88495e-06</izz>
+          </inertia>
+        </inertial>
+        <visual name="arm_b">
+          <pose>0 0 0 0 0 0</pose>
+          <geometry>
+            <mesh>
+              <uri>file:///Users/wonjun/Desktop/wonjun/ws_cobot_pjt/ws_cobot_pjt/src/repair_car/repair_car/lift/out/models/scissor_lift/meshes/arm_b.stl</uri>
+              <scale>0.001 0.001 0.001</scale>
+            </mesh>
+          </geometry>
+          <material>
+            <ambient>0.95 0.5 0.1 1</ambient>
+            <diffuse>0.95 0.5 0.1 1</diffuse>
+          </material>
+        </visual>
+      </link>
+      <link name="crank">
+        <pose>-0.0489514 0 0.0213444 0 0 0</pose>
+        <inertial>
+          <pose>0.00915984 0.0140085 -1.98375e-06 0 0 0</pose>
+          <mass>0.00377871</mass>
+          <inertia>
+            <ixx>0.00200006</ixx>
+            <ixy>-3.71892e-08</ixy>
+            <ixz>-8.71777e-14</ixz>
+            <iyy>0.0040008</iyy>
+            <iyz>-5.50788e-15</iyz>
+            <izz>0.00200078</izz>
+          </inertia>
+        </inertial>
+        <visual name="crank">
+          <pose>0 0 0 0 0 0</pose>
+          <geometry>
+            <mesh>
+              <uri>file:///Users/wonjun/Desktop/wonjun/ws_cobot_pjt/ws_cobot_pjt/src/repair_car/repair_car/lift/out/models/scissor_lift/meshes/crank.stl</uri>
+              <scale>0.001 0.001 0.001</scale>
+            </mesh>
+          </geometry>
+          <material>
+            <ambient>0.85 0.85 0.85 1</ambient>
+            <diffuse>0.85 0.85 0.85 1</diffuse>
+          </material>
+        </visual>
+      </link>
+      <link name="pushrod">
+        <pose>-0.0129514 0 0.0213444 0 0 0</pose>
+        <inertial>
+          <pose>0.0108375 0.0192038 0.000126556 0 0 0</pose>
+          <mass>0.00125141</mass>
+          <inertia>
+            <ixx>1.06371e-08</ixx>
+            <ixy>1.02503e-10</ixy>
+            <ixz>-1.9533e-09</ixz>
+            <iyy>1.87351e-07</iyy>
+            <iyz>8.65417e-12</iyz>
+            <izz>1.86914e-07</izz>
+          </inertia>
+        </inertial>
+        <visual name="pushrod">
+          <pose>0 0 0 0 0 0</pose>
+          <geometry>
+            <mesh>
+              <uri>file:///Users/wonjun/Desktop/wonjun/ws_cobot_pjt/ws_cobot_pjt/src/repair_car/repair_car/lift/out/models/scissor_lift/meshes/pushrod.stl</uri>
+              <scale>0.001 0.001 0.001</scale>
+            </mesh>
+          </geometry>
+          <material>
+            <ambient>0.95 0.95 0.95 1</ambient>
+            <diffuse>0.95 0.95 0.95 1</diffuse>
+          </material>
+        </visual>
+      </link>
+      <link name="slider_top">
+        <pose>0.0170636 0 0.0663964 0 0 0</pose>
+        <inertial>
+          <pose>4.71686e-05 -9.80586e-05 -0.000120244 0 0 0</pose>
+          <mass>0.0044576</mass>
+          <inertia>
+            <ixx>1.32142e-06</ixx>
+            <ixy>3.53656e-09</ixy>
+            <ixz>4.33822e-11</ixz>
+            <iyy>8.77831e-08</iyy>
+            <iyz>4.7006e-09</iyz>
+            <izz>1.37888e-06</izz>
+          </inertia>
+        </inertial>
+        <visual name="slider_top">
+          <pose>0 0 0 0 0 0</pose>
+          <geometry>
+            <mesh>
+              <uri>file:///Users/wonjun/Desktop/wonjun/ws_cobot_pjt/ws_cobot_pjt/src/repair_car/repair_car/lift/out/models/scissor_lift/meshes/slider_top.stl</uri>
+              <scale>0.001 0.001 0.001</scale>
+            </mesh>
+          </geometry>
+          <material>
+            <ambient>0.5 0.5 0.5 1</ambient>
+            <diffuse>0.5 0.5 0.5 1</diffuse>
+          </material>
+        </visual>
+      </link>
+      <link name="slider_bottom">
+        <pose>0.0170486 0 0.0217084 0 0 0</pose>
+        <inertial>
+          <pose>0.000230572 0.00147635 -6.77881e-06 0 0 0</pose>
+          <mass>0.00493536</mass>
+          <inertia>
+            <ixx>1.69888e-06</ixx>
+            <ixy>-6.89343e-09</ixy>
+            <ixz>9.28122e-11</ixz>
+            <iyy>9.67097e-08</iyy>
+            <iyz>-2.20833e-09</iyz>
+            <izz>1.75999e-06</izz>
+          </inertia>
+        </inertial>
+        <visual name="slider_bottom">
+          <pose>0 0 0 0 0 0</pose>
+          <geometry>
+            <mesh>
+              <uri>file:///Users/wonjun/Desktop/wonjun/ws_cobot_pjt/ws_cobot_pjt/src/repair_car/repair_car/lift/out/models/scissor_lift/meshes/slider_bottom.stl</uri>
+              <scale>0.001 0.001 0.001</scale>
+            </mesh>
+          </geometry>
+          <material>
+            <ambient>0.5 0.5 0.5 1</ambient>
+            <diffuse>0.5 0.5 0.5 1</diffuse>
+          </material>
+        </visual>
+      </link>
+      <joint name="fix" type="fixed">
+        <parent>world</parent>
+        <child>base</child>
+      </joint>
+      <joint name="servo" type="revolute">
+        <parent>base</parent>
+        <child>crank</child>
+        <axis>
+          <xyz>0 -1 0</xyz>
+          <limit>
+            <lower>0</lower>
+            <upper>1.00378</upper>
+            <effort>0.489025</effort>
+          </limit>
+          <dynamics>
+            <damping>0</damping>
+            <friction>0</friction>
+          </dynamics>
+        </axis>
+      </joint>
+      <joint name="crank_pin" type="revolute">
+        <parent>crank</parent>
+        <child>pushrod</child>
+        <axis>
+          <xyz>0 -1 0</xyz>
+          <dynamics>
+            <damping>0</damping>
+            <friction>0</friction>
+          </dynamics>
+        </axis>
+      </joint>
+      <joint name="rod_bottom" type="revolute">
+        <parent>pushrod</parent>
+        <child>slider_bottom</child>
+        <axis>
+          <xyz>0 -1 0</xyz>
+          <dynamics>
+            <damping>0</damping>
+            <friction>0</friction>
+          </dynamics>
+        </axis>
+      </joint>
+      <joint name="arm_b_bottom" type="revolute">
+        <parent>slider_bottom</parent>
+        <child>arm_b</child>
+        <axis>
+          <xyz>0 -1 0</xyz>
+          <dynamics>
+            <damping>0</damping>
+            <friction>0</friction>
+          </dynamics>
+        </axis>
+      </joint>
+      <joint name="middle" type="revolute">
+        <parent>arm_b</parent>
+        <child>arm_a</child>
+        <axis>
+          <xyz>0 -1 0</xyz>
+          <dynamics>
+            <damping>0</damping>
+            <friction>0</friction>
+          </dynamics>
+        </axis>
+      </joint>
+      <joint name="arm_a_top" type="revolute">
+        <parent>arm_a</parent>
+        <child>slider_top</child>
+        <axis>
+          <xyz>0 -1 0</xyz>
+          <dynamics>
+            <damping>0</damping>
+            <friction>0</friction>
+          </dynamics>
+        </axis>
+      </joint>
+      <joint name="fixed_top" type="revolute">
+        <parent>arm_b</parent>
+        <child>top</child>
+        <axis>
+          <xyz>0 -1 0</xyz>
+          <dynamics>
+            <damping>0</damping>
+            <friction>0</friction>
+          </dynamics>
+        </axis>
+      </joint>
+      <link name="fixed_bottom_stub">
+        <pose>-0.0577264 0 0.0217084 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>0.001</mass>
+          <inertia>
+            <ixx>1e-09</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1e-09</iyy>
+            <iyz>0</iyz>
+            <izz>1e-09</izz>
+          </inertia>
+        </inertial>
+      </link>
+      <joint name="fixed_bottom" type="revolute">
+        <parent>base</parent>
+        <child>fixed_bottom_stub</child>
+        <axis>
+          <xyz>0 -1 0</xyz>
+          <dynamics>
+            <damping>0</damping>
+            <friction>0</friction>
+          </dynamics>
+        </axis>
+      </joint>
+      <plugin filename="gz-sim-detachable-joint-system" name="gz::sim::systems::DetachableJoint">
+        <parent_link>fixed_bottom_stub</parent_link>
+        <child_model>__model__</child_model>
+        <child_link>arm_a</child_link>
+        <detach_topic>/scissor_lift/fixed_bottom/detach</detach_topic>
+        <attach_topic>/scissor_lift/fixed_bottom/attach</attach_topic>
+        <output_topic>/scissor_lift/fixed_bottom/output</output_topic>
+      </plugin>
+      <link name="slot_bottom_stub">
+        <pose>0.0170486 0 0.0217084 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>0.001</mass>
+          <inertia>
+            <ixx>1e-09</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1e-09</iyy>
+            <iyz>0</iyz>
+            <izz>1e-09</izz>
+          </inertia>
+        </inertial>
+      </link>
+      <joint name="slot_bottom" type="prismatic">
+        <parent>base</parent>
+        <child>slot_bottom_stub</child>
+        <axis>
+          <xyz>1 0 0</xyz>
+          <limit>
+            <lower>-0.035895</lower>
+            <upper>0.042255</upper>
+          </limit>
+          <dynamics>
+            <damping>0</damping>
+            <friction>0</friction>
+          </dynamics>
+        </axis>
+      </joint>
+      <plugin filename="gz-sim-detachable-joint-system" name="gz::sim::systems::DetachableJoint">
+        <parent_link>slot_bottom_stub</parent_link>
+        <child_model>__model__</child_model>
+        <child_link>slider_bottom</child_link>
+        <detach_topic>/scissor_lift/slot_bottom/detach</detach_topic>
+        <attach_topic>/scissor_lift/slot_bottom/attach</attach_topic>
+        <output_topic>/scissor_lift/slot_bottom/output</output_topic>
+      </plugin>
+      <link name="slot_top_stub">
+        <pose>0.0170636 0 0.0663964 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>0.001</mass>
+          <inertia>
+            <ixx>1e-09</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1e-09</iyy>
+            <iyz>0</iyz>
+            <izz>1e-09</izz>
+          </inertia>
+        </inertial>
+      </link>
+      <joint name="slot_top" type="prismatic">
+        <parent>top</parent>
+        <child>slot_top_stub</child>
+        <axis>
+          <xyz>1 0 0</xyz>
+          <limit>
+            <lower>-0.03591</lower>
+            <upper>0.04224</upper>
+          </limit>
+          <dynamics>
+            <damping>0</damping>
+            <friction>0</friction>
+          </dynamics>
+        </axis>
+      </joint>
+      <plugin filename="gz-sim-detachable-joint-system" name="gz::sim::systems::DetachableJoint">
+        <parent_link>slot_top_stub</parent_link>
+        <child_model>__model__</child_model>
+        <child_link>slider_top</child_link>
+        <detach_topic>/scissor_lift/slot_top/detach</detach_topic>
+        <attach_topic>/scissor_lift/slot_top/attach</attach_topic>
+        <output_topic>/scissor_lift/slot_top/output</output_topic>
+      </plugin>
+      <link name="payload">
+        <pose>3.43709e-05 0.00265 0.0835545 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0.01 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>0.000333333</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>0.000708333</iyy>
+            <iyz>0</iyz>
+            <izz>0.000975</izz>
+          </inertia>
+        </inertial>
+        <visual name="payload">
+          <pose>0 0 0.01 0 0 0</pose>
+          <geometry>
+            <box>
+              <size>0.09 0.06 0.02</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.75 0.2 0.2 1</ambient>
+            <diffuse>0.75 0.2 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+      <joint name="payload_mount" type="fixed">
+        <parent>top</parent>
+        <child>payload</child>
+      </joint>
+      <plugin filename="gz-sim-joint-position-controller-system" name="gz::sim::systems::JointPositionController">
+        <joint_name>servo</joint_name>
+        <topic>/scissor_lift/servo</topic>
+        <use_velocity_commands>true</use_velocity_commands>
+        <cmd_max>0.698132</cmd_max>
+        <cmd_min>-0.698132</cmd_min>
+        <initial_position>0</initial_position>
+      </plugin>
+      <plugin filename="gz-sim-joint-state-publisher-system" name="gz::sim::systems::JointStatePublisher">
+        <topic>/scissor_lift/joint_state</topic>
+      </plugin>
+    </model>
+  </world>
+</sdf>

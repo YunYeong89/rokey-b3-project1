@@ -1,0 +1,10 @@
+# Native virtual controller only. SI units: m, rad, N, N*m, seconds.
+# Start unloaded for the sensor's startup zero-bias calibration.
+# TCP and payload mass/COG come from repair_car/config/calibration.json at virtual startup.
+control_hz: 100
+mass: [8, 8, 8, 0.5, 0.5, 0.5]
+minimum_damping: [800, 800, 800, 20, 20, 20]
+maximum_velocity: [0.01, 0.01, 0.01, 0.06, 0.06, 0.06]
+maximum_displacement: [0.08, 0.08, 0.08, 0.2, 0.2, 0.2]
+maximum_joint_velocity: 2.0
+wrench_filter_time: 0.08

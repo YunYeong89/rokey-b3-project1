@@ -1,0 +1,51 @@
+// 실행 로직: 세션 시작 → 웹 → 프로그램 (부품 검사 / 수리)
+digraph flow {
+  graph [rankdir=TB, fontname="Apple SD Gothic Neo", fontsize=20, labelloc=t, label="실행 로직 (세션 시작 → 웹 명령 → 로봇 프로그램)\n\n",
+         nodesep=0.4, ranksep=0.55, pad=0.4, bgcolor=white];
+  node  [fontname="Apple SD Gothic Neo", fontsize=12, shape=box, style="rounded,filled", fillcolor="#ffffff", color="#5b6b7b"];
+  edge  [fontname="Apple SD Gothic Neo", fontsize=10, color="#5b6b7b"];
+
+  subgraph cluster_start {
+    label="1. 세션 시작 (호스트 터미널)"; style="rounded,filled"; fillcolor="#eef4fb"; color="#7aa3cc";
+    virt [label="./run_virtual.sh [--car real|demo_final|…] [--web]\n가상: 에뮬레이터 + Gazebo"];
+    real [label="./run_real.sh ROBOT_IP [--with-sim] [--web]\n실기 (+ /robot_2 가상)"];
+    web  [label="./run_web.sh [--lan]\nFlask :5050 + rosbridge + web_control"];
+    sess [label="native/session.py (또는 service.py)\n컨테이너 bringup · RViz · Gazebo"];
+    virt -> sess; real -> sess;
+  }
+
+  subgraph cluster_web {
+    label="2. 웹 (브라우저 → Flask / rosbridge)"; style="rounded,filled"; fillcolor="#e6f4ea"; color="#7fb38f";
+    tab_robot  [label="관리자 > 로봇 탭\n/robot/command"];
+    tab_insp   [label="부품 검사 (보닛 · 왼쪽/오른쪽 문)\n영역 지정 가능"];
+    tab_repair [label="수리 시작 (자동 / 수동)\nPOST /api/jobs → /repair/command"];
+    action     [label="ScanPart 액션 /scan_part\n(외부 클라이언트)"];
+  }
+
+  wc [label="web/web_control.py\n한 번에 한 프로그램 · 정지 · 힘 그래프", fillcolor="#d6ecdc"];
+
+  subgraph cluster_prog {
+    label="3. 로봇 프로그램 (컨테이너 자식 프로세스)"; style="rounded,filled"; fillcolor="#f3effa"; color="#9b86c4";
+    prog  [label="pick_probe · release_probe · teleop ·\ncalibration · force_offset · choose_car …"];
+    pick  [label="pick_probe\n(검사 전 탐침 파지 확인)"];
+    rscan [label="inspection/real_scan.py\n--controller mesh-height --part bonnet|door"];
+    mesh  [label="mesh_scan.run_mesh_scan\n경로 계획(캐시) → 실행 → ROI"];
+    resc  [label="rescan()\ncrack ROI 재검출 (2 mm/s)", fillcolor="#fff3d6"];
+    rm    [label="web/repair_manager.py --job-id N\n(→ 4. 수리 흐름 그림)"];
+  }
+
+  out [label="결과 저장\ndata/<차량>/<날짜>/<부품>/ (plan · route · roi · result · report.png)\n/scan/samples · /scan/roi · /scan/progress · /scan/result", shape=note, fillcolor="#fffbe6"];
+  dsr [label="DSR 서비스 (dsr_controller2)\n가상: 에뮬레이터 / 실기: M0609", fillcolor="#fdf0ec"];
+
+  web -> wc [style=dashed, label="컨테이너에 실행"];
+  sess -> dsr [style=dashed, label="bringup"];
+  tab_robot -> wc; tab_insp -> wc; tab_repair -> wc; action -> wc;
+  wc -> prog  [label="모듈·옵션 화이트리스트\n(web_commands.py)"];
+  wc -> pick  [label="검사 단계 앞"];
+  pick -> rscan [label="web_inspection.py\n단계별 실행"];
+  wc -> rm    [label="잡 시작"];
+  rscan -> mesh;
+  mesh -> resc [label="보닛·문, crack 있으면"];
+  mesh -> out; resc -> out;
+  prog -> dsr; mesh -> dsr; rm -> dsr;
+}

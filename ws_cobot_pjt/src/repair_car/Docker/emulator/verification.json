@@ -1,0 +1,35 @@
+{
+  "vendor_image": "doosanrobot/dsr_emulator:3.0.1",
+  "vendor_digest": "sha256:878b8557dfa2ffd843674e42576fd015b803cc805fe698156eb7b743e71547e9",
+  "execution": "Docker Desktop Apple Virtualization Framework + Rosetta for Linux",
+  "controller_architecture": "linux/amd64",
+  "rosetta_verified_by": "/run/rosetta/rosetta in DRCF process memory mappings",
+  "cpu_affinity": {
+    "emulator": "0-3",
+    "ros": "4-9"
+  },
+  "measurement": "results/summary.json:rosetta_pinned_60",
+  "verified": {
+    "model": "M0609",
+    "controller_version": "GF03020000",
+    "motion_2_degree_roundtrip": true,
+    "duration_s": 60,
+    "query_failures": 0,
+    "ros_driver_external_emulator_connected": true,
+    "dsr_controller2_activated": true
+  },
+  "limitations": [
+    "No RT UDP or hardware real-time guarantee tested",
+    "No Gazebo or prolonged soak test performed",
+    "Earlier amd64_60 measurement also used Rosetta",
+    "Box64 experiments disabled and 10-minute run cancelled at user request",
+    "Single-run observations are not a controlled performance ranking",
+    "A 15-second ROS bringup check observed a startup controller-activation overrun and a 15 ms loop before FIFO permissions were added; sustained loop timing after this change is not measured"
+  ],
+  "ros_scheduler": {
+    "fifo_priority_50_permitted": true,
+    "capability": "SYS_NICE",
+    "rtprio_limit": 99,
+    "memlock_limit": "unlimited"
+  }
+}

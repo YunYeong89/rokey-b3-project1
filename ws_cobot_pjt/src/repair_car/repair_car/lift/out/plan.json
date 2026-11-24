@@ -1,0 +1,358 @@
+{
+ "states": [
+  {
+   "direction": "top",
+   "heading": 0,
+   "lift": "down",
+   "bumper": [
+    0,
+    115
+   ],
+   "bonnet": [
+    2152,
+    2397
+   ],
+   "door": [
+    0,
+    0
+   ],
+   "body": [
+    1959,
+    7254
+   ]
+  },
+  {
+   "direction": "top",
+   "heading": 0,
+   "lift": "up",
+   "bumper": [
+    0,
+    115
+   ],
+   "bonnet": [
+    2152,
+    2397
+   ],
+   "door": [
+    0,
+    0
+   ],
+   "body": [
+    789,
+    7254
+   ]
+  },
+  {
+   "direction": "top",
+   "heading": 90,
+   "lift": "down",
+   "bumper": [
+    0,
+    115
+   ],
+   "bonnet": [
+    2152,
+    2397
+   ],
+   "door": [
+    0,
+    0
+   ],
+   "body": [
+    3249,
+    7254
+   ]
+  },
+  {
+   "direction": "top",
+   "heading": 90,
+   "lift": "up",
+   "bumper": [
+    0,
+    115
+   ],
+   "bonnet": [
+    638,
+    2397
+   ],
+   "door": [
+    0,
+    0
+   ],
+   "body": [
+    367,
+    7254
+   ]
+  },
+  {
+   "direction": "top",
+   "heading": 180,
+   "lift": "down",
+   "bumper": [
+    0,
+    115
+   ],
+   "bonnet": [
+    0,
+    2397
+   ],
+   "door": [
+    0,
+    0
+   ],
+   "body": [
+    5002,
+    7254
+   ]
+  },
+  {
+   "direction": "top",
+   "heading": 180,
+   "lift": "up",
+   "bumper": [
+    0,
+    115
+   ],
+   "bonnet": [
+    0,
+    2397
+   ],
+   "door": [
+    0,
+    0
+   ],
+   "body": [
+    2013,
+    7254
+   ]
+  },
+  {
+   "direction": "top",
+   "heading": 270,
+   "lift": "down",
+   "bumper": [
+    0,
+    115
+   ],
+   "bonnet": [
+    2152,
+    2397
+   ],
+   "door": [
+    0,
+    0
+   ],
+   "body": [
+    3272,
+    7254
+   ]
+  },
+  {
+   "direction": "top",
+   "heading": 270,
+   "lift": "up",
+   "bumper": [
+    0,
+    115
+   ],
+   "bonnet": [
+    620,
+    2397
+   ],
+   "door": [
+    0,
+    0
+   ],
+   "body": [
+    421,
+    7254
+   ]
+  },
+  {
+   "direction": "front",
+   "heading": 0,
+   "lift": "down",
+   "bumper": [
+    0,
+    342
+   ],
+   "bonnet": [
+    0,
+    104
+   ],
+   "door": [
+    0,
+    0
+   ],
+   "body": [
+    279,
+    1634
+   ]
+  },
+  {
+   "direction": "front",
+   "heading": 0,
+   "lift": "up",
+   "bumper": [
+    7,
+    342
+   ],
+   "bonnet": [
+    0,
+    111
+   ],
+   "door": [
+    0,
+    0
+   ],
+   "body": [
+    512,
+    1619
+   ]
+  },
+  {
+   "direction": "front",
+   "heading": 90,
+   "lift": "down",
+   "bumper": [
+    6,
+    10
+   ],
+   "bonnet": [
+    0,
+    32
+   ],
+   "door": [
+    2812,
+    2882
+   ],
+   "body": [
+    3668,
+    3838
+   ]
+  },
+  {
+   "direction": "front",
+   "heading": 90,
+   "lift": "up",
+   "bumper": [
+    6,
+    7
+   ],
+   "bonnet": [
+    0,
+    30
+   ],
+   "door": [
+    2802,
+    2886
+   ],
+   "body": [
+    3647,
+    3815
+   ]
+  },
+  {
+   "direction": "front",
+   "heading": 180,
+   "lift": "down",
+   "bumper": [
+    0,
+    419
+   ],
+   "bonnet": [
+    0,
+    0
+   ],
+   "door": [
+    0,
+    0
+   ],
+   "body": [
+    396,
+    3133
+   ]
+  },
+  {
+   "direction": "front",
+   "heading": 180,
+   "lift": "up",
+   "bumper": [
+    28,
+    419
+   ],
+   "bonnet": [
+    0,
+    0
+   ],
+   "door": [
+    0,
+    0
+   ],
+   "body": [
+    1094,
+    3131
+   ]
+  },
+  {
+   "direction": "front",
+   "heading": 270,
+   "lift": "down",
+   "bumper": [
+    4,
+    4
+   ],
+   "bonnet": [
+    0,
+    32
+   ],
+   "door": [
+    2748,
+    2787
+   ],
+   "body": [
+    3660,
+    3804
+   ]
+  },
+  {
+   "direction": "front",
+   "heading": 270,
+   "lift": "up",
+   "bumper": [
+    4,
+    4
+   ],
+   "bonnet": [
+    0,
+    33
+   ],
+   "door": [
+    2745,
+    2801
+   ],
+   "body": [
+    3656,
+    3793
+   ]
+  }
+ ],
+ "coverage": {
+  "bumper": {
+   "reachable": 45,
+   "visible": 891
+  },
+  "bonnet": {
+   "reachable": 2152,
+   "visible": 2578
+  },
+  "door": {
+   "reachable": 5589,
+   "visible": 5754
+  },
+  "body": {
+   "reachable": 15584,
+   "visible": 19790
+  }
+ }
+}

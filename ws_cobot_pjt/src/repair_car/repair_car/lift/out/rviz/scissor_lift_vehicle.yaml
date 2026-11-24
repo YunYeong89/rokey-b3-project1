@@ -1,0 +1,69 @@
+/**:
+  ros__parameters:
+    robot_description: "<robot name=\"scissor_lift\">\n  <link name=\"world\" />\n\
+      \  <link name=\"base\">\n    <visual>\n      <origin xyz=\"0 0 0\" rpy=\"0 0\
+      \ 0\" />\n      <geometry>\n        <mesh filename=\"file:///Users/wonjun/Desktop/wonjun/ws_cobot_pjt/ws_cobot_pjt/src/repair_car/repair_car/lift/out/models/scissor_lift/meshes/base.stl\"\
+      \ scale=\"0.001 0.001 0.001\" />\n      </geometry>\n      <material name=\"\
+      base\">\n        <color rgba=\"0.3 0.45 0.8 1\" />\n      </material>\n    </visual>\n\
+      \  </link>\n  <link name=\"top\">\n    <visual>\n      <origin xyz=\"0 0 0\"\
+      \ rpy=\"0 0 0\" />\n      <geometry>\n        <mesh filename=\"file:///Users/wonjun/Desktop/wonjun/ws_cobot_pjt/ws_cobot_pjt/src/repair_car/repair_car/lift/out/models/scissor_lift/meshes/top.stl\"\
+      \ scale=\"0.001 0.001 0.001\" />\n      </geometry>\n      <material name=\"\
+      top\">\n        <color rgba=\"0.6 0.3 0.7 1\" />\n      </material>\n    </visual>\n\
+      \  </link>\n  <link name=\"arm_a\">\n    <visual>\n      <origin xyz=\"0 0 0\"\
+      \ rpy=\"0 0 0\" />\n      <geometry>\n        <mesh filename=\"file:///Users/wonjun/Desktop/wonjun/ws_cobot_pjt/ws_cobot_pjt/src/repair_car/repair_car/lift/out/models/scissor_lift/meshes/arm_a.stl\"\
+      \ scale=\"0.001 0.001 0.001\" />\n      </geometry>\n      <material name=\"\
+      arm_a\">\n        <color rgba=\"0.2 0.2 0.2 1\" />\n      </material>\n    </visual>\n\
+      \  </link>\n  <link name=\"arm_b\">\n    <visual>\n      <origin xyz=\"0 0 0\"\
+      \ rpy=\"0 0 0\" />\n      <geometry>\n        <mesh filename=\"file:///Users/wonjun/Desktop/wonjun/ws_cobot_pjt/ws_cobot_pjt/src/repair_car/repair_car/lift/out/models/scissor_lift/meshes/arm_b.stl\"\
+      \ scale=\"0.001 0.001 0.001\" />\n      </geometry>\n      <material name=\"\
+      arm_b\">\n        <color rgba=\"0.95 0.5 0.1 1\" />\n      </material>\n   \
+      \ </visual>\n  </link>\n  <link name=\"crank\">\n    <visual>\n      <origin\
+      \ xyz=\"0 0 0\" rpy=\"0 0 0\" />\n      <geometry>\n        <mesh filename=\"\
+      file:///Users/wonjun/Desktop/wonjun/ws_cobot_pjt/ws_cobot_pjt/src/repair_car/repair_car/lift/out/models/scissor_lift/meshes/crank.stl\"\
+      \ scale=\"0.001 0.001 0.001\" />\n      </geometry>\n      <material name=\"\
+      crank\">\n        <color rgba=\"0.85 0.85 0.85 1\" />\n      </material>\n \
+      \   </visual>\n  </link>\n  <link name=\"pushrod\">\n    <visual>\n      <origin\
+      \ xyz=\"0 0 0\" rpy=\"0 0 0\" />\n      <geometry>\n        <mesh filename=\"\
+      file:///Users/wonjun/Desktop/wonjun/ws_cobot_pjt/ws_cobot_pjt/src/repair_car/repair_car/lift/out/models/scissor_lift/meshes/pushrod.stl\"\
+      \ scale=\"0.001 0.001 0.001\" />\n      </geometry>\n      <material name=\"\
+      pushrod\">\n        <color rgba=\"0.95 0.95 0.95 1\" />\n      </material>\n\
+      \    </visual>\n  </link>\n  <link name=\"slider_top\">\n    <visual>\n    \
+      \  <origin xyz=\"0 0 0\" rpy=\"0 0 0\" />\n      <geometry>\n        <mesh filename=\"\
+      file:///Users/wonjun/Desktop/wonjun/ws_cobot_pjt/ws_cobot_pjt/src/repair_car/repair_car/lift/out/models/scissor_lift/meshes/slider_top.stl\"\
+      \ scale=\"0.001 0.001 0.001\" />\n      </geometry>\n      <material name=\"\
+      slider_top\">\n        <color rgba=\"0.5 0.5 0.5 1\" />\n      </material>\n\
+      \    </visual>\n  </link>\n  <link name=\"slider_bottom\">\n    <visual>\n \
+      \     <origin xyz=\"0 0 0\" rpy=\"0 0 0\" />\n      <geometry>\n        <mesh\
+      \ filename=\"file:///Users/wonjun/Desktop/wonjun/ws_cobot_pjt/ws_cobot_pjt/src/repair_car/repair_car/lift/out/models/scissor_lift/meshes/slider_bottom.stl\"\
+      \ scale=\"0.001 0.001 0.001\" />\n      </geometry>\n      <material name=\"\
+      slider_bottom\">\n        <color rgba=\"0.5 0.5 0.5 1\" />\n      </material>\n\
+      \    </visual>\n  </link>\n  <joint name=\"fix\" type=\"fixed\">\n    <parent\
+      \ link=\"world\" />\n    <child link=\"base\" />\n    <origin xyz=\"0 0 0\"\
+      \ rpy=\"0 0 0\" />\n  </joint>\n  <joint name=\"servo\" type=\"revolute\">\n\
+      \    <parent link=\"base\" />\n    <child link=\"crank\" />\n    <origin xyz=\"\
+      -0.0489514 0 0.0213444\" rpy=\"0 0 0\" />\n    <axis xyz=\"0 -1 0\" />\n   \
+      \ <limit lower=\"0\" upper=\"1.00378\" effort=\"0.489025\" velocity=\"0.698132\"\
+      \ />\n  </joint>\n  <joint name=\"crank_pin\" type=\"continuous\">\n    <parent\
+      \ link=\"crank\" />\n    <child link=\"pushrod\" />\n    <origin xyz=\"0.036\
+      \ 0 0\" rpy=\"0 0 0\" />\n    <axis xyz=\"0 -1 0\" />\n  </joint>\n  <joint\
+      \ name=\"rod_bottom\" type=\"continuous\">\n    <parent link=\"pushrod\" />\n\
+      \    <child link=\"slider_bottom\" />\n    <origin xyz=\"0.03 0 0.000364\" rpy=\"\
+      0 0 0\" />\n    <axis xyz=\"0 -1 0\" />\n  </joint>\n  <joint name=\"arm_b_bottom\"\
+      \ type=\"continuous\">\n    <parent link=\"slider_bottom\" />\n    <child link=\"\
+      arm_b\" />\n    <origin xyz=\"0 0 0\" rpy=\"0 0 0\" />\n    <axis xyz=\"0 -1\
+      \ 0\" />\n  </joint>\n  <joint name=\"middle\" type=\"continuous\">\n    <parent\
+      \ link=\"arm_b\" />\n    <child link=\"arm_a\" />\n    <origin xyz=\"-0.03738\
+      \ 0 0.022344\" rpy=\"0 0 0\" />\n    <axis xyz=\"0 -1 0\" />\n  </joint>\n \
+      \ <joint name=\"arm_a_top\" type=\"continuous\">\n    <parent link=\"arm_a\"\
+      \ />\n    <child link=\"slider_top\" />\n    <origin xyz=\"0.037395 0 0.022344\"\
+      \ rpy=\"0 0 0\" />\n    <axis xyz=\"0 -1 0\" />\n  </joint>\n  <joint name=\"\
+      fixed_top\" type=\"continuous\">\n    <parent link=\"arm_b\" />\n    <child\
+      \ link=\"top\" />\n    <origin xyz=\"-0.07476 0 0.044695\" rpy=\"0 0 0\" />\n\
+      \    <axis xyz=\"0 -1 0\" />\n  </joint>\n  <link name=\"payload\">\n    <visual>\n\
+      \      <origin xyz=\"0 0 0\" rpy=\"0 0 0\" />\n      <geometry>\n        <mesh\
+      \ filename=\"file:///Users/wonjun/Desktop/wonjun/ws_cobot_pjt/ws_cobot_pjt/src/repair_car/repair_car/lift/out/models/scissor_lift/meshes/vehicle.stl\"\
+      \ scale=\"0.001 0.001 0.001\" />\n      </geometry>\n      <material name=\"\
+      payload\">\n        <color rgba=\"0.75 0.2 0.2 1\" />\n      </material>\n \
+      \   </visual>\n  </link>\n  <joint name=\"payload_mount\" type=\"fixed\">\n\
+      \    <parent link=\"top\" />\n    <child link=\"payload\" />\n    <origin xyz=\"\
+      0.0577457 0.00265 0.0171511\" rpy=\"0 0 0\" />\n  </joint>\n</robot>"

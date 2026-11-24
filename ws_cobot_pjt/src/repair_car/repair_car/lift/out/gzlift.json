@@ -1,0 +1,51 @@
+{
+ "model": "/Users/wonjun/Desktop/wonjun/ws_cobot_pjt/ws_cobot_pjt/src/repair_car/repair_car/lift/out/models/scissor_lift",
+ "worlds": [
+  "/Users/wonjun/Desktop/wonjun/ws_cobot_pjt/ws_cobot_pjt/src/repair_car/repair_car/lift/out/worlds/scissor_lift_1kg.sdf",
+  "/Users/wonjun/Desktop/wonjun/ws_cobot_pjt/ws_cobot_pjt/src/repair_car/repair_car/lift/out/worlds/scissor_lift_vehicle.sdf"
+ ],
+ "kinematics": {
+  "crank_mm": 36.0,
+  "pushrod_mm": 30.002,
+  "arm_mm": 87.124,
+  "toggle_lock_deg": 57.512,
+  "slot_stop_deg": 53.767,
+  "rise_mm": 33.254,
+  "holder_top_down_mm": 83.555
+ },
+ "links_kg": {
+  "base": 0.029,
+  "top": 0.038,
+  "arm_a": 0.006,
+  "arm_b": 0.007,
+  "crank": 0.004,
+  "pushrod": 0.001,
+  "slider_top": 0.004,
+  "slider_bottom": 0.005
+ },
+ "payloads": [
+  {
+   "payload": "1kg",
+   "lifted_kg": 1.05,
+   "static_torque_nm": 0.504,
+   "at_deg": 53.767,
+   "allowance_nm": 0.489,
+   "margin": 0.971
+  },
+  {
+   "payload": "vehicle",
+   "lifted_kg": 1.05,
+   "static_torque_nm": 0.504,
+   "at_deg": 53.767,
+   "allowance_nm": 0.489,
+   "margin": 0.971
+  }
+ ],
+ "rviz": {
+  "urdf": [
+   "/Users/wonjun/Desktop/wonjun/ws_cobot_pjt/ws_cobot_pjt/src/repair_car/repair_car/lift/out/rviz/scissor_lift_1kg.urdf",
+   "/Users/wonjun/Desktop/wonjun/ws_cobot_pjt/ws_cobot_pjt/src/repair_car/repair_car/lift/out/rviz/scissor_lift_vehicle.urdf"
+  ],
+  "config": "/Users/wonjun/Desktop/wonjun/ws_cobot_pjt/ws_cobot_pjt/src/repair_car/repair_car/lift/out/rviz/lift.rviz"
+ }
+}

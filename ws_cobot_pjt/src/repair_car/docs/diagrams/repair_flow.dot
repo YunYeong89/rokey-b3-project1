@@ -1,0 +1,42 @@
+// 웹 자동·수동 수리 흐름 (실기 / 가상)
+digraph repair {
+  graph [rankdir=TB, fontname="Apple SD Gothic Neo", fontsize=20, labelloc=t, label="웹 수리 흐름 (자동 · 수동, 실기 · 가상)\n\n",
+         nodesep=0.35, ranksep=0.45, pad=0.4, bgcolor=white];
+  node  [fontname="Apple SD Gothic Neo", fontsize=12, shape=box, style="rounded,filled", fillcolor="#ffffff", color="#5b6b7b"];
+  edge  [fontname="Apple SD Gothic Neo", fontsize=10, color="#5b6b7b"];
+
+  start [label="admin.js [수리 시작]\nPOST /api/jobs {vehicle_id, mode, parts}\n→ DB jobs(status=running) · findings(requested)", fillcolor="#e6f4ea"];
+  cmd   [label="rosbridge /repair/command {cmd: start, job_id}", fillcolor="#e6f4ea"];
+  wc    [label="web_control.repair()\n로봇 준비 · 장면 · 실행 중 작업 · 그리퍼 파지 확인\n실기 수동: 보닛 1개만 허용", fillcolor="#d6ecdc"];
+  rm    [label="repair_manager --job-id N\nprocess(job)", fillcolor="#e4dcf3"];
+  reject[label="거절 → DB failed\n/robot/status rejected", fillcolor="#fde2e2"];
+
+  demo  [label="가상 demo_final 자동\n보닛 → 왼쪽 문 → 오른쪽 문\n리프트 회전·상승(lift/command) → real_scan → 교체", fillcolor="#fff3d6"];
+
+  subgraph cluster_real {
+    label="실기 (mode = real)"; style="rounded,filled"; fillcolor="#fdf0ec"; color="#d08770";
+    r_auto   [label="자동"]; r_manual [label="수동 (bonnet)"];
+    r_probe  [label="탐침 확인 · 없으면 거치대에서 파지\ncheck_real_probe(pick=True)"];
+    r_scan   [label="real_scan --part bonnet --controller mesh-height\n--rescan-drawn-bonnet --inspection-position\n(전체 검사 → crack ROI 재검출)"];
+    r_find   [label="roi.json 집계\n확정 dent/crack → 교체 대상\n후보만 → suspect"];
+    r_check  [label="탐침 확인 check_real_probe(pick=False)"];
+    r_rep    [label="bonnet_replace disassembly → assembly\n(티칭 좌표, 분해 시작 시 탐침 거치)"];
+  }
+  stock [label="재고 확인 (check_db) — 없으면 경고 후 계속"];
+  done  [label="DB replacement · consume\nfinish: done / failed / no_damage", fillcolor="#e6f4ea"];
+  stop  [label="웹 정지: /repair/command {cmd: stop}\n→ SIGINT → 로봇 정지 · 힘 해제 → stopped", fillcolor="#fde2e2"];
+
+  start -> cmd -> wc;
+  wc -> reject [label="조건 불충족", style=dashed];
+  wc -> rm [label="ManagedProcess"];
+  rm -> demo [label="가상 · 실차 · demo_final · 자동"];
+  rm -> r_auto [label="실기 자동"]; rm -> r_manual [label="실기 수동"];
+  r_auto -> r_probe; r_manual -> r_probe;
+  r_probe -> r_scan [label="자동"]; r_scan -> r_find;
+  r_find -> done [label="손상 없음 → no_damage", style=dashed];
+  r_find -> stock [label="교체 대상 있음"];
+  r_probe -> stock [label="수동"];
+  stock -> r_check -> r_rep -> done;
+  demo -> done;
+  rm -> stop [style=dotted, dir=back];
+}

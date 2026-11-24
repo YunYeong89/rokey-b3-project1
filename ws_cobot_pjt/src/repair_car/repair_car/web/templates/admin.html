@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ service_name }}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='robot.css') }}">
+<script src="{{ url_for('static', filename='vendor/roslib/roslib.min.js') }}"></script>
+<script type="importmap">
+{ "imports": {
+    "three": "/static/vendor/three/build/three.module.js",
+    "three/addons/": "/static/vendor/three/examples/jsm/",
+    "three/examples/jsm/": "/static/vendor/three/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="dot"></span> {{ service_name }} <span class="role-tag">관리자</span></div>
+  <nav class="tabs">
+    <button class="tab active" data-tab="robot">로봇·수리</button>
+    <button class="tab" data-tab="stock">재고</button>
+    <button class="tab" data-tab="history">이력</button>
+    <button class="tab" data-tab="members">회원·차량</button>
+    <button class="tab" data-tab="alarms">알람 <span id="alarmCount" class="tab-count hidden">0</span></button>
+  </nav>
+  <div class="conn">
+    <span id="robotState" class="robot-state off" title="로봇 상태"><i></i><span>연결 끊김</span></span>
+    <span id="rosState" class="pill off">로봇 연결 안 됨</span>
+    <span class="user">{{ name }}</span>
+    <a href="{{ url_for('logout') }}" class="btn ghost small">로그아웃</a>
+  </div>
+</header>
+
+<main>
+  <section id="tab-robot" class="panel active">
+    <div class="robot-layout">
+      <div class="robot-main">  <!-- 왼쪽: 로봇 3D → 부품 탐색(수동) → 힘 그래프·결과 → 진행 로그, 간격 없이 이어짐 -->
+        <div class="card robot-scene-card">
+          <div class="cardhead"><h2>실시간 현황 <small>M0609 + RG2</small></h2><button type="button" data-robot-status class="pill off pill-button" title="누르면 로봇(rosbridge)에 다시 연결">연결 대기</button></div>
+          <div class="robot-meta"><span>Fixed frame: base_link</span><span>길이: m · 관절: deg</span>
+            <span class="robot-axis"><b>X</b><b>Y</b><b>Z</b></span></div>
+          <div class="robot-tools">
+            <select class="hdr-select" data-robot-namespace aria-label="로봇 네임스페이스"></select>
+            <button class="btn ghost-dark small" data-robot-fit>전체 보기</button>
+            <button class="btn ghost-dark small" data-robot-view="iso">기본</button>
+            <button class="btn ghost-dark small" data-robot-view="front">정면</button>
+            <button class="btn ghost-dark small" data-robot-view="side">측면</button>
+            <button class="btn ghost-dark small" data-robot-view="top">위에서</button>
+          </div>
+          <div class="robot-canvas" data-robot-viewer><div class="robot-message" data-robot-message>로봇 탭에서 모델과 관절값을 불러옵니다.</div></div>
+        </div>
+        <!-- 부품 탐색: 수리 카드에서 수동 모드를 고른 경우에만 표시 (admin.js) -->
+        <section class="card inspection-card" data-inspection hidden>
+          <div class="cardhead"><h2>부품 탐색</h2><span class="note" data-inspection-probe></span></div>
+          <div class="inspection-fields">
+            <label>보고서 차량<select data-inspection-vehicle required><option value="">차량 선택</option></select></label>
+            <label>부품<select data-inspection-part>
+              <option value="bonnet">보닛</option><option value="left_door">왼쪽 도어</option>
+              <option value="right_door">오른쪽 도어</option>
+            </select></label>
+          </div>
+          <div class="inspection-layout">
+            <div class="inspection-selection">
+              <p class="note" data-inspection-draw-note>CAD 위에서 검사할 부분을 그리세요.</p>
+              <canvas data-inspection-draw aria-label="부품 CAD와 부분 탐색 영역"></canvas>
+              <ol class="inspection-regions" data-inspection-regions aria-label="선택한 영역"></ol>
+              <div class="robot-task-buttons">
+                <button type="button" class="btn primary small" data-inspection-full disabled>전체 탐색</button>
+                <button type="button" class="btn ghost-dark small" data-inspection-partial disabled>부분 탐색</button>
+                <label class="robot-check"><input type="checkbox" data-inspection-plan-only>계획만 확인</label>
+              </div>
+            </div>
+            <div class="inspection-order">
+              <h3>부품별 탐색 트리</h3>
+              <ol data-inspection-order></ol>
+              <div class="robot-task-buttons">
+                <button type="button" class="btn ghost-dark small" data-inspection-save disabled>순서 저장</button>
+                <button type="button" class="btn primary small" data-inspection-run disabled>전체 명령 내보내기</button>
+              </div>
+            </div>
+          </div>
+          <div class="inspection-state">
+            <span class="note" data-inspection-status role="status">로봇 연결 대기</span>
+            <button type="button" class="btn primary small" data-inspection-continue hidden>배치 확인 후 계속</button>
+            <button type="button" class="btn danger small" data-task-stop disabled>로봇 정지</button>
+          </div>
+          <p class="form-msg err" data-inspection-error role="alert"></p>
+        </section>
+        <div class="card robot-results" data-robot-results>
+          <div class="graph-section" data-graph-section hidden>  <!-- 수리 시작으로 힘 그래프가 켜졌을 때만 -->
+            <div class="robot-results-head">
+              <h3>실시간 힘 그래프</h3>
+              <button class="btn primary small" data-graph-toggle disabled>실시간 힘 그래프 시작</button>
+              <label class="robot-check"><input type="checkbox" data-graph-compensated>보정 모델 겹쳐 보기</label>
+            </div>
+            <p class="note">외력 Fx·Fy·Fz, |F|·Fn, TCP 위치, 경로별 |F| (최근 30초, 브라우저에서 연속으로 그림 · 마우스를 올리면 값 표시). 화면 확인용이며 따로 저장하지 않습니다.</p>
+            <p class="form-msg err" data-graph-error role="alert"></p>
+            <div class="force-chart" data-graph-chart hidden></div>
+          </div>
+          <div class="robot-results-head">
+            <h3>실행 결과</h3>
+            <select data-run-select aria-label="실행 기록"></select>
+          </div>
+          <p class="note">계획(plan)·표면·이상치·힘·ROI 그래프와 CSV·JSON·PLY. 새 실행이 끝나면 자동으로 최신 결과를 보여줍니다.</p>
+          <div class="robot-run-images" data-run-images></div>
+          <div class="robot-run-files" data-run-files></div>
+        </div>
+        <div class="card logcard-my robot-log-card">
+          <h2>진행 로그</h2>
+          <ul id="log" class="log"></ul>
+          <!-- 로봇 프로그램 출력 (web_control). 실패 원인(Traceback 등)은 여기에만 나옴 -->
+          <details><summary>로봇 실행 로그 (오류 확인용)</summary><pre class="robot-task-log" data-task-log></pre></details>
+        </div>
+      </div>
+      <aside class="robot-side">
+      <div class="card side-card robot-repair-card">
+        <h2>수리 시작</h2>
+        <label>차량 선택
+          <select id="vehicleSel"></select>
+        </label>
+
+        <div class="field-label">수리 모드</div>
+        <div class="seg" id="modeSeg">
+          <button class="seg-btn active" data-mode="auto">자동<small>스캔으로 손상 추적</small></button>
+          <button class="seg-btn" data-mode="manual">수동<small>지정 부품만 교체</small></button>
+        </div>
+
+        <div id="partPick" class="part-pick hidden">
+          <div class="field-label">교체할 부품 <small>(로봇 교체 가능 부품만)</small></div>
+          <div id="partPickList"></div>
+        </div>
+
+        <div class="btnrow">
+          <button id="startBtn" class="btn primary big">▶ 수리 시작</button>
+          <button id="stopBtn" class="btn danger big" disabled>■ 정지</button>
+        </div>
+        <p class="note">정지 버튼은 소프트웨어 정지입니다. 비상 시에는 티치 펜던트의 비상정지 버튼을 누르세요.</p>
+
+        <hr class="sep">
+        <div class="status-head">
+          <span id="jobBadge" class="badge">수리 기록 없음</span>
+          <span id="jobMode" class="badge mode hidden"></span>
+        </div>
+        <p id="jobTime" class="note"></p>
+        <h3>진행 단계</h3>
+        <ol id="steps" class="steps">
+          <li data-stage="plan">경로 계획 <small>자동만</small></li>
+          <li data-stage="scan">표면 스캔(연속 접촉) <small>자동만</small></li>
+          <li data-stage="detect">손상 판정 <small>자동만</small></li>
+          <li data-stage="stock">재고 확인</li>
+          <li data-stage="replace">부품 교체</li>
+          <li data-stage="inspect">재검사 <small>단차</small></li>
+          <li data-stage="done">완료</li>
+        </ol>
+        <div class="progress"><div id="progBar"></div></div>
+        <div id="resultBox" class="result hidden"></div>
+        <h3>교체 부품</h3>
+        <div id="partsList" class="parts-list"><p class="note">–</p></div>
+      </div>
+        <div class="card">
+          <h3>표시</h3>
+          <label class="robot-check"><input type="checkbox" checked data-robot-display="visual">로봇 외형</label>
+          <label class="robot-check"><input type="checkbox" data-robot-display="collision">충돌 형상</label>
+          <label class="robot-check"><input type="checkbox" checked data-robot-display="probe">탐침 (그리퍼에 파지)</label>
+          <label class="robot-check"><input type="checkbox" data-robot-display="frames">좌표축 (원점·TCP·링크)</label>
+          <label class="robot-check"><input type="checkbox" checked data-robot-display="grid">격자 (0.1 m)</label>
+          <label class="robot-check"><input type="checkbox" checked data-robot-objects>차량 메시</label>
+          <label class="robot-check"><input type="checkbox" checked data-robot-cloud="reference">기준 점군 (계획 후: 측정 가능 영역)</label>
+          <label class="robot-check"><input type="checkbox" checked data-robot-cloud="measured">측정 점군 (접촉점)</label>
+          <label>확인할 링크<select data-robot-frame><option>tool0</option></select></label>
+          <p class="note">base_link 기준 위치 [m]</p><div class="robot-pose" data-robot-position>—</div>
+          <p class="note">Quaternion [x, y, z, w]</p><div class="robot-pose" data-robot-orientation>—</div>
+        </div>
+      </aside>
+    </div>
+      <!-- 모형 차 3D 는 화면에서 뺐지만, 데모 모드가 차 형상(스캔 구역·표면)을 계산하는 데 쓰므로 숨긴 채 둔다 -->
+      <div id="viewer" class="viewer" hidden aria-hidden="true"><div id="viewerMsg" class="viewer-msg"></div></div>
+  </section>
+
+  <!-- 재고 (SCR-102) -->
+  <section id="tab-stock" class="panel">
+    <div class="card">
+      <h2>부품 재고</h2>
+      <table class="tbl">
+        <thead><tr><th>코드</th><th>부품</th><th>위치</th><th>재고</th><th>최소</th><th>상태</th><th>로봇 교체</th><th>수정</th></tr></thead>
+        <tbody id="partsBody"></tbody>
+      </table>
+      <p class="note">교체에 성공하면 재고가 자동으로 1개 줄어듭니다. 재고가 0이면 수리는 '보류'로 끝납니다.<br>
+        '로봇 교체'를 켠 부품만 수동 모드에서 고를 수 있고, 로봇이 교체합니다.</p>
+    </div>
+  </section>
+
+  <!-- 이력 (SCR-103) -->
+  <section id="tab-history" class="panel">
+    <div class="card">
+      <h2>수리 이력</h2>
+      <div class="tbl-wrap">
+      <table class="tbl">
+        <thead><tr><th>#</th><th>차량</th><th>차주</th><th>모드</th><th>담당</th><th>시작</th><th>결과</th><th>교체 부품</th><th>요약</th></tr></thead>
+        <tbody id="jobsBody"></tbody>
+      </table>
+      </div>
+    </div>
+    <div class="card hidden" id="jobDetail"></div>
+  </section>
+
+  <!-- 회원·차량 (SCR-104) -->
+  <section id="tab-members" class="panel">
+    <div class="two">
+      <div class="card">
+        <h2>회원</h2>
+        <p class="form-msg" id="emailMsg"></p>
+        <table class="tbl"><thead><tr><th>아이디</th><th>이름</th><th>권한</th><th>이메일 <small>(수리 알림)</small></th></tr></thead><tbody id="usersBody"></tbody></table>
+        <h3>회원 등록</h3>
+        <form id="userForm" class="form-grid">
+          <input name="username" placeholder="아이디" required>
+          <input name="name" placeholder="이름 (예: 홍길동)">
+          <input name="password" type="password" placeholder="비밀번호 (4자 이상)" required>
+          <select name="role"><option value="user">사용자 (차주)</option><option value="admin">관리자</option></select>
+          <input name="email" type="email" placeholder="이메일 (수리 시작·종료 알림, 선택)" style="grid-column: 1 / -1">
+          <button class="btn primary" type="submit">등록</button>
+          <p class="form-msg" id="userMsg"></p>
+        </form>
+      </div>
+      <div class="card">
+        <h2>차량</h2>
+        <table class="tbl"><thead><tr><th>차량</th><th>모델</th><th>차주</th></tr></thead><tbody id="vehiclesBody"></tbody></table>
+        <h3>차량 등록</h3>
+        <form id="vehicleForm" class="form-grid">
+          <input name="name" placeholder="차종 번호판 (예: 쏘나타 12가 3456)" required>
+          <input name="model" placeholder="모델 (기본 sedan_1_18)">
+          <select name="owner_id" id="ownerSel"></select>
+          <button class="btn primary" type="submit">등록</button>
+          <p class="form-msg" id="vehicleMsg"></p>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- 알람 -->
+  <section id="tab-alarms" class="panel">
+    <div class="card">
+      <div class="cardhead">
+        <h2>알람 <small>경고·오류 로그, 최신순 100개</small></h2>
+        <button id="alarmRefresh" class="btn ghost-dark small">새로고침</button>
+      </div>
+      <div class="tbl-wrap">
+      <table class="tbl">
+        <thead><tr><th>시각</th><th>수준</th><th>작업</th><th>차량</th><th>단계</th><th>내용</th></tr></thead>
+        <tbody id="alarmsBody"></tbody>
+      </table>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>window.APP = {{ {"rosbridgeUrl": rosbridge_url, "rosbridgePort": rosbridge_port, "rosbridgeTlsPort": rosbridge_tls_port, "robotJointTopic": robot_joint_topic}|tojson }};</script>
+<script src="{{ url_for('static', filename='common.js') }}"></script>
+<script type="module" src="{{ url_for('static', filename='admin.js') }}"></script>
+<script type="module" src="{{ url_for('static', filename='robot_panel.js') }}"></script>
+</body>
+</html>

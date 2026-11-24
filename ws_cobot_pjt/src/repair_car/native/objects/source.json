@@ -1,0 +1,811 @@
+{
+  "units": "metres",
+  "up_axis": "Z_UP",
+  "origin": "bounding-box centre; YCB stable resting pose kept (bottom face at z = -size_z / 2)",
+  "ycb_license": "CC BY 4.0, YCB Object and Model Set (Calli et al., \"The YCB object and model set\", 2015), https://www.ycbbenchmarks.com",
+  "ycb_member": "<id>_<name>/google_16k/textured.obj and texture_map.png (OBJ); nontextured.stl (STL/)",
+  "files": {
+    "banana.obj": {
+      "ycb_id": "011_banana",
+      "url": "https://ycb-benchmarks.s3.amazonaws.com/data/google/011_banana_google_16k.tgz",
+      "archive_sha256": "bad03e98066dec02ea1536ff2fa58f068efa97e9dbc89fceb4418f1ec633c881",
+      "source": "google_16k/textured.obj",
+      "source_sha256": "6f9bc2218bf6ff483e8397c664ddb6c25603a37d9ffb7f4127ea66ee99e61619",
+      "translation_m": [
+        -0.011476,
+        0.007344,
+        -0.017963
+      ],
+      "triangles": 16384,
+      "size_mm": [
+        108.9,
+        178.4,
+        36.7
+      ],
+      "texture": "banana.png",
+      "sha256": "963cf9f0d16c35d8a982b5d8b97e277fb481e324f305ea784f0042cd323c3a9a"
+    },
+    "banana.png": {
+      "source": "google_16k/texture_map.png",
+      "source_sha256": "a5d70629ee8cff461e25f5c0aa87651746e3c9e405674dc6a20446f824d9d97a",
+      "resize": "4096x4096 -> 1024x1024, INTER_AREA",
+      "sha256": "ad855a6c1b8a97fc49f97a75374e9c893a7e9426c3bf19a9bd5f7806aadac1c5"
+    },
+    "mug.obj": {
+      "ycb_id": "025_mug",
+      "url": "https://ycb-benchmarks.s3.amazonaws.com/data/google/025_mug_google_16k.tgz",
+      "archive_sha256": "4b640afc1baaa940b66948d1e59426d8da2c5a16558c7c7a118bbe28d0737de5",
+      "source": "google_16k/textured.obj",
+      "source_sha256": "2d40b407e9e97402de788bebaa703ff03d682da95318db5ff9bfa1aa083b3a57",
+      "translation_m": [
+        0.008857,
+        -0.01734,
+        -0.040119
+      ],
+      "triangles": 16384,
+      "size_mm": [
+        117.0,
+        93.1,
+        81.3
+      ],
+      "texture": "mug.png",
+      "sha256": "763f136514554dcb8ce17dae8c0ad377f91c5f58dd43e9130000f8e9dc459698"
+    },
+    "mug.png": {
+      "source": "google_16k/texture_map.png",
+      "source_sha256": "1131a0ee591d59e0a77e55ff9d72aeac07af76a0f9ed09cbd01489498649ef1f",
+      "resize": "4096x4096 -> 1024x1024, INTER_AREA",
+      "sha256": "edc3d0bad2e10c2fce009290cf7ba9c602e15d8bcd8de8f838691a836e21168c"
+    },
+    "scissors.obj": {
+      "ycb_id": "037_scissors",
+      "url": "https://ycb-benchmarks.s3.amazonaws.com/data/google/037_scissors_google_16k.tgz",
+      "archive_sha256": "a70d2be8fae0d79c398ffd360385c885eff32ac5eb608ff4f2ada4f585a994b8",
+      "source": "google_16k/textured.obj",
+      "source_sha256": "57e86a1f6424b29aa44ba498b1d43a9c0728e42a8e0e729f8780cd7fb4ccb43b",
+      "translation_m": [
+        -0.010022,
+        -0.035939,
+        -0.007474
+      ],
+      "triangles": 16384,
+      "size_mm": [
+        96.1,
+        201.5,
+        15.7
+      ],
+      "texture": "scissors.png",
+      "sha256": "6cc5edcbdf0e798a4981406110c9ca4b77d871b6b2d2ea78f2770b0f290ea7cf"
+    },
+    "scissors.png": {
+      "source": "google_16k/texture_map.png",
+      "source_sha256": "924291c14ead270c4afb7331b692658df738fb80e0d2df9ddb6f888c2cb77e85",
+      "resize": "4096x4096 -> 1024x1024, INTER_AREA",
+      "sha256": "ba966c81297a98a8485a3055e8ca49e3877f46c7c3f3682a560edee2fc06515d"
+    },
+    "large_marker.obj": {
+      "ycb_id": "040_large_marker",
+      "url": "https://ycb-benchmarks.s3.amazonaws.com/data/google/040_large_marker_google_16k.tgz",
+      "archive_sha256": "393d956da5f6cfe50614829faf4755bdb786c7db95abc1488f3b60505b1e2740",
+      "source": "google_16k/textured.obj",
+      "source_sha256": "7297294d2f21a60bf358024fab89eddcfc489301a363490b11b92563b7eaf037",
+      "translation_m": [
+        0.03569,
+        0.005082,
+        -0.009174
+      ],
+      "triangles": 16384,
+      "size_mm": [
+        21.0,
+        121.0,
+        18.9
+      ],
+      "texture": "large_marker.png",
+      "sha256": "9d044dad8857415991100648ab2f60ba4cd679ade80c470694e1fa0813633417"
+    },
+    "large_marker.png": {
+      "source": "google_16k/texture_map.png",
+      "source_sha256": "beff8661ad871417c5beb6623a99fcf4d9b8646657e1267b3ce8d06ad72fb6cf",
+      "resize": "4096x4096 -> 1024x1024, INTER_AREA",
+      "sha256": "3211cd00e60bb61dc773ad4fe184368e9fbf5fc1fd220f02e8e506886906f429"
+    },
+    "adjustable_wrench.obj": {
+      "ycb_id": "042_adjustable_wrench",
+      "url": "https://ycb-benchmarks.s3.amazonaws.com/data/google/042_adjustable_wrench_google_16k.tgz",
+      "archive_sha256": "160596775fab6f1a63c271b561a4f60bdbde57cc30601506fb28174610238f9c",
+      "source": "google_16k/textured.obj",
+      "source_sha256": "254ee81d5f461cb4ad16e0b7ee6a299329263cc44bbd9171a518c0a3c8afd0ce",
+      "translation_m": [
+        0.003488,
+        0.012345,
+        -0.004346
+      ],
+      "triangles": 16384,
+      "size_mm": [
+        124.8,
+        181.1,
+        14.7
+      ],
+      "texture": "adjustable_wrench.png",
+      "sha256": "43d13d5561c82d9734832683f62e54992b0a7b641ed6c6b6d68e022093de5983"
+    },
+    "adjustable_wrench.png": {
+      "source": "google_16k/texture_map.png",
+      "source_sha256": "869ce3bb046dc7349e0a9408c76ca82a04e48ff433bba6b057696171bc9ed296",
+      "resize": "4096x4096 -> 1024x1024, INTER_AREA",
+      "sha256": "6196b31a3e9d4713e1f326bdd76290b0e196b375324940dda2368be931b2eed2"
+    },
+    "phillips_screwdriver.obj": {
+      "ycb_id": "043_phillips_screwdriver",
+      "url": "https://ycb-benchmarks.s3.amazonaws.com/data/google/043_phillips_screwdriver_google_16k.tgz",
+      "archive_sha256": "74db04d49c13cd7cb79a29dd4e25d497970cdaebecd78e34bd6263d8b281b26c",
+      "source": "google_16k/textured.obj",
+      "source_sha256": "9cb844f685fe91019e1744db888ac366400556be842f5c9c798c604e0de09314",
+      "translation_m": [
+        0.042698,
+        -0.003381,
+        -0.017398
+      ],
+      "triangles": 16384,
+      "size_mm": [
+        194.9,
+        107.0,
+        35.5
+      ],
+      "texture": "phillips_screwdriver.png",
+      "sha256": "f3c076a37fd4a7907c349e8991641ab740bb82e4c3f3fa0aa1d04e4397ca564c"
+    },
+    "phillips_screwdriver.png": {
+      "source": "google_16k/texture_map.png",
+      "source_sha256": "1d7036713920d3d4780ad1194e18bbcf14d852b35900bdf146640cc5f4e63b89",
+      "resize": "4096x4096 -> 1024x1024, INTER_AREA",
+      "sha256": "ef0bac5b153f95c7923266482f31b7257bae67c757c40a30eee63215730f16ea"
+    },
+    "flat_screwdriver.obj": {
+      "ycb_id": "044_flat_screwdriver",
+      "url": "https://ycb-benchmarks.s3.amazonaws.com/data/google/044_flat_screwdriver_google_16k.tgz",
+      "archive_sha256": "145589358015d641b1b0998dd8685dc01ed1b6a40535dd18f2063df84f69af91",
+      "source": "google_16k/textured.obj",
+      "source_sha256": "fb7c48e65cad5c8d4a93405c0d16ea4386026d8fc51e0c082a2de9941f6549e3",
+      "translation_m": [
+        0.012492,
+        -0.011665,
+        -0.017114
+      ],
+      "triangles": 16384,
+      "size_mm": [
+        161.9,
+        156.9,
+        35.0
+      ],
+      "texture": "flat_screwdriver.png",
+      "sha256": "296e569a0c7c0bc2624580c4190e971d8742d2b42d85494830ad0531fc3b98c0"
+    },
+    "flat_screwdriver.png": {
+      "source": "google_16k/texture_map.png",
+      "source_sha256": "c2d2e71467606b9fbad43ebe3574c4df5006fd8eaee23639113dfd023409440a",
+      "resize": "4096x4096 -> 1024x1024, INTER_AREA",
+      "sha256": "9c11fa6602f247f20b46fb78f7d00ef42ec7e10a37bcf465fe4be2a883f3e261"
+    },
+    "hammer.obj": {
+      "ycb_id": "048_hammer",
+      "url": "https://ycb-benchmarks.s3.amazonaws.com/data/google/048_hammer_google_16k.tgz",
+      "archive_sha256": "4745093ebe83e71e4ec80f5fa438a42a7175a0df6e5e2c6964a23085bc6ae195",
+      "source": "google_16k/textured.obj",
+      "source_sha256": "cece40fcb2da1f9414d0c8bd02e910015b42ff0080fe1be37b0aafbe3f283430",
+      "translation_m": [
+        0.037723,
+        0.022711,
+        -0.015792
+      ],
+      "triangles": 16384,
+      "size_mm": [
+        182.2,
+        332.7,
+        32.9
+      ],
+      "texture": "hammer.png",
+      "sha256": "ea8cc904b6328905bb85c5c12ec604280771f8c9d43cdf2f7cd17993d8909744"
+    },
+    "hammer.png": {
+      "source": "google_16k/texture_map.png",
+      "source_sha256": "e43d661b221f620e0f87f542682694ce34bb0651a9a9c7c979c4000d8abf1a8c",
+      "resize": "4096x4096 -> 1024x1024, INTER_AREA",
+      "sha256": "28a9edf171f6de64c327c5edab8734af2c01adaaac412e109a426312984f8b77"
+    },
+    "medium_clamp.obj": {
+      "ycb_id": "050_medium_clamp",
+      "url": "https://ycb-benchmarks.s3.amazonaws.com/data/google/050_medium_clamp_google_16k.tgz",
+      "archive_sha256": "3819dc3db7b11b8df434801c3af926250807a9ba96e0a1e5114e6230174ebd69",
+      "source": "google_16k/textured.obj",
+      "source_sha256": "c65fc8ea66ac67c6d1188d045bd4ec9567200a51b25468ec0a884f5b8e9ab1c2",
+      "translation_m": [
+        -0.016096,
+        0.010132,
+        -0.01264
+      ],
+      "triangles": 16384,
+      "size_mm": [
+        88.9,
+        76.8,
+        26.1
+      ],
+      "texture": "medium_clamp.png",
+      "sha256": "846b939752207020292f2b8948bf2a0d87104648d322283ff074c5645463817c"
+    },
+    "medium_clamp.png": {
+      "source": "google_16k/texture_map.png",
+      "source_sha256": "8a390045833165e74c50f225f2f76ec1cd3d292dadaa91106bcb84f4b40bdcb5",
+      "resize": "4096x4096 -> 1024x1024, INTER_AREA",
+      "sha256": "0de00fe7abde8faae1a991be062aabef1cf194331d3830a53b6a1019035ffc90"
+    },
+    "tennis_ball.obj": {
+      "ycb_id": "056_tennis_ball",
+      "url": "https://ycb-benchmarks.s3.amazonaws.com/data/google/056_tennis_ball_google_16k.tgz",
+      "archive_sha256": "881169924fced3273be4972328fb86c1840ba07ec0e56afe0bff78afb2695df8",
+      "source": "google_16k/textured.obj",
+      "source_sha256": "30a79e3d5ed50a682285f1b386213cea018786af7bf533ff4d0d02f9114dd030",
+      "translation_m": [
+        -0.008212,
+        0.044278,
+        -0.033132
+      ],
+      "triangles": 16384,
+      "size_mm": [
+        67.0,
+        67.0,
+        66.5
+      ],
+      "texture": "tennis_ball.png",
+      "sha256": "a1eed38a010fb8157d3866ddd02867481134b078e914b7bb3b132e00e9917954"
+    },
+    "tennis_ball.png": {
+      "source": "google_16k/texture_map.png",
+      "source_sha256": "7e2aef766a39b64dab16fe84e9a4a6779008727946d2a6127c6270eea10fde60",
+      "resize": "4096x4096 -> 1024x1024, INTER_AREA",
+      "sha256": "327a242a6b7a723afcdae3dad181e8a063b87db9cc44c241ff27ca953d23e1e6"
+    },
+    "box.obj": {
+      "generated": "cube of the six scene.xml colour boxes (red/blue/green/purple/yellow/white); colour stays in geom rgba",
+      "triangles": 12,
+      "size_mm": [
+        50.0,
+        50.0,
+        50.0
+      ],
+      "sha256": "24cf5be13f64bae9043e2862cbf290f2141a10a4af9c28f750df44e5eb5b3b9a"
+    },
+    "STL/adjustable_wrench.stl": {
+      "ycb_id": "042_adjustable_wrench",
+      "url": "https://ycb-benchmarks.s3.amazonaws.com/data/google/042_adjustable_wrench_google_16k.tgz",
+      "archive_sha256": "160596775fab6f1a63c271b561a4f60bdbde57cc30601506fb28174610238f9c",
+      "source_sha256": "a93dfe0a98a778352531ae77bc39e91ebbeb89c352ea65cd239b899bd416910b",
+      "translation_m": [
+        0.003487,
+        0.012345,
+        -0.004346
+      ],
+      "triangles": 16384,
+      "size_mm": [
+        124.8,
+        181.1,
+        14.7
+      ],
+      "sha256": "e6a4c4d20ce6d379c90e04221ec04eb46886e3abfc0add4b1028f47e6c5bb230"
+    },
+    "STL/banana.stl": {
+      "ycb_id": "011_banana",
+      "url": "https://ycb-benchmarks.s3.amazonaws.com/data/google/011_banana_google_16k.tgz",
+      "archive_sha256": "bad03e98066dec02ea1536ff2fa58f068efa97e9dbc89fceb4418f1ec633c881",
+      "source_sha256": "6566c0077e31aaa7f5c915020cefc9393675cd3eabac8ac7c71327507324ae19",
+      "translation_m": [
+        -0.011476,
+        0.007343,
+        -0.017963
+      ],
+      "triangles": 16384,
+      "size_mm": [
+        108.9,
+        178.4,
+        36.7
+      ],
+      "sha256": "0f07fbd58b99aa82a28ac8c225a916828266770bd3d851ba60b6a81f09763dce"
+    },
+    "STL/box.stl": {
+      "generated": "cube of the six scene.xml colour boxes (red/blue/green/purple/yellow/white); colour stays in geom rgba",
+      "triangles": 12,
+      "size_mm": [
+        50.0,
+        50.0,
+        50.0
+      ],
+      "sha256": "5b630efab84c4a30ecca930563a98cbf7dae2046a1ba1f01f9cd12f963ab8a11"
+    },
+    "STL/flat_screwdriver.stl": {
+      "ycb_id": "044_flat_screwdriver",
+      "url": "https://ycb-benchmarks.s3.amazonaws.com/data/google/044_flat_screwdriver_google_16k.tgz",
+      "archive_sha256": "145589358015d641b1b0998dd8685dc01ed1b6a40535dd18f2063df84f69af91",
+      "source_sha256": "1fef3ad28feb04c3f9c27704512889fed1a5034f7cef242e38985b6790ff3f5c",
+      "translation_m": [
+        0.012493,
+        -0.011666,
+        -0.017114
+      ],
+      "triangles": 16384,
+      "size_mm": [
+        161.9,
+        156.9,
+        35.0
+      ],
+      "sha256": "71f93f2d2a771397325feba949ae1235b3ca3d5467df7816c2e9e1239631a3cb"
+    },
+    "STL/hammer.stl": {
+      "ycb_id": "048_hammer",
+      "url": "https://ycb-benchmarks.s3.amazonaws.com/data/google/048_hammer_google_16k.tgz",
+      "archive_sha256": "4745093ebe83e71e4ec80f5fa438a42a7175a0df6e5e2c6964a23085bc6ae195",
+      "source_sha256": "2519a9eb1f78079ade8e342c2c8818f1f28066c314656afe5b54f9aa093f585f",
+      "translation_m": [
+        0.037723,
+        0.022711,
+        -0.015792
+      ],
+      "triangles": 16384,
+      "size_mm": [
+        182.2,
+        332.7,
+        32.9
+      ],
+      "sha256": "a91552cad8712655b4191040d1d8247a7e31ce7fe1da5f324bb84ccbabaf5bf3"
+    },
+    "STL/large_marker.stl": {
+      "ycb_id": "040_large_marker",
+      "url": "https://ycb-benchmarks.s3.amazonaws.com/data/google/040_large_marker_google_16k.tgz",
+      "archive_sha256": "393d956da5f6cfe50614829faf4755bdb786c7db95abc1488f3b60505b1e2740",
+      "source_sha256": "779243801c3083f9061a2ebc311aca8401282263bedb871cdd19c97bb551b660",
+      "translation_m": [
+        0.03569,
+        0.005083,
+        -0.009174
+      ],
+      "triangles": 16384,
+      "size_mm": [
+        21.0,
+        121.0,
+        18.9
+      ],
+      "sha256": "cc06af3546e4a212c59b5a94917a8c4f50c3bea96e453207710c1135866e2def"
+    },
+    "STL/medium_clamp.stl": {
+      "ycb_id": "050_medium_clamp",
+      "url": "https://ycb-benchmarks.s3.amazonaws.com/data/google/050_medium_clamp_google_16k.tgz",
+      "archive_sha256": "3819dc3db7b11b8df434801c3af926250807a9ba96e0a1e5114e6230174ebd69",
+      "source_sha256": "be1251bdc44487921039fbc067502eeb192906309f3bd81a45012b606edb7812",
+      "translation_m": [
+        -0.016096,
+        0.010132,
+        -0.01264
+      ],
+      "triangles": 16384,
+      "size_mm": [
+        88.9,
+        76.8,
+        26.1
+      ],
+      "sha256": "6de22c40dfbd845c9f349595206abaf14711e0924904dae79c026df8425a48f7"
+    },
+    "STL/mug.stl": {
+      "ycb_id": "025_mug",
+      "url": "https://ycb-benchmarks.s3.amazonaws.com/data/google/025_mug_google_16k.tgz",
+      "archive_sha256": "4b640afc1baaa940b66948d1e59426d8da2c5a16558c7c7a118bbe28d0737de5",
+      "source_sha256": "0372292ea626695a7a1cfe9b98ebd1fac89dc2ac8542eeb839d97d7e928a1082",
+      "translation_m": [
+        0.008857,
+        -0.01734,
+        -0.040119
+      ],
+      "triangles": 16384,
+      "size_mm": [
+        117.0,
+        93.1,
+        81.3
+      ],
+      "sha256": "8119faac8102bf9e88adae72778397b8f776a428ebd962664a5bae3a9723729b"
+    },
+    "STL/phillips_screwdriver.stl": {
+      "ycb_id": "043_phillips_screwdriver",
+      "url": "https://ycb-benchmarks.s3.amazonaws.com/data/google/043_phillips_screwdriver_google_16k.tgz",
+      "archive_sha256": "74db04d49c13cd7cb79a29dd4e25d497970cdaebecd78e34bd6263d8b281b26c",
+      "source_sha256": "fea4e3bae7b139650e966e5e71dbf313039754c1f30ce22e9544a7e7146179f7",
+      "translation_m": [
+        0.042698,
+        -0.003382,
+        -0.017399
+      ],
+      "triangles": 16384,
+      "size_mm": [
+        194.9,
+        107.0,
+        35.5
+      ],
+      "sha256": "97721a9f2023d657f56bd7ac77145b2b61cc6f8b3d690940a6e08571f6c31877"
+    },
+    "STL/scissors.stl": {
+      "ycb_id": "037_scissors",
+      "url": "https://ycb-benchmarks.s3.amazonaws.com/data/google/037_scissors_google_16k.tgz",
+      "archive_sha256": "a70d2be8fae0d79c398ffd360385c885eff32ac5eb608ff4f2ada4f585a994b8",
+      "source_sha256": "66a1cb5c9e20761ef1872e0d1cc3fec955b4e121d8aa35307986ef7b02cdcd22",
+      "translation_m": [
+        -0.010022,
+        -0.035939,
+        -0.007474
+      ],
+      "triangles": 16384,
+      "size_mm": [
+        96.1,
+        201.5,
+        15.7
+      ],
+      "sha256": "552313e88cd2a1f76b161742e92fac0a00069a8a938492d54b0bf6a947b10efe"
+    },
+    "STL/tennis_ball.stl": {
+      "ycb_id": "056_tennis_ball",
+      "url": "https://ycb-benchmarks.s3.amazonaws.com/data/google/056_tennis_ball_google_16k.tgz",
+      "archive_sha256": "881169924fced3273be4972328fb86c1840ba07ec0e56afe0bff78afb2695df8",
+      "source_sha256": "e4a849e6bbabb5a1f964ad3d9f1e0b5459d5fe481572c47e5e972fb53bfb2dcf",
+      "translation_m": [
+        -0.008212,
+        0.044278,
+        -0.033131
+      ],
+      "triangles": 16384,
+      "size_mm": [
+        67.0,
+        67.0,
+        66.5
+      ],
+      "sha256": "e5cb330d4449f0260bc5ce0d8b04484355e634b16857bd4bd21d56381cd4daf2"
+    }
+  },
+  "usage": "OBJ is the visual and collision mesh, textured by the PNG of the same name in MJCF; STL/ keeps the untextured copies",
+  "collision": {
+    "tool": "CoACD 1.0.14",
+    "settings": {
+      "threshold": 0.05,
+      "max_convex_hull": 32,
+      "max_ch_vertex": 64,
+      "preprocess_mode": "auto"
+    },
+    "usage": "convex collision geoms; the textured OBJ is visual only",
+    "objects": {
+      "adjustable_wrench": {
+        "parts": [
+          "collision/adjustable_wrench_0.obj",
+          "collision/adjustable_wrench_1.obj",
+          "collision/adjustable_wrench_2.obj",
+          "collision/adjustable_wrench_3.obj",
+          "collision/adjustable_wrench_4.obj",
+          "collision/adjustable_wrench_5.obj",
+          "collision/adjustable_wrench_6.obj",
+          "collision/adjustable_wrench_7.obj",
+          "collision/adjustable_wrench_8.obj",
+          "collision/adjustable_wrench_9.obj"
+        ],
+        "vertices": [
+          64,
+          64,
+          64,
+          64,
+          64,
+          64,
+          63,
+          64,
+          64,
+          64
+        ],
+        "seconds": 4.0
+      },
+      "banana": {
+        "parts": [
+          "collision/banana_0.obj",
+          "collision/banana_1.obj",
+          "collision/banana_2.obj",
+          "collision/banana_3.obj"
+        ],
+        "vertices": [
+          63,
+          64,
+          64,
+          64
+        ],
+        "seconds": 6.0
+      },
+      "box": {
+        "parts": [
+          "collision/box_0.obj"
+        ],
+        "vertices": [
+          8
+        ],
+        "seconds": 0.1
+      },
+      "flat_screwdriver": {
+        "parts": [
+          "collision/flat_screwdriver_0.obj",
+          "collision/flat_screwdriver_1.obj",
+          "collision/flat_screwdriver_2.obj",
+          "collision/flat_screwdriver_3.obj",
+          "collision/flat_screwdriver_4.obj",
+          "collision/flat_screwdriver_5.obj",
+          "collision/flat_screwdriver_6.obj",
+          "collision/flat_screwdriver_7.obj",
+          "collision/flat_screwdriver_8.obj"
+        ],
+        "vertices": [
+          63,
+          64,
+          64,
+          63,
+          64,
+          64,
+          64,
+          64,
+          64
+        ],
+        "seconds": 6.8
+      },
+      "hammer": {
+        "parts": [
+          "collision/hammer_0.obj",
+          "collision/hammer_1.obj",
+          "collision/hammer_2.obj",
+          "collision/hammer_3.obj",
+          "collision/hammer_4.obj"
+        ],
+        "vertices": [
+          60,
+          61,
+          64,
+          64,
+          64
+        ],
+        "seconds": 4.7
+      },
+      "large_marker": {
+        "parts": [
+          "collision/large_marker_0.obj",
+          "collision/large_marker_1.obj",
+          "collision/large_marker_2.obj",
+          "collision/large_marker_3.obj",
+          "collision/large_marker_4.obj",
+          "collision/large_marker_5.obj",
+          "collision/large_marker_6.obj",
+          "collision/large_marker_7.obj",
+          "collision/large_marker_8.obj",
+          "collision/large_marker_9.obj"
+        ],
+        "vertices": [
+          64,
+          64,
+          64,
+          64,
+          64,
+          64,
+          64,
+          64,
+          64,
+          63
+        ],
+        "seconds": 5.0
+      },
+      "medium_clamp": {
+        "parts": [
+          "collision/medium_clamp_0.obj",
+          "collision/medium_clamp_1.obj",
+          "collision/medium_clamp_2.obj",
+          "collision/medium_clamp_3.obj",
+          "collision/medium_clamp_4.obj",
+          "collision/medium_clamp_5.obj",
+          "collision/medium_clamp_6.obj",
+          "collision/medium_clamp_7.obj",
+          "collision/medium_clamp_8.obj",
+          "collision/medium_clamp_9.obj",
+          "collision/medium_clamp_10.obj",
+          "collision/medium_clamp_11.obj",
+          "collision/medium_clamp_12.obj",
+          "collision/medium_clamp_13.obj",
+          "collision/medium_clamp_14.obj",
+          "collision/medium_clamp_15.obj",
+          "collision/medium_clamp_16.obj",
+          "collision/medium_clamp_17.obj",
+          "collision/medium_clamp_18.obj",
+          "collision/medium_clamp_19.obj",
+          "collision/medium_clamp_20.obj",
+          "collision/medium_clamp_21.obj",
+          "collision/medium_clamp_22.obj",
+          "collision/medium_clamp_23.obj",
+          "collision/medium_clamp_24.obj",
+          "collision/medium_clamp_25.obj",
+          "collision/medium_clamp_26.obj",
+          "collision/medium_clamp_27.obj",
+          "collision/medium_clamp_28.obj",
+          "collision/medium_clamp_29.obj",
+          "collision/medium_clamp_30.obj",
+          "collision/medium_clamp_31.obj"
+        ],
+        "vertices": [
+          64,
+          32,
+          64,
+          64,
+          45,
+          64,
+          64,
+          64,
+          57,
+          64,
+          64,
+          64,
+          64,
+          64,
+          64,
+          53,
+          60,
+          64,
+          64,
+          64,
+          64,
+          64,
+          61,
+          64,
+          64,
+          64,
+          64,
+          42,
+          53,
+          64,
+          64,
+          64
+        ],
+        "seconds": 9.0
+      },
+      "mug": {
+        "parts": [
+          "collision/mug_0.obj",
+          "collision/mug_1.obj",
+          "collision/mug_2.obj",
+          "collision/mug_3.obj",
+          "collision/mug_4.obj",
+          "collision/mug_5.obj",
+          "collision/mug_6.obj",
+          "collision/mug_7.obj",
+          "collision/mug_8.obj",
+          "collision/mug_9.obj",
+          "collision/mug_10.obj",
+          "collision/mug_11.obj",
+          "collision/mug_12.obj",
+          "collision/mug_13.obj",
+          "collision/mug_14.obj",
+          "collision/mug_15.obj",
+          "collision/mug_16.obj",
+          "collision/mug_17.obj",
+          "collision/mug_18.obj",
+          "collision/mug_19.obj",
+          "collision/mug_20.obj",
+          "collision/mug_21.obj",
+          "collision/mug_22.obj",
+          "collision/mug_23.obj",
+          "collision/mug_24.obj",
+          "collision/mug_25.obj",
+          "collision/mug_26.obj",
+          "collision/mug_27.obj",
+          "collision/mug_28.obj",
+          "collision/mug_29.obj",
+          "collision/mug_30.obj",
+          "collision/mug_31.obj"
+        ],
+        "vertices": [
+          64,
+          64,
+          64,
+          64,
+          64,
+          64,
+          64,
+          64,
+          64,
+          64,
+          63,
+          64,
+          64,
+          64,
+          64,
+          63,
+          64,
+          63,
+          64,
+          64,
+          63,
+          64,
+          64,
+          64,
+          63,
+          64,
+          64,
+          64,
+          64,
+          64,
+          64,
+          64
+        ],
+        "seconds": 38.9
+      },
+      "phillips_screwdriver": {
+        "parts": [
+          "collision/phillips_screwdriver_0.obj",
+          "collision/phillips_screwdriver_1.obj",
+          "collision/phillips_screwdriver_2.obj",
+          "collision/phillips_screwdriver_3.obj",
+          "collision/phillips_screwdriver_4.obj",
+          "collision/phillips_screwdriver_5.obj",
+          "collision/phillips_screwdriver_6.obj"
+        ],
+        "vertices": [
+          64,
+          64,
+          64,
+          64,
+          64,
+          64,
+          64
+        ],
+        "seconds": 7.4
+      },
+      "scissors": {
+        "parts": [
+          "collision/scissors_0.obj",
+          "collision/scissors_1.obj",
+          "collision/scissors_2.obj",
+          "collision/scissors_3.obj",
+          "collision/scissors_4.obj",
+          "collision/scissors_5.obj",
+          "collision/scissors_6.obj",
+          "collision/scissors_7.obj",
+          "collision/scissors_8.obj",
+          "collision/scissors_9.obj",
+          "collision/scissors_10.obj",
+          "collision/scissors_11.obj",
+          "collision/scissors_12.obj",
+          "collision/scissors_13.obj",
+          "collision/scissors_14.obj"
+        ],
+        "vertices": [
+          62,
+          64,
+          63,
+          63,
+          64,
+          64,
+          63,
+          64,
+          64,
+          64,
+          64,
+          64,
+          63,
+          64,
+          64
+        ],
+        "seconds": 8.5
+      },
+      "tennis_ball": {
+        "parts": [
+          "collision/tennis_ball_0.obj"
+        ],
+        "vertices": [
+          64
+        ],
+        "seconds": 0.6
+      }
+    }
+  }
+}

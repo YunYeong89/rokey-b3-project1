@@ -1,0 +1,7 @@
+# One firmware command line (firmware/car_turn_lift.py --serve), answered when the motion has finished:
+# heading DEG | turn DEG | lift up | lift down | lift MM | station top | station front | drive MM | status | quit
+string command
+---
+bool ok
+string error
+LiftStatus status

@@ -1,0 +1,36 @@
+# rokey real_scan as an action: one part scanned by contact. Cancelling stops the motion and releases force and
+# compliance; the samples measured so far are still saved.
+string part                        # bumper, bonnet, body, door, box (the performance coupon)
+string side                        # door only: left or right; empty: left, then right
+string controller                  # default, pid, mesh-normal, cloud-normal; empty: default
+float64 pitch_mm 0.0               # row spacing; 0: robot.yaml real_scan.pitch_mm
+float64 speed_mm_s 0.0             # stroke speed; 0: real_scan.speed_mm_s
+bool plan_only false               # reference cloud and planned paths only, no contact
+bool replan false                  # normal-following controllers: rebuild the plan cache
+float64[4] roi_mm                  # box only: coupon-local [x0, y0, x1, y1]; all 0: the whole coupon
+---
+bool success
+string message                     # failure reason or summary
+string run_id                      # <part>_<time>, as in the output file names
+uint32 paths
+uint32 segments
+uint32 points                      # measured contact points
+uint32 confirmed_rois
+uint32 candidate_rois
+string measured_cloud              # rokey/pointcloud/..._measured.ply
+string roi_file                    # rokey/images/..._roi.json
+string[] reports                   # plan, surface, outlier and force images and the samples CSV
+---
+uint8 PLANNING=0
+uint8 MOVING=1                     # transfer between segments (approach, lift, HOME)
+uint8 SCANNING=2                   # in contact on a segment
+uint8 REPORTING=3
+uint8 stage
+uint32 path                        # current path (pass), from 1
+uint32 paths
+uint32 segment                     # current segment of the run, from 1
+uint32 segments
+float64 progress                   # 0..1 of the planned stroke length
+uint32 points
+float64 force_n                    # latest reaction along the axis
+float64 remaining_s                # estimate from the remaining stroke length and the speed

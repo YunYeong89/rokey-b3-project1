@@ -1,0 +1,98 @@
+// ROS 2 노드 관계도: 계층(위 → 아래) · 노드는 둥근 사각형 · 인터페이스는 선 색/형태로 구분
+//   토픽  = 실선 남색        서비스 = 파선 청록        액션 = 굵은 실선 주황
+//   프로세스 실행·내부 사용 = 점선 회색                  비ROS 연결(TCP/DRFL) = 점선 연회색 양방향
+// 모든 이름은 로봇 네임스페이스(/dsr01 또는 /robot_N) 아래다.
+digraph ros {
+  graph [rankdir=TB, splines=line, forcelabels=true, newrank=true, fontname="Apple SD Gothic Neo", fontsize=24, labelloc=t,
+         label="ROS 2 노드 관계도  (네임스페이스 /dsr01 또는 /robot_N)\n\n", nodesep=0.9, ranksep=1.25, pad=0.5, bgcolor=white];
+  node  [fontname="Apple SD Gothic Neo", fontsize=13, shape=box, style="rounded,filled", color="#2f5d8a", penwidth=1.4,
+         fillcolor="#e3eefa", fontcolor="#13304d", margin="0.22,0.1"];
+  edge  [fontname="Apple SD Gothic Neo", fontsize=11, arrowsize=0.8, penwidth=1.4];
+
+  // ---------- 계층 ----------
+  subgraph cluster_l0 { label="L0 · 사용자"; style="rounded,filled"; fillcolor="#f5f9fd"; color="#bcd2e8"; fontcolor="#2f5d8a"; fontsize=14;
+    browser [label="브라우저 (admin · my)\nrosbridge_websocket :9090 경유", fillcolor="#d2e3f4"]; }
+  subgraph cluster_l1 { label="L1 · 웹 게이트웨이"; style="rounded,filled"; fillcolor="#eef4fb"; color="#bcd2e8"; fontcolor="#2f5d8a"; fontsize=14;
+    web_control [label="web_control\n웹 명령 · 프로그램 1개 실행 · 정지", fillcolor="#bcd5ef"]; }
+  subgraph cluster_l2 { label="L2 · 작업 프로그램 (web_control의 자식 프로세스 또는 ros2 run)"; style="rounded,filled"; fillcolor="#e9f1fa"; color="#bcd2e8"; fontcolor="#2f5d8a"; fontsize=14;
+    teleop [label="teleop\n수동 조작"]; draw_graph [label="draw_graph\n실시간 힘 그래프"];
+    repair_manager [label="repair_manager\n수리 잡 (--job-id)"]; real_scan [label="real_scan\n부품 접촉 검사"];
+    pointcloud [label="pointcloud\n차량·측정 점군"]; lift_command [label="lift_command\n리프트 CLI"]; }
+  subgraph cluster_l3 { label="L3 · 공통 계층 (프로그램 안의 클래스)"; style="rounded,filled"; fillcolor="#e3edf8"; color="#bcd2e8"; fontcolor="#2f5d8a"; fontsize=14;
+    program [label="RobotProgram · RobotServices\nprogram.py · robot_bridge.py"];
+    telemetry [label="Telemetry\npart_scan/telemetry.py"];
+    vtransport [label="VirtualTransport\nsurface_follow/transport.py"];
+    ctransport [label="CartesianTransport\npart_scan/cartesian_transport.py"]; }
+  subgraph cluster_l4 { label="L4 · 브리지 · 드라이버 (컨테이너 bringup)"; style="rounded,filled"; fillcolor="#dbe7f5"; color="#bcd2e8"; fontcolor="#2f5d8a"; fontsize=14;
+    dsr [label="dsr_controller2 · dsr_hardware2\nDSR 서비스 · RT 텔레메트리", fillcolor="#c6dbf1"];
+    vbridge [label="virtual_force_bridge (bridge.py)\n가상 힘 · 장면 · 리프트", fillcolor="#c6dbf1"];
+    cbridge [label="cartesian_bridge\n가상 Cartesian 스트림", fillcolor="#c6dbf1"];
+    lift_bridge [label="lift_bridge (lift/node.py)\n실기 리프트 · /lift/status 발행", fillcolor="#c6dbf1"]; }
+  subgraph cluster_l5 { label="L5 · 하드웨어 / 시뮬레이터"; style="rounded,filled"; fillcolor="#d2e1f2"; color="#bcd2e8"; fontcolor="#2f5d8a"; fontsize=14;
+    ctrl [label="M0609 컨트롤러\n가상 dsr_emulator · 실기 DRCF", fillcolor="#abc8e9"];
+    gazebo [label="호스트 native 세션\nGazebo · virtual_force.py", fillcolor="#abc8e9"];
+    firmware [label="턴 리프트 펌웨어\nRaspberry Pi", fillcolor="#abc8e9"]; }
+
+  { rank=same; browser; } { rank=same; web_control; }
+  { rank=same; teleop; draw_graph; repair_manager; real_scan; pointcloud; lift_command; }
+  { rank=same; program; telemetry; vtransport; ctransport; }
+  { rank=same; dsr; vbridge; cbridge; lift_bridge; }
+  { rank=same; ctrl; gazebo; firmware; }
+
+  // ---------- 토픽: 실선 남색 ----------
+  edge [color="#1f4e8c", fontcolor="#1f4e8c", style=solid];
+  browser -> web_control     [xlabel="/robot/command\n/repair/command"];
+  web_control -> browser     [xlabel="/robot/status", constraint=false];
+  browser -> teleop          [xlabel="/robot/teleop"];
+  browser -> repair_manager  [xlabel="/repair/command\n(stop)"];
+  draw_graph -> browser      [xlabel="/robot/force_graph", constraint=false];
+  real_scan -> web_control   [xlabel="/scan/progress · /scan/result", constraint=false];
+  real_scan -> browser       [xlabel="/scan/samples · /scan/roi", constraint=false];
+  pointcloud -> browser      [xlabel="/repair/vehicle · /repair/pointcloud\n/repair/scan_points", constraint=false];
+  program -> pointcloud      [xlabel="/repair/status", constraint=false];
+  dsr -> telemetry           [xlabel="realtime/force_telemetry", constraint=false];
+  dsr -> web_control         [xlabel="joint_states", constraint=false];
+  vbridge -> vtransport      [xlabel="surface_follow/state", constraint=false];
+  vbridge -> web_control     [xlabel="virtual_control/status", constraint=false];
+  ctransport -> cbridge      [xlabel="cartesian_stream/setpoint ↓\ncartesian_stream/state ↑", dir=both];
+
+  // ---------- 서비스: 파선 청록 ----------
+  edge [color="#1f8a8a", fontcolor="#1f8a8a", style=dashed];
+  program -> dsr             [xlabel="dsr_controller2/*\nmotion · force · aux_control · system"];
+  program -> vbridge         [xlabel="fixture/select"];
+  web_control -> dsr         [xlabel="move_stop · release_force\nget_robot_system"];
+  web_control -> vbridge     [xlabel="surface_follow/end"];
+  repair_manager -> vbridge  [xlabel="lift/command (가상)"];
+  repair_manager -> lift_bridge [xlabel="lift/command (실기)"];
+  lift_command -> lift_bridge [xlabel="lift/command"];
+  ctransport -> cbridge      [xlabel="cartesian_stream/session"];
+
+  // ---------- 액션: 굵은 실선 주황 ----------
+  edge [color="#d9772b", fontcolor="#c0661f", style=solid, penwidth=3];
+  browser -> web_control     [xlabel="/scan_part (ScanPart)"];
+
+  // ---------- 프로세스 실행 · 내부 사용: 점선 회색 ----------
+  edge [color="#8492a0", fontcolor="#5f6b77", style=dotted, penwidth=1.4];
+  web_control -> repair_manager [xlabel="실행"];
+  web_control -> real_scan      [xlabel="실행"];
+  repair_manager -> real_scan   [xlabel="자식 실행", constraint=false];
+  real_scan -> program [arrowhead=none]; real_scan -> telemetry [arrowhead=none];
+  real_scan -> vtransport [arrowhead=none]; real_scan -> ctransport [arrowhead=none];
+  repair_manager -> program [arrowhead=none];
+
+  // ---------- 비ROS 연결: 점선 연회색 양방향 ----------
+  edge [color="#9fb0c2", fontcolor="#7f8c99", style=dotted, penwidth=2, dir=both];
+  dsr -> ctrl [xlabel="DRFL · RT"]; vbridge -> gazebo [xlabel="TCP 소켓 (관절·힘)"]; lift_bridge -> firmware [xlabel="TCP 명령"];
+
+  // ---------- 범례 ----------
+  legend [shape=plain, style="", label=<
+    <table border="1" color="#bcd2e8" cellborder="0" cellspacing="0" cellpadding="6" bgcolor="#ffffff">
+      <tr><td colspan="2"><font color="#2f5d8a" point-size="14"><b>범례</b></font></td></tr>
+      <tr><td align="left"><font color="#1f4e8c"><b>━━━━━▶</b></font></td><td align="left">토픽 (실선 남색)</td></tr>
+      <tr><td align="left"><font color="#1f8a8a"><b>─ ─ ─ ▶</b></font></td><td align="left">서비스 (파선 청록)</td></tr>
+      <tr><td align="left"><font color="#d9772b" point-size="16"><b>━━━━▶</b></font></td><td align="left">액션 (굵은 실선 주황)</td></tr>
+      <tr><td align="left"><font color="#8492a0"><b>· · · · ▶</b></font></td><td align="left">프로세스 실행 · 내부 사용</td></tr>
+      <tr><td align="left"><font color="#9fb0c2"><b>◀ · · · ▶</b></font></td><td align="left">비ROS 연결 (TCP · DRFL)</td></tr>
+    </table>>];
+  { rank=same; legend; ctrl; }
+}

@@ -1,0 +1,155 @@
+<robot name="scissor_lift">
+  <link name="world" />
+  <link name="base">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="file:///Users/wonjun/Desktop/wonjun/ws_cobot_pjt/ws_cobot_pjt/src/repair_car/repair_car/lift/out/models/scissor_lift/meshes/base.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="base">
+        <color rgba="0.3 0.45 0.8 1" />
+      </material>
+    </visual>
+  </link>
+  <link name="top">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="file:///Users/wonjun/Desktop/wonjun/ws_cobot_pjt/ws_cobot_pjt/src/repair_car/repair_car/lift/out/models/scissor_lift/meshes/top.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="top">
+        <color rgba="0.6 0.3 0.7 1" />
+      </material>
+    </visual>
+  </link>
+  <link name="arm_a">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="file:///Users/wonjun/Desktop/wonjun/ws_cobot_pjt/ws_cobot_pjt/src/repair_car/repair_car/lift/out/models/scissor_lift/meshes/arm_a.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="arm_a">
+        <color rgba="0.2 0.2 0.2 1" />
+      </material>
+    </visual>
+  </link>
+  <link name="arm_b">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="file:///Users/wonjun/Desktop/wonjun/ws_cobot_pjt/ws_cobot_pjt/src/repair_car/repair_car/lift/out/models/scissor_lift/meshes/arm_b.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="arm_b">
+        <color rgba="0.95 0.5 0.1 1" />
+      </material>
+    </visual>
+  </link>
+  <link name="crank">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="file:///Users/wonjun/Desktop/wonjun/ws_cobot_pjt/ws_cobot_pjt/src/repair_car/repair_car/lift/out/models/scissor_lift/meshes/crank.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="crank">
+        <color rgba="0.85 0.85 0.85 1" />
+      </material>
+    </visual>
+  </link>
+  <link name="pushrod">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="file:///Users/wonjun/Desktop/wonjun/ws_cobot_pjt/ws_cobot_pjt/src/repair_car/repair_car/lift/out/models/scissor_lift/meshes/pushrod.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="pushrod">
+        <color rgba="0.95 0.95 0.95 1" />
+      </material>
+    </visual>
+  </link>
+  <link name="slider_top">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="file:///Users/wonjun/Desktop/wonjun/ws_cobot_pjt/ws_cobot_pjt/src/repair_car/repair_car/lift/out/models/scissor_lift/meshes/slider_top.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="slider_top">
+        <color rgba="0.5 0.5 0.5 1" />
+      </material>
+    </visual>
+  </link>
+  <link name="slider_bottom">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="file:///Users/wonjun/Desktop/wonjun/ws_cobot_pjt/ws_cobot_pjt/src/repair_car/repair_car/lift/out/models/scissor_lift/meshes/slider_bottom.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="slider_bottom">
+        <color rgba="0.5 0.5 0.5 1" />
+      </material>
+    </visual>
+  </link>
+  <joint name="fix" type="fixed">
+    <parent link="world" />
+    <child link="base" />
+    <origin xyz="0 0 0" rpy="0 0 0" />
+  </joint>
+  <joint name="servo" type="revolute">
+    <parent link="base" />
+    <child link="crank" />
+    <origin xyz="-0.0489514 0 0.0213444" rpy="0 0 0" />
+    <axis xyz="0 -1 0" />
+    <limit lower="0" upper="1.00378" effort="0.489025" velocity="0.698132" />
+  </joint>
+  <joint name="crank_pin" type="continuous">
+    <parent link="crank" />
+    <child link="pushrod" />
+    <origin xyz="0.036 0 0" rpy="0 0 0" />
+    <axis xyz="0 -1 0" />
+  </joint>
+  <joint name="rod_bottom" type="continuous">
+    <parent link="pushrod" />
+    <child link="slider_bottom" />
+    <origin xyz="0.03 0 0.000364" rpy="0 0 0" />
+    <axis xyz="0 -1 0" />
+  </joint>
+  <joint name="arm_b_bottom" type="continuous">
+    <parent link="slider_bottom" />
+    <child link="arm_b" />
+    <origin xyz="0 0 0" rpy="0 0 0" />
+    <axis xyz="0 -1 0" />
+  </joint>
+  <joint name="middle" type="continuous">
+    <parent link="arm_b" />
+    <child link="arm_a" />
+    <origin xyz="-0.03738 0 0.022344" rpy="0 0 0" />
+    <axis xyz="0 -1 0" />
+  </joint>
+  <joint name="arm_a_top" type="continuous">
+    <parent link="arm_a" />
+    <child link="slider_top" />
+    <origin xyz="0.037395 0 0.022344" rpy="0 0 0" />
+    <axis xyz="0 -1 0" />
+  </joint>
+  <joint name="fixed_top" type="continuous">
+    <parent link="arm_b" />
+    <child link="top" />
+    <origin xyz="-0.07476 0 0.044695" rpy="0 0 0" />
+    <axis xyz="0 -1 0" />
+  </joint>
+  <link name="payload">
+    <visual>
+      <origin xyz="0 0 0.01" rpy="0 0 0" />
+      <geometry>
+        <box size="0.09 0.06 0.02" />
+      </geometry>
+      <material name="payload">
+        <color rgba="0.75 0.2 0.2 1" />
+      </material>
+    </visual>
+  </link>
+  <joint name="payload_mount" type="fixed">
+    <parent link="top" />
+    <child link="payload" />
+    <origin xyz="0.0577457 0.00265 0.0171511" rpy="0 0 0" />
+  </joint>
+</robot>

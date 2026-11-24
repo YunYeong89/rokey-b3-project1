@@ -1,0 +1,142 @@
+"""Export the existing ROS model with Mac-local mesh paths and Gazebo plugins."""
+import os
+from pathlib import Path
+from calibration import SimulationCalibration
+import subprocess
+import xml.etree.ElementTree as ET
+
+ROOT = Path(__file__).resolve().parents[4]
+CACHE = Path(os.environ.get('COBOT_NATIVE_CACHE', ROOT / 'ws_cobot_pjt/src/repair_car/native/.cache'))
+
+
+class RobotModel:
+    def __init__(self, calibration_file=None):
+        CACHE.mkdir(parents=True, exist_ok=True)
+        command = ('source /opt/ros/jazzy/setup.bash && source /workspace/install/setup.bash && '
+                   'xacro /workspace/install/m0609_rg2_bringup/share/m0609_rg2_bringup/'
+                   'xacro/my_m0609_rg2.urdf.xacro mode:=virtual model:=m0609 update_rate:=100')
+        xml = subprocess.check_output(
+            ['docker', 'exec', os.environ.get('COBOT_CONTAINER', 'ws_cobot_pjt'), 'bash', '-lc', command], text=True)
+        self.robot = ET.fromstring(xml)
+        self.scene_map = None
+        self.tcp_link = 'tool0'
+        packages = {ET.parse(p).getroot().findtext('name'): p.parent
+                    for p in (ROOT / 'ws_cobot_pjt/src').rglob('package.xml')}
+        for element in self.robot.iter():
+            for key, value in list(element.attrib.items()):
+                if value.startswith('package://'):
+                    package, relative = value[10:].split('/', 1)
+                    local = packages[package] / relative
+                    if not local.exists():
+                        raise FileNotFoundError(local)
+                    element.set(key, local.resolve().as_uri())
+        for element in list(self.robot):
+            if element.tag in ('ros2_control', 'transmission', 'gazebo'):
+                self.robot.remove(element)
+        if calibration_file is not None:
+            calibration = SimulationCalibration(calibration_file)
+            calibration.apply(self.robot)
+            self.tcp_link = calibration.tcp_link
+        self.joints = [j.get('name') for j in self.robot.findall('joint')
+                       if j.get('type') in ('revolute', 'continuous', 'prismatic')]
+        self.mimics = {j.get('name'): (m.get('joint'), float(m.get('multiplier', 1)),
+                                     float(m.get('offset', 0)))
+                       for j in self.robot.findall('joint')
+                       if (m := j.find('mimic')) is not None}
+        self.urdf = CACHE / 'robot.urdf'
+        ET.ElementTree(self.robot).write(self.urdf, encoding='unicode')
+
+    def gazebo_world(self, car=None, car_pose=None, probe='standard', objects=None):
+        """Robot-only world; a selected car adds the car scene (vehicle, probe rack, plane) and nothing else, a list
+        of objects (empty: all) the --object scene (plane and movable objects)."""
+        if car is not None:
+            from scene import CarScene
+            self.scene_map = CarScene(self, CACHE / 'scene', car, car_pose, probe)
+        elif objects is not None:
+            from object_scene import ObjectScene
+            self.scene_map = ObjectScene(self, CACHE / 'scene', objects)
+        # Mimic joints are driven explicitly from their source joint in the relay.
+        for joint in self.robot.findall('joint'):
+            mimic = joint.find('mimic')
+            if mimic is not None:
+                joint.remove(mimic)
+        sensor_joint = ET.SubElement(self.robot, 'gazebo', reference='joint_6-tool0')
+        ET.SubElement(sensor_joint, 'preserveFixedJoint').text = 'true'
+        gazebo_urdf = CACHE / 'gazebo.urdf'
+        ET.ElementTree(self.robot).write(gazebo_urdf, encoding='unicode')
+        sdf_text = subprocess.check_output(['gz', 'sdf', '-p', str(gazebo_urdf)], text=True)
+        model = ET.fromstring(sdf_text).find('model')
+        model.set('name', 'cobot')
+        joint = model.find("joint[@name='joint_6-tool0']")
+        if joint is None:
+            raise RuntimeError('The virtual force sensor requires the preserved tool0 joint')
+        sensor = ET.SubElement(joint, 'sensor', name='flange_force_torque', type='force_torque')
+        ET.SubElement(sensor, 'always_on').text = 'true'
+        # Physics rate (2 ms): the control loop averages every sample between its ticks (anti-aliasing).
+        ET.SubElement(sensor, 'update_rate').text = '500'
+        ET.SubElement(sensor, 'topic').text = '/cobot/force_torque'
+        measurement = ET.SubElement(sensor, 'force_torque')
+        ET.SubElement(measurement, 'frame').text = 'child'
+        ET.SubElement(measurement, 'measure_direction').text = 'child_to_parent'
+        for name in self.joints:
+            plugin = ET.SubElement(model, 'plugin', {
+                'filename': 'gz-sim-joint-position-controller-system',
+                'name': 'gz::sim::systems::JointPositionController'})
+            arm = name in [f'joint_{index}' for index in range(1, 7)]
+            # Wrist gains were 200/150/100 (damping 3/2/1): with the 270-280 mm probe the tip then gave way
+            # ~1 mm per N sideways. x5 stiffness (damping x sqrt 5, same damping ratio) leaves z unchanged.
+            gains = {'joint_1': (1500, 35), 'joint_2': (2000, 45),
+                     'joint_3': (1500, 30), 'joint_4': (1000, 6.7),
+                     'joint_5': (750, 4.5), 'joint_6': (500, 2.2)}
+            p_gain, d_gain = gains.get(name, (20, 0.1))
+            if arm:
+                # Gazebo's PID differentiates position ERROR: a held 100 Hz target
+                # steps its D torque at the 500 Hz physics tick. Put the same D on
+                # measured joint velocity instead, using physical viscous damping.
+                # For a fixed target, K*(q_ref-q)-D*q_dot is unchanged.
+                axis = model.find(f"joint[@name='{name}']/axis")
+                dynamics = axis.find('dynamics')
+                if dynamics is None:
+                    dynamics = ET.SubElement(axis, 'dynamics')
+                damping = dynamics.find('damping')
+                if damping is None:
+                    damping = ET.SubElement(dynamics, 'damping')
+                damping.text = str(d_gain)
+                d_gain = 0.0
+            limit = 163 if name in ('joint_1', 'joint_2') else 96 if name == 'joint_3' else 30 if arm else 10
+            for key, value in {'joint_name': name, 'topic': f'/cobot/{name}/cmd_pos',
+                               'use_velocity_commands': 'false', 'p_gain': str(p_gain),
+                               'd_gain': str(d_gain), 'i_gain': '0',
+                               'cmd_max': str(limit), 'cmd_min': str(-limit)}.items():
+                ET.SubElement(plugin, key).text = value
+        for name in [f'joint_{index}' for index in range(1, 7)]:
+            plugin = ET.SubElement(model, 'plugin', {
+                'filename': 'gz-sim-apply-joint-force-system',
+                'name': 'gz::sim::systems::ApplyJointForce'})
+            ET.SubElement(plugin, 'joint_name').text = name
+        state = ET.SubElement(model, 'plugin', {
+            'filename': 'gz-sim-joint-state-publisher-system',
+            'name': 'gz::sim::systems::JointStatePublisher'})
+        ET.SubElement(state, 'topic').text = '/cobot/gazebo_joint_states'
+        ET.SubElement(state, 'update_rate').text = '200'
+        sdf = ET.Element('sdf', version='1.9')
+        world = ET.SubElement(sdf, 'world', name='cobot_world')
+        physics = ET.SubElement(world, 'physics', name='physics', type='ignored')
+        ET.SubElement(physics, 'max_step_size').text = '0.002'
+        ET.SubElement(physics, 'real_time_factor').text = '1'
+        for filename, name in [('physics', 'Physics'), ('user-commands', 'UserCommands'),
+                               ('scene-broadcaster', 'SceneBroadcaster'),
+                               ('forcetorque', 'ForceTorque'), ('apply-link-wrench', 'ApplyLinkWrench')]:
+            ET.SubElement(world, 'plugin', filename=f'gz-sim-{filename}-system',
+                          name=f'gz::sim::systems::{name}')
+        ET.SubElement(world, 'gravity').text = '0 0 -9.81'
+        light = ET.SubElement(world, 'light', type='directional', name='sun')
+        ET.SubElement(light, 'pose').text = '0 0 10 0 0 0'
+        ET.SubElement(light, 'diffuse').text = '0.9 0.9 0.9 1'
+        ET.SubElement(light, 'direction').text = '-0.5 0.2 -1'
+        world.append(model)
+        if self.scene_map is not None:
+            self.scene_map.add_to_world(world, model)
+        path = CACHE / 'world.sdf'
+        ET.ElementTree(sdf).write(path, encoding='unicode')
+        return path

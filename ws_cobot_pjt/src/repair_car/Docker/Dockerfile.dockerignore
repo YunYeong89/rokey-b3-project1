@@ -1,0 +1,9 @@
+**/.git
+**/__pycache__
+**/.DS_Store
+ws_cobot_pjt/build
+ws_cobot_pjt/install
+ws_cobot_pjt/log
+ws_cobot_pjt/src/repair_car/Docker/emulator/results
+ws_cobot_pjt/src/repair_car/native/.cache
+ws_cobot_pjt/src/repair_car/native/__pycache__

@@ -1,0 +1,133 @@
+{
+  "conda_environment": "cobot-native",
+  "platform": "osx-arm64",
+  "gazebo": "Harmonic 8.10.0",
+  "rviz_version": "Jazzy 14.1.24",
+  "rendering": "Gazebo Ogre2/Metal; RViz native OpenGL",
+  "virtual": {
+    "controller": "Rosetta DRCF M0609",
+    "native_model": "M0609 + RG2",
+    "tcp_joint_relay": true,
+    "gazebo_joint_feedback_verified": true,
+    "joint_1_motion_degrees": 2,
+    "returned_to_origin": true,
+    "rendered_model_screenshot_verified": true,
+    "session_process_cleanup_verified": true,
+    "native_rviz_enabled_by_default": true,
+    "gazebo_and_rviz_concurrent_start_verified": true,
+    "concurrent_display_check_duration_s": 15,
+    "both_displays_use_shared_joint_positions": true,
+    "gripper": {
+      "digital_output_close_channel": 1,
+      "digital_output_open_channel": 2,
+      "digital_output_state_readback_verified": true,
+      "digital_close_rad": 0.7800000000000004,
+      "digital_open_rad": -0.5546020000000006,
+      "onrobot_close_rad": 0.7814950000000006,
+      "onrobot_open_rad": -0.558505,
+      "gazebo_open_feedback_rad": -0.5585050000000952,
+      "arm_motion_commands_sent_during_check": false,
+      "real_io_behavior_modified": false
+    },
+    "tcp_tool_profiles": {
+      "status": "Design and null-valued YAML template only; automatic registration not implemented",
+      "config": "src/cobot_rg2/rg2/m0609_rg2_bringup/config/virtual_robot.yaml",
+      "values_source": "Teach pendant TCP and Tool Weight settings"
+    },
+    "force_compliance": {
+      "status": "Experimental native Gazebo feedback loop implemented",
+      "report": "results/virtual_force_system.json",
+      "sensor_feedback_verified": true,
+      "force_5n_and_15n_tracking_verified": true,
+      "stiffness_dependent_compliance_verified": true,
+      "real_mode_routing_unchanged_verified": true,
+      "physical_robot_tested": false
+    }
+  },
+  "rviz": {
+    "native_gui_started": true,
+    "native_robot_state_publisher_started": true,
+    "joint_relay_verified_with_emulator_data": true,
+    "physical_robot_tested": false
+  },
+  "real_connection": {
+    "checked_on": "2026-11-13",
+    "container": "ws_cobot_pjt",
+    "robot_host": "192.168.1.100",
+    "mac_robot_lan_ip": "192.168.1.20",
+    "robot_ping_verified": true,
+    "mac_and_container_tcp_12345_verified": true,
+    "mac_and_container_gripper_tcp_502_verified": true,
+    "internet_with_robot_lan_connected": {
+      "default_interface": "en0",
+      "default_gateway": "172.18.0.1",
+      "robot_interface": "en5",
+      "lan_router": "0.0.0.0",
+      "mac_https_status": 200,
+      "container_ubuntu_repository_status": 200
+    },
+    "drfl_open_connection_verified": true,
+    "drfl_trace_observation": "TCP connects; the authentication packet contains container IP 172.20.0.2; peer then closes without a response",
+    "compiled_drcf_version": 2,
+    "controller_firmware_version": "GF02120100",
+    "rt_udp_verified": true,
+    "motion_commands_sent": false,
+    "applied_fixes": [
+      "Wi-Fi service precedes robot LAN; robot LAN has no usable default gateway",
+      "Bringup forwards rt_host, defaulting to host; native launcher supports --rt-host",
+      "gripper_joint_state_publisher.py executable permission restored",
+      "Real launcher automatically starts a Mac TCP relay and exposes the actual source endpoint to DRFL"
+    ],
+    "reported_versions": {
+      "integrated": "GV02120100",
+      "inverter": "GA33030100",
+      "safety": "GD02120100",
+      "main": "GF02120100"
+    },
+    "confirmed_cause": "DRFL TCP authentication uses the socket source endpoint, which Docker Desktop NAT changes. Reporting the Mac relay endpoint to the unmodified DRFL authentication routine fixes the connection.",
+    "network_adapter": "native/robot_network.py and robot_network_shim.c; real launcher only; RT UDP remains direct",
+    "check_command": "./run_real.sh 192.168.1.100 --check-connection",
+    "check_result": {
+      "controller_version": "GF02120100",
+      "state_before": 3,
+      "state_after": 3,
+      "rt_observed_updates": 100,
+      "motion_commands_sent": false
+    },
+    "full_ros_bringup_with_physical_robot_verified": false,
+    "sustained_rt_timing_verified": false,
+    "connection_check_container_cleanup_verified": true
+  },
+  "limitations": [
+    "Virtual force control is experimental and uses URDF masses and a tool0 TCP; named TCP/Tool profile import is not implemented",
+    "Legacy DRCF pose queries remain nominal during compliance; actual Gazebo joints are on virtual_control/joint_states",
+    "No hard real-time guarantee or vendor-controller equivalence is claimed",
+    "No Gazebo camera or sensor return path beyond joint and force feedback is implemented",
+    "Conda Ogre2/Qt packages may emit rendering warnings"
+  ],
+  "repeat_execution": {
+    "canonical_package": "ws_cobot_pjt/src/repair_car",
+    "shared_service_discovery_guard_modes": [
+      "virtual",
+      "real"
+    ],
+    "virtual_simple_move_runs": 2,
+    "cycles_per_run": 3,
+    "driver_restarted_between_runs": false,
+    "physical_robot_tested": false
+  },
+  "display_smoothing": {
+    "mode": "virtual only",
+    "frame_target_hz": 60,
+    "interpolation_delay_s": 0.15,
+    "measured_before": {
+      "callback_count": 4664,
+      "callback_mean_ms": 9.101425624061786,
+      "moving_position_change_mean_ms": 105.03285705194773,
+      "moving_position_change_count": 308
+    },
+    "real_mode_uses_raw_positions": true,
+    "control_commands_modified": false,
+    "separated_arm_and_merged_joint_topics": true
+  }
+}

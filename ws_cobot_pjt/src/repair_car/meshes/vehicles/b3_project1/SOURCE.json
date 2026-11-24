@@ -1,0 +1,18 @@
+{
+  "title": "Team vehicle assembly (real vehicle model)",
+  "repository": "https://github.com/YunYeong89/rokey-b3-project1",
+  "branch": "main",
+  "commit": "751107a35bf6cd057abf0739386a44cf7b2fc0e5",
+  "commit_message": "Add files via upload",
+  "committed_on": "2026-11-16T16:14:32+09:00",
+  "archive": "assembly.zip",
+  "archive_sha256": "3caa9baea03a1b2548d95177f4c695a36ab687c29eddf43d4f0ead9899851778",
+  "retrieved_on": "2026-11-16",
+  "mesh": "assembly.stl",
+  "sha256": "fdd2878a28399ef6ff3503511ea5a58c0d7f14b5849bd209d110dddb7de9865a",
+  "format": "binary STL, exported by Autodesk ATF 15.8.0.0",
+  "triangles": 518458,
+  "bounds_raw": {"min": [18585.29, 8450.48, 52303.78], "max": [24334.85, 12112.89, 57155.88]},
+  "modifications": "None: extracted from the archive as is.",
+  "notes": "Off-road (jeep type) vehicle with a rear spare wheel, seats and steering wheel. Units are not stated; the model is tilted relative to its axes and far from the origin, so it needs alignment, scaling and decimation before use in Gazebo / RViz / the vehicle model."
+}

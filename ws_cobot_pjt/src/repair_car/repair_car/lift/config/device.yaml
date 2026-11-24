@@ -1,0 +1,151 @@
+# turn_lift: 4WD skid-steer car (4 x TT motor, TB6612) carrying the MG996R scissor lift (hardware/) with the team vehicle
+# model of the simulation (repair_car `--car real`) on top, turned so that the robot probes only along BASE z (from above)
+# and BASE +x (horizontally, away from the robot). Units mm, kg, N, deg unless named otherwise.
+# "measure" marks values assumed until measured on the built device.
+
+placement:                          # robot BASE frame: robot base at the origin, +x forward, z up from the table
+  centre_mm: [560.0, 0.0]           # in-place turning centre of the car at start (= top station)
+  heading0_yaw_deg: 180.0           # BASE yaw of the car front at firmware heading 0 (front toward the robot)
+  vehicle_yaw_on_car_deg: 0.0       # vehicle front along the car front
+
+car:                                # measure: Raspberry Pi AI car (TB6612, 4 x TT 1:48 motor, 65 mm wheels)
+  mass_kg: 0.9                      # chassis, Raspberry Pi, battery, motors, wheels
+  wheelbase_mm: 140.0               # front-rear wheel centre distance
+  track_mm: 130.0                   # left-right wheel centre distance
+  wheel_radius_mm: 32.5
+  wheel_width_mm: 27.0
+  body_mm: [200.0, 140.0, 75.0]     # chassis box L x W x top (the lift base sits on its top)
+  cog_z_mm: 45.0
+  friction: {longitudinal: 0.8, lateral: 0.6, rolling: 0.03}   # tyre on the table (static), rolling coefficient
+  backdrive_nm: 0.01                # per wheel, TT gearbox coasting; the TB6612 short brake holds by the gearbox
+
+motors:
+  servo:                            # lift: MG996R (datasheet), external 6 V 3 A supply
+    voltage: 6.0
+    stall_kgcm: {4.8: 9.4, 6.0: 11.0}
+    speed_s_per_60deg: {4.8: 0.17, 6.0: 0.14}
+    usable: 0.5                     # continuous holding / moving at most half the stall torque
+    efficiency: 0.7                 # crank, pushrod, scissor pins
+    speed_deg_s: 40.0               # firmware LIFT_SPEED
+  wheel:                            # TT 1:48 (typical), at the driver supply
+    voltage: 6.0
+    stall_kgcm: 0.8
+    no_load_rpm: 200.0
+    duty_pct: 35.0                  # firmware TURN_DUTY (before 'c' calibration); kick 70 % for 0.08 s
+    time_90_s: 3.0                  # firmware TIME_90
+
+lift:                               # hardware/source/compact/lc.py is the geometry (imported, not copied)
+  servo_down_up_deg: [172, 32]
+  mount_mm: [0.0, 0.0]              # lift centre on the car deck (car frame, x forward)
+  yaw_on_car_deg: 0.0               # lift X (length, 0 = front wall) along the car front
+  pin_play_mm: 0.2                  # radial play of every pin (holes are d + 0.4)
+  servo_mass_kg: 0.055
+  density_g_cm3: {PLA: 1.24, PETG: 1.27}
+  shell: 0.25                       # effective fill = shell + (1 - shell) x infill
+  parts:                            # parts list (hardware/부품일람): material, infill, vertical travel factor
+    "01": [PLA, 0.3, 0.0]           # base
+    "02": [PLA, 0.3, 1.0]           # top plate
+    "03": [PLA, 0.5, 0.5]           # arms (centre rises h/2)
+    "04": [PLA, 0.3, 0.0]           # bottom slider bar
+    "05": [PLA, 0.3, 1.0]           # top slider bar
+    "06": [PLA, 0.5, 0.0]           # pushrod
+    "07": [PETG, 1.0, 0.0, 1]       # crank: 3 spline sizes printed, 1 used
+    "08": [PETG, 1.0, 0.5]          # slider rods: one bottom, one top
+    "09": [PLA, 0.3, 0.5]           # spacers
+    "10": [PETG, 1.0, 0.0]
+    "11": [PETG, 1.0, 0.5]
+    "12": [PETG, 1.0, 1.0]
+    "13": [PETG, 1.0, 0.0]
+    "14": [PETG, 1.0, 0.5]          # clips
+
+linkage:                            # hardware/lift_assembly.stl: the team's 90 x 60 CAD assembly (2026-11-20) as a multibody
+  mesh: hardware/lift_assembly.stl  # Gazebo model (python -m repair_car.lift.turnlift gzlift). Its parts are resized from hardware/stl.
+  scale: [1.5, 1.0, 0.70]           # [X length, Y width, Z height] of the CAD (pin axes and slots follow): 135 x 71 mm, top plate
+                                    # 83.5 -> 116.2 mm (32.6 mm travel); with the turntable it holds the vehicle at the
+                                    # repair_car demo_final heights (virtual_stand.py: bonnet 82.36, doors 78.73 mm base z)
+  axes:                             # pin axes [x, y] in the STL frame (x length, y down, z width; mm), measured from
+    crank: [-4.87, -12.09]          # the crank hub (servo shaft)
+    crank_pin: [19.13, -12.09]      # the crank tip (R 24)
+    slider_bottom: [39.13, -12.61]  # the bottom bar and spacers
+    slider_top: [39.14, -76.45]     # the top bar
+    middle: [14.21, -44.53]         # the arm centres
+    fixed_bottom: [-10.72, -12.61]  # 2 x middle - slider_top (arm A)
+    fixed_top: [-10.71, -76.46]     # the top spacers
+  slot_x: [15.2, 67.3]              # slider rod centre travel in the base / top-plate slots (ends 12.2, 70.3, rod r 3)
+  servo_down_up_deg: [172, 119]     # = firmware DOWN_ANGLE, UP_ANGLE: crank 0 (level) .. 53 deg, 1.6 deg short of the
+                                    # slot end; the servo angle falling raises (python -m repair_car.lift.turnlift table)
+  material:                         # [material, infill] per link; `pins`: pieces under 15 mm across and 2 cm3
+    base: [PLA, 0.3]                # (pins, clips, spacers, crank hub)
+    crank: [PETG, 1.0]
+    pushrod: [PLA, 0.5]
+    slider_bottom: [PLA, 0.3]
+    slider_top: [PLA, 0.3]
+    arm_a: [PLA, 0.5]
+    arm_b: [PLA, 0.5]
+    top: [PLA, 0.3]                 # top plate and the holder on it
+    pins: [PETG, 1.0]
+  servo_rotor_kgm2: 0.004           # MG996R motor rotor through its ~1:200 gearbox, on the crank (estimate; not friction)
+  payloads:                         # rigid on the holder top -> out/worlds/scissor_lift_<name>.sdf
+    1kg: {mass_kg: 1.0, box_mm: [90.0, 60.0, 20.0]}
+    vehicle:                        # the demo vehicle (run_virtual --car demo: repair_car RealVehicle's prepared surface)
+      mesh: ../../meshes/vehicles/b3_project1/assembly_surface.npz   # vehicle frame: x front, z up, wheels on z 0
+      length_mm: 225.17             # repair_car vehicles.yaml real.length_mm (the printed vehicle)
+      yaw_deg: 90.0                 # length across the lift (the holder posts' pattern), front toward +Y (off the servo)
+      mass_kg: 1.0                  # lowered onto the holder until it touches; inertia: a solid box of its extent
+
+turntable:                          # virtual only (repair_car native demo_final): a disc on the table under the lift base that
+  diameter_mm: 160.0                # turns the lift and the vehicle about its centre; no drive is modelled
+  thickness_mm: 5.0
+  colour: [0.35, 0.35, 0.38]
+
+adapter:                            # to print: plate on the lift top plate, the vehicle's tyres rest on it
+  size_mm: [230.0, 140.0, 4.0]
+  material: PLA
+  infill: 0.3
+
+vehicle:                            # repair_car vehicles.yaml `real`, mirrored so that this project stays independent
+  mesh: ../../meshes/vehicles/b3_project1/assembly.stl
+  front: [0.9822, 0.0268, -0.1857]
+  left: [0.0355, 0.9454, 0.3239]
+  length_mm: 250.0
+  mass_kg: null                     # measure; null -> mesh volume x density x fill
+  density_g_cm3: 1.24
+  fill: 0.25
+  parts: {bonnet: [[80.0, 0.0, 100.0]], bumper: [[124.5, 0.0, 53.0], [-124.0, 0.0, 57.0]]}
+  shell_mm: [15.0, 60.0]
+  door: [-44.0, 40.0, 45.0, 135.0, 0.7]
+
+robot:                              # M0609 (dsr_description2 macro.m0609), simplified: spherical wrist, elbow up
+  shoulder_z_mm: 134.5
+  upper_mm: 411.0
+  fore_mm: 368.0
+  wrist_mm: 121.0                   # wrist centre -> flange
+  elbow_min_deg: 30.0               # joint_3 +-150 deg
+  arm_radii_mm: [60.0, 50.0]        # upper arm, forearm capsules
+  base_column_mm: [110.0, 260.0]    # kept clear of the tool
+  home_tip_mm: [368.0, 6.0, 153.0]  # must stay outside the turning sweep
+  rack_box_mm: [236.0, -430.0, 200.0, 264.0, -370.0, 231.0]   # probe rack plate (repair_car scene.json)
+
+probe:
+  tcp_mm: 272.0                     # flange -> tip
+  tool:                             # cylinders along the tool from the tip [from, to, radius], ball excluded
+    - [5.0, 14.0, 3.0]
+    - [14.0, 67.0, 23.0]
+    - [55.0, 272.0, 47.0]
+    - [272.0, 420.0, 52.0]
+  force_n: 1.5                      # scan force
+  max_force_n: 8.0                  # DSR guard: worst case for holding and tipping
+
+scan:
+  headings_deg: [0, 90, 180, 270]
+  lift: {down: 172, up: 32}         # servo angles probed
+  directions:                       # outward normal of the probed surface (from above / facing the robot) and the
+    top: {normal: [0.0, 0.0, 1.0], centre_mm: [560.0, 0.0]}      # station (turning centre) it is probed at: the
+    front: {normal: [-1.0, 0.0, 0.0], centre_mm: [740.0, 0.0]}   # 393 mm tool + wrist needs the front faces far off
+  sample_mm: 1.5                    # vehicle surface samples
+  cell_mm: 2.0                      # visibility grid across the probe direction
+  check_mm: 4.0                     # reach / clearance checked on this grid
+  obstacle_mm: 3.0
+  max_tilt_deg: 25.0
+  table_margin_mm: 5.0
+  sweep_margin_mm: 15.0

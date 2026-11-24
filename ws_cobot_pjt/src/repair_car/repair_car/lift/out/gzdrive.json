@@ -1,0 +1,274 @@
+{
+ "target_deg": 53.0,
+ "reached_deg": 53.0,
+ "rise_mm": 12.329,
+ "mean_speed_deg_s": 38.898,
+ "servo_speed_deg_s": 40.0,
+ "slot_stop_deg": 54.57,
+ "rows": [
+  {
+   "t_s": 0.052,
+   "crank_deg": 1.866,
+   "speed_deg_s": 40.0,
+   "rise_mm": 0.006
+  },
+  {
+   "t_s": 0.102,
+   "crank_deg": 3.866,
+   "speed_deg_s": 40.0,
+   "rise_mm": 0.06
+  },
+  {
+   "t_s": 0.153,
+   "crank_deg": 5.906,
+   "speed_deg_s": 40.0,
+   "rise_mm": 0.167
+  },
+  {
+   "t_s": 0.203,
+   "crank_deg": 7.906,
+   "speed_deg_s": 40.0,
+   "rise_mm": 0.322
+  },
+  {
+   "t_s": 0.258,
+   "crank_deg": 10.146,
+   "speed_deg_s": 40.0,
+   "rise_mm": 0.551
+  },
+  {
+   "t_s": 0.313,
+   "crank_deg": 12.346,
+   "speed_deg_s": 40.0,
+   "rise_mm": 0.833
+  },
+  {
+   "t_s": 0.364,
+   "crank_deg": 14.386,
+   "speed_deg_s": 40.0,
+   "rise_mm": 1.143
+  },
+  {
+   "t_s": 0.419,
+   "crank_deg": 16.586,
+   "speed_deg_s": 40.0,
+   "rise_mm": 1.526
+  },
+  {
+   "t_s": 0.469,
+   "crank_deg": 18.626,
+   "speed_deg_s": 40.0,
+   "rise_mm": 1.925
+  },
+  {
+   "t_s": 0.525,
+   "crank_deg": 20.146,
+   "speed_deg_s": 40.0,
+   "rise_mm": 2.248
+  },
+  {
+   "t_s": 0.662,
+   "crank_deg": 26.306,
+   "speed_deg_s": 40.0,
+   "rise_mm": 3.754
+  },
+  {
+   "t_s": 0.713,
+   "crank_deg": 28.306,
+   "speed_deg_s": 40.0,
+   "rise_mm": 4.303
+  },
+  {
+   "t_s": 0.767,
+   "crank_deg": 30.466,
+   "speed_deg_s": 40.0,
+   "rise_mm": 4.923
+  },
+  {
+   "t_s": 0.819,
+   "crank_deg": 32.546,
+   "speed_deg_s": 40.0,
+   "rise_mm": 5.544
+  },
+  {
+   "t_s": 0.869,
+   "crank_deg": 34.546,
+   "speed_deg_s": 40.0,
+   "rise_mm": 6.16
+  },
+  {
+   "t_s": 0.92,
+   "crank_deg": 36.586,
+   "speed_deg_s": 40.0,
+   "rise_mm": 6.804
+  },
+  {
+   "t_s": 0.97,
+   "crank_deg": 38.546,
+   "speed_deg_s": 40.0,
+   "rise_mm": 7.435
+  },
+  {
+   "t_s": 1.02,
+   "crank_deg": 40.586,
+   "speed_deg_s": 40.0,
+   "rise_mm": 8.104
+  },
+  {
+   "t_s": 1.072,
+   "crank_deg": 42.626,
+   "speed_deg_s": 40.0,
+   "rise_mm": 8.781
+  },
+  {
+   "t_s": 1.127,
+   "crank_deg": 44.826,
+   "speed_deg_s": 40.0,
+   "rise_mm": 9.519
+  },
+  {
+   "t_s": 1.178,
+   "crank_deg": 46.826,
+   "speed_deg_s": 40.0,
+   "rise_mm": 10.196
+  },
+  {
+   "t_s": 1.233,
+   "crank_deg": 49.026,
+   "speed_deg_s": 40.0,
+   "rise_mm": 10.947
+  },
+  {
+   "t_s": 1.286,
+   "crank_deg": 51.146,
+   "speed_deg_s": 40.0,
+   "rise_mm": 11.678
+  },
+  {
+   "t_s": 1.34,
+   "crank_deg": 53.039,
+   "speed_deg_s": -13.56,
+   "rise_mm": 12.342
+  },
+  {
+   "t_s": 1.394,
+   "crank_deg": 53.0,
+   "speed_deg_s": -0.0,
+   "rise_mm": 12.329
+  },
+  {
+   "t_s": 1.448,
+   "crank_deg": 53.0,
+   "speed_deg_s": -0.0,
+   "rise_mm": 12.329
+  },
+  {
+   "t_s": 1.499,
+   "crank_deg": 53.0,
+   "speed_deg_s": -0.0,
+   "rise_mm": 12.329
+  },
+  {
+   "t_s": 1.549,
+   "crank_deg": 53.0,
+   "speed_deg_s": -0.0,
+   "rise_mm": 12.329
+  },
+  {
+   "t_s": 1.601,
+   "crank_deg": 53.0,
+   "speed_deg_s": -0.0,
+   "rise_mm": 12.329
+  },
+  {
+   "t_s": 1.653,
+   "crank_deg": 53.0,
+   "speed_deg_s": -0.0,
+   "rise_mm": 12.329
+  },
+  {
+   "t_s": 1.704,
+   "crank_deg": 53.0,
+   "speed_deg_s": -0.0,
+   "rise_mm": 12.329
+  },
+  {
+   "t_s": 1.755,
+   "crank_deg": 53.0,
+   "speed_deg_s": -0.0,
+   "rise_mm": 12.329
+  },
+  {
+   "t_s": 1.81,
+   "crank_deg": 53.0,
+   "speed_deg_s": -0.0,
+   "rise_mm": 12.329
+  },
+  {
+   "t_s": 1.862,
+   "crank_deg": 53.0,
+   "speed_deg_s": -0.0,
+   "rise_mm": 12.329
+  },
+  {
+   "t_s": 1.913,
+   "crank_deg": 53.0,
+   "speed_deg_s": -0.0,
+   "rise_mm": 12.329
+  },
+  {
+   "t_s": 1.964,
+   "crank_deg": 53.0,
+   "speed_deg_s": -0.0,
+   "rise_mm": 12.329
+  },
+  {
+   "t_s": 2.018,
+   "crank_deg": 53.0,
+   "speed_deg_s": -0.0,
+   "rise_mm": 12.329
+  },
+  {
+   "t_s": 2.069,
+   "crank_deg": 53.0,
+   "speed_deg_s": -0.0,
+   "rise_mm": 12.329
+  },
+  {
+   "t_s": 2.12,
+   "crank_deg": 53.0,
+   "speed_deg_s": -0.0,
+   "rise_mm": 12.329
+  },
+  {
+   "t_s": 2.175,
+   "crank_deg": 53.0,
+   "speed_deg_s": -0.0,
+   "rise_mm": 12.329
+  },
+  {
+   "t_s": 2.23,
+   "crank_deg": 53.0,
+   "speed_deg_s": -0.0,
+   "rise_mm": 12.329
+  },
+  {
+   "t_s": 2.285,
+   "crank_deg": 53.0,
+   "speed_deg_s": -0.0,
+   "rise_mm": 12.329
+  },
+  {
+   "t_s": 2.337,
+   "crank_deg": 53.0,
+   "speed_deg_s": -0.0,
+   "rise_mm": 12.329
+  },
+  {
+   "t_s": 2.392,
+   "crank_deg": 53.0,
+   "speed_deg_s": -0.0,
+   "rise_mm": 12.329
+  }
+ ]
+}

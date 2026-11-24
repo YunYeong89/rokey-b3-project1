@@ -1,0 +1,45 @@
+name: ws_cobot_pjt
+services:
+  cobot:
+    build:
+      context: ../../../..
+      dockerfile: ws_cobot_pjt/src/repair_car/Docker/Dockerfile
+    image: ws-cobot-pjt:jazzy
+    container_name: "${COBOT_CONTAINER:-ws_cobot_pjt}"
+    init: true
+    stdin_open: true
+    tty: true
+    cpuset: "${COBOT_CPUSET:-4-9}"
+    cap_add:
+      - SYS_NICE
+    ulimits:
+      rtprio: 99
+      memlock: -1
+    environment:
+      ROS_DOMAIN_ID: "71"
+    ports:
+      - "127.0.0.1:${COBOT_ROSBRIDGE_PORT:-9090}:9090"
+    volumes:
+      - ../../..:/workspace
+    working_dir: /workspace
+  emulator:
+    profiles: [virtual]
+    image: doosanrobot/dsr_emulator:3.0.1@sha256:878b8557dfa2ffd843674e42576fd015b803cc805fe698156eb7b743e71547e9
+    platform: linux/amd64
+    container_name: cobot_emulator
+    init: true
+    cpuset: "${EMULATOR_CPUSET:-0-3}"
+    environment:
+      ROBOT_MODEL: M0609
+    ports:
+      - "127.0.0.1:12349:12345"
+    volumes:
+      - ./emulator/start.sh:/start-emulator.sh:ro
+    entrypoint: ["/bin/bash", "/start-emulator.sh"]
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/127.0.0.1/12345"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 30s
+    stop_grace_period: 10s

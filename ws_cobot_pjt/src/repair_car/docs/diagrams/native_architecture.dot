@@ -1,0 +1,65 @@
+// native 세션 구성: macOS 호스트(native) / Docker 컨테이너(ROS 2) / 로봇 컨트롤러 / 웹
+digraph native {
+  graph [rankdir=LR, fontname="Apple SD Gothic Neo", fontsize=20, labelloc=t, label="native 세션 구성 (호스트 · 컨테이너 · 컨트롤러 · 웹)\n\n",
+         nodesep=0.35, ranksep=0.9, pad=0.4, bgcolor=white, compound=true];
+  node  [fontname="Apple SD Gothic Neo", fontsize=12, shape=box, style="rounded,filled", fillcolor="#ffffff", color="#5b6b7b"];
+  edge  [fontname="Apple SD Gothic Neo", fontsize=10, color="#5b6b7b"];
+
+  subgraph cluster_host {
+    label="macOS 호스트  (conda env cobot-native, ROS_DOMAIN_ID 129)"; style="rounded,filled"; fillcolor="#eef4fb"; color="#7aa3cc"; fontsize=14;
+    launch   [label="launch/run_virtual.sh · run_real.sh\n→ run_display.sh", fillcolor="#dbe8f6"];
+    session  [label="native/session.py\n세션 수명 관리 (단일 로봇)", fillcolor="#c9dcf2"];
+    service  [label="native/service.py\n다중 로봇 (/robot_1 실기 + /robot_2 가상)", fillcolor="#c9dcf2"];
+    subgraph cluster_sim {
+      label="가상 모드"; style="rounded,dashed"; color="#7aa3cc"; fillcolor="#f6f9fd";
+      scene    [label="scene.py · model_export.py · probe_tool.py\n차량·탐침·거치대 배치 → world.sdf"];
+      gazebo   [label="Gazebo (gz sim 8)\n서버 + (선택) GUI", fillcolor="#fff3d6"];
+      vforce   [label="virtual_force.py (GazeboForceBackend)\nnormal_force · surface_stream ·\npose_pd · position_stream · setpoint_ramp"];
+    }
+    realnet  [label="robot_network.py\n실기 DRFL 연결 (실기 모드)"];
+    rviz     [label="displays.py · clouds.py\nRViz · /cobot_native/cloud/*", fillcolor="#fff3d6"];
+    editor   [label="bonnet_editor.py\n보닛 검사 영역 → config/bonnet_path.json"];
+    flask    [label="web/app.py (Flask :5050)\nSQLite data/web/repair.db", fillcolor="#e6f4ea"];
+  }
+
+  subgraph cluster_docker {
+    label="Docker 컨테이너 ws_cobot_pjt  (ROS 2 Jazzy, /workspace)"; style="rounded,filled"; fillcolor="#f3effa"; color="#9b86c4"; fontsize=14;
+    bringup  [label="m0609_rg2_bringup\nbringup.launch.py / service.launch.py", fillcolor="#e4dcf3"];
+    dsr      [label="dsr_controller2 · dsr_hardware2\n(DSR 서비스, realtime/force_telemetry)"];
+    vbridge  [label="virtual_force_bridge.py (bridge.py)\nvirtual_control/* · sim_scene ·\nsurface_follow/* · fixture/select · lift/command"];
+    cbridge  [label="cartesian_bridge.py\ncartesian_stream/*"];
+    relay    [label="ros_state_relay.py\n(실기 모드 관절 상태 → 호스트)"];
+    programs [label="repair_car 프로그램\nros2 run repair_car <이름>\n(real_scan · pick_probe · repair_manager …)", fillcolor="#e4dcf3"];
+    webctl   [label="web/web_control.py\n웹 명령 → 프로그램 실행", fillcolor="#e6f4ea"];
+    rosbridge[label="rosbridge_websocket :9090", fillcolor="#e6f4ea"];
+  }
+
+  subgraph cluster_ctrl {
+    label="로봇 컨트롤러"; style="rounded,filled"; fillcolor="#fdf0ec"; color="#d08770"; fontsize=14;
+    emulator [label="dsr_emulator 컨테이너\n(가상: M0609 :12345)"];
+    real     [label="실기 M0609 + OnRobot RG2\n(DRCF, 네트워크)"];
+  }
+
+  browser [label="브라우저\n/admin · /my", shape=component, fillcolor="#e6f4ea"];
+
+  launch -> session; launch -> service [style=dashed, label="--with-sim / --web"];
+  service -> session [label="로봇마다", style=dashed];
+  session -> bringup [label="docker compose up\ndocker exec (ros2 launch)"];
+  session -> scene; scene -> gazebo [label="world.sdf"];
+  session -> vforce; vforce -> gazebo [label="관절 목표\n접촉 힘"];
+  vforce -> vbridge [dir=both, label="TCP 소켓 (token)\n관절·힘 피드백", color="#b48ead"];
+  session -> realnet; realnet -> real [label="DRFL 포트 중계"];
+  session -> rviz; relay -> rviz [label="TCP 소켓", style=dashed];
+  bringup -> dsr; bringup -> vbridge; bringup -> cbridge;
+  dsr -> emulator [label="가상"]; dsr -> real [label="실기"];
+  programs -> dsr [label="DSR 서비스"];
+  programs -> cbridge [label="CartesianSetpoint"];
+  programs -> vbridge [label="surface_follow/*\nfixture/select"];
+  webctl -> programs [label="프로세스 실행"];
+  rosbridge -> webctl [dir=both, label="/robot/* · /repair/*\n/scan_part"];
+  browser -> rosbridge [dir=both, label="WebSocket"];
+  browser -> flask [dir=both, label="HTTP /api/*"];
+  programs -> flask [label="repair_db REST\n(X-API-Key)", style=dashed];
+  editor -> programs [label="bonnet_path.json", style=dotted];
+  rviz -> programs [label="data/clouds/*.npy\n(공유 폴더)", style=dotted, dir=back];
+}
